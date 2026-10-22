@@ -26,9 +26,18 @@ if (!installed()) {
     delete env.ELECTRON_SKIP_BINARY_DOWNLOAD;
   }
 
-  // install.js is Electron's own downloader; run it with Node when available, else with the current runtime.
-  const node = spawnSync('node', ['--version']).status === 0 ? 'node' : process.execPath;
-  const result = spawnSync(node, [join(dir, 'install.js')], { stdio: 'inherit', env });
+  // install.js is Electron's own downloader. Its HTTP stack can silently do nothing and exit 0 on some
+  // Node versions (seen on Node 26.8: no download, no error, no path.txt), so try the current runtime
+  // (Bun) first and Node second, and only trust the result if the binary actually exists afterwards.
+  const runtimes = [...new Set([process.execPath, 'node'])];
+  let result = { status: null };
+  let used = runtimes[0];
+  for (const runtime of runtimes) {
+    used = runtime;
+    result = spawnSync(runtime, [join(dir, 'install.js')], { stdio: 'inherit', env });
+    if (result.status === 0 && installed()) break;
+    if (result.status === 0) console.log(`The installer exited cleanly under ${runtime} but produced no binary; trying another runtime…`);
+  }
 
   if (result.status !== 0 || !installed()) {
     const names = (re) => Object.keys(process.env).filter((k) => re.test(k)).join(', ') || '(none)';
@@ -36,13 +45,14 @@ if (!installed()) {
       [
         '',
         'Could not get the Electron binary.',
-        `  installer: ${node} ${join(dir, 'install.js')} -> exit ${result.status ?? 'none'}${result.signal ? `, signal ${result.signal}` : ''}${result.error ? `, ${result.error.message}` : ''}`,
+        `  installer: ${used} ${join(dir, 'install.js')} -> exit ${result.status ?? 'none'}${result.signal ? `, signal ${result.signal}` : ''}${result.error ? `, ${result.error.message}` : ''}`,
         `  expected:  ${join(distDir, existsSync(join(dir, 'path.txt')) ? readFileSync(join(dir, 'path.txt'), 'utf8') : '(path.txt was not created)')}`,
         `  platform:  ${process.platform}/${process.arch}, runtime ${process.version}`,
         `  ELECTRON_* variables set: ${names(/^electron_/i)}`,
         `  proxy variables set:      ${names(/proxy/i)}`,
         '',
         'If the installer printed an error above, that is the cause (usually network, proxy or a blocked download).',
+        'Exit 0 with no error means Electron\'s downloader silently did nothing (known on some Node versions).',
         'To retry from scratch:  rm -rf node_modules/electron && bun install',
         '',
       ].join('\n'),
