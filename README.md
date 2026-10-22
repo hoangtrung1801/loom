@@ -38,7 +38,7 @@ Then in the app: sidebar → **Sync**, enter the URL and token. Put it behind HT
 
 ## Troubleshooting
 
-- **`Electron failed to install correctly`**: Bun doesn't run dependency install scripts unless they're trusted, and Electron fetches its binary in one. `bun run start` (and `dev:electron`) now detect a missing binary and download it automatically. To do it by hand: `rm -rf node_modules/electron && bun install`.
+- **`Electron failed to install correctly`**: Bun doesn't run dependency install scripts unless they're trusted, and Electron fetches its binary in one. `bun run start` (and `dev:electron`) now detect a missing binary and download it automatically. If it still can't download, it prints the installer's error and which `ELECTRON_*`/proxy variables are set. A common cause is `ELECTRON_SKIP_BINARY_DOWNLOAD` in your shell environment (Electron's installer then silently skips the download); the script ignores it for the repair, but check `env | grep -i electron` and unset it if you didn't mean to set it. By hand: `rm -rf node_modules/electron && bun install`.
 - **`ResolveMessage {}` / `No such built-in module: node:sqlite`**: your Bun is older than 1.4. Run `bun upgrade`. (`build` and `start` no longer need it.)
 - **`Running as root without --no-sandbox`** (containers): `bun run dev:electron --no-sandbox`.
 
