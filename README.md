@@ -6,22 +6,27 @@ Loom is an original implementation. It was inspired by the general shape of tool
 
 ## Run it
 
-Requires Node 22.13+ (uses the built-in `node:sqlite`, so there are **no native modules** to rebuild).
+Requires [Bun](https://bun.sh) 1.2+. It's used as package manager, script runner, dev-server and test runner, and it runs the sync server directly from TypeScript. Storage uses the built-in `node:sqlite` (also available in Bun), so there are **no native modules** to rebuild.
 
 ```bash
-npm install
-npm start               # build, then launch the Electron app
-npm run dev:electron    # hot-reloading renderer inside Electron
-npm run dev             # renderer only, in a normal browser (talks to a dev DB over HTTP)
-npm run package         # installers via electron-builder (AppImage/deb, dmg, nsis)
+bun install
+bun run start                       # build, then launch the Electron app
+bun run dev:electron                # hot-reloading renderer inside Electron
+bun run dev:electron --no-sandbox   # extra args go to Electron (needed when running as root, e.g. in a container)
+bun run dev                         # renderer only, in a normal browser (talks to a dev DB over HTTP)
+bun run package                     # installers via electron-builder (AppImage/deb, dmg, nsis)
 ```
+
+> **What Bun does not run:** the Electron app itself. Electron's main process always uses the Node.js bundled inside Electron, so the shipped app is unaffected by which runtime you develop with.
+
+Bun skips dependency install scripts unless trusted; `package.json` trusts `electron` (downloads its binary) and `esbuild`. `electron-winstaller` (Windows Squirrel installers, unused here) stays blocked.
 
 Using it: double-click empty canvas to make a card · drag a card's header to move it · drag the dot on a card's edge onto another card to connect (double-click a line to label it) · `Ctrl/⌘ K` to search · scroll to pan, `Ctrl/⌘`+scroll to zoom · type `# `, `- `, `> `, `1. `, ` ``` ` for Markdown shortcuts · `[[Card title]]` links to (or creates) a card.
 
 ### Sync (optional)
 
 ```bash
-LOOM_SYNC_TOKEN=choose-a-secret npm run sync-server      # listens on 127.0.0.1:8787
+LOOM_SYNC_TOKEN=choose-a-secret bun run sync-server      # listens on 127.0.0.1:8787 (PORT, LOOM_SYNC_DB to change)
 ```
 
 Then in the app: sidebar → **Sync**, enter the URL and token. Put it behind HTTPS (e.g. a reverse proxy) before exposing it beyond localhost.
@@ -37,7 +42,7 @@ src/core      pure TypeScript, no Electron: the whole data model, fully unit-tes
   rpc.ts        the only surface the UI can call (named, whitelisted methods)
 src/main      Electron main + sandboxed preload (exposes just `loom.rpc`)
 src/renderer  React + Zustand + ProseMirror; whiteboard is DOM + SVG
-server        reference sync server (append-only op log over HTTP)
+server        reference sync server (append-only op log over HTTP); run with `bun server/main.ts`
 ```
 
 **Data & sync.** Every change is an *op*: `{entity, entityId, fields, hlc timestamp, device}`. Ops are applied with per-field last-write-wins ordered by a hybrid logical clock, so merging is idempotent, commutative and needs no coordination. Rows live in ordinary tables (so queries are plain SQL); the `ops` table is the replication log. Deletes are soft (`deleted_at`). The server never interprets ops.
@@ -49,10 +54,10 @@ server        reference sync server (append-only op log over HTTP)
 ## Tests
 
 ```bash
-npm run typecheck
-npm test               # 24 unit tests: store, search, merge/convergence, sync server, RPC
-npm run test:e2e       # 11 browser tests (Playwright + Chromium) against the dev server
-npm run test:electron  # real Electron under xvfb, incl. two devices syncing via the server
+bun run typecheck
+bun run test            # 24 unit tests: store, search, merge/convergence, sync server, RPC
+bun run test:e2e        # 11 browser tests (Playwright + Chromium) against the dev server
+bun run test:electron   # real Electron under xvfb, incl. two devices syncing via the server
 ```
 
 ## Known limitations

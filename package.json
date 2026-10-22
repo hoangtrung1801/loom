@@ -5,19 +5,15 @@
   "type": "module",
   "devDependencies": {
     "@playwright/test": "^1.64.1",
+    "@types/bun": "^1.4.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "concurrently": "^10.0.6",
     "electron": "^37.10.3",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "playwright-core": "^1.64.1",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.5",
-    "vitest": "^5.0.5",
-    "wait-on": "^9.5.1",
     "prosemirror-commands": "^1.7.2",
     "prosemirror-dropcursor": "^1.8.4",
     "prosemirror-gapcursor": "^1.4.1",
@@ -31,25 +27,28 @@
     "prosemirror-view": "^1.42.7",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
     "zod": "^4.6.7",
     "zustand": "^5.0.16"
   },
   "description": "Loom: a local-first visual note-taking app (cards on whiteboards)",
   "main": "dist/electron/main.cjs",
   "engines": {
-    "node": ">=22.13"
+    "bun": ">=1.2"
   },
   "scripts": {
-    "dev": "vite",
-    "dev:electron": "concurrently -k -n vite,electron \"vite\" \"wait-on tcp:5173 && LOOM_DEV_URL=http://127.0.0.1:5173 node scripts/build-main.mjs && LOOM_DEV_URL=http://127.0.0.1:5173 electron .\"",
-    "build": "vite build && node scripts/build-main.mjs",
-    "start": "npm run build && electron .",
-    "sync-server": "node scripts/build-main.mjs && node dist/server/main.cjs",
+    "dev": "bunx --bun vite",
+    "dev:electron": "bun scripts/dev-electron.ts",
+    "build": "bunx --bun vite build && bun scripts/build-main.mjs",
+    "start": "bun run build && electron .",
+    "sync-server": "bun server/main.ts",
     "typecheck": "tsc -p .",
-    "test": "vitest run",
-    "test:e2e": "vitest run -c vitest.e2e.config.ts",
-    "test:electron": "npm run build && xvfb-run -a vitest run -c vitest.electron.config.ts",
-    "package": "npm run build && electron-builder"
+    "test": "bunx --bun vitest run",
+    "test:e2e": "bunx --bun vitest run -c vitest.e2e.config.ts",
+    "test:electron": "bun run build && xvfb-run -a bunx --bun vitest run -c vitest.electron.config.ts",
+    "package": "bun run build && electron-builder"
   },
   "author": "Loom contributors",
   "build": {
@@ -83,5 +82,10 @@
         "nsis"
       ]
     }
-  }
+  },
+  "packageManager": "bun@1.4.2",
+  "trustedDependencies": [
+    "electron",
+    "esbuild"
+  ]
 }

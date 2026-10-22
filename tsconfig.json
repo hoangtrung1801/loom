@@ -11,7 +11,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "allowImportingTsExtensions": false,
-    "types": ["node"]
+    "types": ["node", "bun"]
   },
   "include": ["src", "server", "tests", "e2e", "scripts", "vite.config.ts"]
 }
