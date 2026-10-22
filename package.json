@@ -40,14 +40,14 @@
   },
   "scripts": {
     "dev": "bunx --bun vite",
-    "dev:electron": "bun scripts/dev-electron.ts",
+    "dev:electron": "bun scripts/ensure-electron.mjs && bun scripts/dev-electron.ts",
     "build": "bunx --bun vite build && bun scripts/build-main.mjs",
-    "start": "bun run build && electron .",
+    "start": "bun run build && bun scripts/ensure-electron.mjs && electron .",
     "sync-server": "bun server/main.ts",
     "typecheck": "tsc -p .",
     "test": "bunx --bun vitest run",
     "test:e2e": "bunx --bun vitest run -c vitest.e2e.config.ts",
-    "test:electron": "bun run build && xvfb-run -a bunx --bun vitest run -c vitest.electron.config.ts",
+    "test:electron": "bun run build && bun scripts/ensure-electron.mjs && xvfb-run -a bunx --bun vitest run -c vitest.electron.config.ts",
     "package": "bun run build && electron-builder"
   },
   "author": "Loom contributors",

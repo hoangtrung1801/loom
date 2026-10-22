@@ -6,7 +6,12 @@ Loom is an original implementation. It was inspired by the general shape of tool
 
 ## Run it
 
-Requires [Bun](https://bun.sh) 1.2+. It's used as package manager, script runner, dev-server and test runner, and it runs the sync server directly from TypeScript. Storage uses the built-in `node:sqlite` (also available in Bun), so there are **no native modules** to rebuild.
+Requires [Bun](https://bun.sh). It's used as package manager, script runner, dev server and test runner, and it runs the sync server directly from TypeScript. Storage uses the built-in `node:sqlite`, so there are **no native modules** to rebuild.
+
+| Task | Minimum Bun |
+|---|---|
+| `bun run start`, `bun run build` (the Electron app runs on Electron's own Node) | 1.2 |
+| `bun run dev`, `bun run dev:electron`, `bun run test*`, `bun run sync-server` (need `node:sqlite` under Bun) | **1.4** (`bun upgrade`) |
 
 ```bash
 bun install
@@ -30,6 +35,12 @@ LOOM_SYNC_TOKEN=choose-a-secret bun run sync-server      # listens on 127.0.0.1:
 ```
 
 Then in the app: sidebar → **Sync**, enter the URL and token. Put it behind HTTPS (e.g. a reverse proxy) before exposing it beyond localhost.
+
+## Troubleshooting
+
+- **`Electron failed to install correctly`**: Bun doesn't run dependency install scripts unless they're trusted, and Electron fetches its binary in one. `bun run start` (and `dev:electron`) now detect a missing binary and download it automatically. To do it by hand: `rm -rf node_modules/electron && bun install`.
+- **`ResolveMessage {}` / `No such built-in module: node:sqlite`**: your Bun is older than 1.4. Run `bun upgrade`. (`build` and `start` no longer need it.)
+- **`Running as root without --no-sandbox`** (containers): `bun run dev:electron --no-sandbox`.
 
 ## Architecture
 

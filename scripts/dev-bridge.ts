@@ -1,11 +1,14 @@
 import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import { createRpc } from '../src/core/rpc.js';
-import { Store } from '../src/core/store.js';
+import type * as RpcModule from '../src/core/rpc.js';
+import type * as StoreModule from '../src/core/store.js';
 
 const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+
+export const SQLITE_HINT =
+  'Loom needs the built-in node:sqlite module. Use Bun >= 1.4 (run `bun upgrade`) or Node >= 22.13.';
 
 /**
  * Serves the same RPC layer Electron uses over HTTP so the UI can run in a
@@ -14,7 +17,18 @@ const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 export function devBridge(dbPath = process.env.LOOM_DB ?? '.dev/loom.db'): Plugin {
   return {
     name: 'loom-dev-bridge',
-    configureServer(server) {
+    // The store is loaded through Vite's SSR loader when the dev server starts, never at config-load
+    // time. A static import would pull node:sqlite into every `vite build`, which does not need it
+    // and which fails outright on Bun < 1.4.
+    async configureServer(server) {
+      let Store: typeof StoreModule.Store;
+      let createRpc: typeof RpcModule.createRpc;
+      try {
+        ({ Store } = (await server.ssrLoadModule('/@fs' + resolve('src/core/store.ts'))) as typeof StoreModule);
+        ({ createRpc } = (await server.ssrLoadModule('/@fs' + resolve('src/core/rpc.ts'))) as typeof RpcModule);
+      } catch (err) {
+        throw new Error(`${SQLITE_HINT}\n(${err instanceof Error ? err.message : String(err)})`);
+      }
       if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
       let store = new Store(dbPath);
       store.seedIfEmpty();
