@@ -77,5 +77,5 @@ bun run test:electron   # real Electron under xvfb, incl. two devices syncing vi
 - Sync has no history compaction, no end-to-end encryption, and a single shared token. The token is stored unencrypted in the local database.
 - Renaming a card doesn't rewrite `[[links]]` that point at it.
 - No trash/restore UI yet (deletes are soft, so it's possible to add), and no images, PDFs, web cards, mind maps or AI features.
-- `node:sqlite` is still flagged experimental by Node/Electron 37; the API surface used here is small and covered by tests.
+- `node:sqlite` is still flagged experimental by Node and Electron; the API surface used here is small and covered by tests.
 - Installers other than the unpacked Linux build were configured but not built here.
