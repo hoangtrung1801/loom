@@ -38,7 +38,7 @@ describe('packaged-style Electron app', () => {
       process: typeof (globalThis as { process?: unknown }).process,
       keys: Object.keys(window.loom ?? {}),
     }));
-    expect(exposed).toEqual({ require: 'undefined', process: 'undefined', keys: ['rpc'] });
+    expect(exposed).toEqual({ require: 'undefined', process: 'undefined', keys: ['rpc', 'upload', 'onEvent'] });
   });
 
   it('only accepts whitelisted RPC methods', async () => {

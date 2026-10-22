@@ -64,7 +64,7 @@ describe('cards and search', () => {
     const target = s.createCard({ title: 'Target' });
     const src = s.createCard({ title: 'Source', content: textDoc(['see [[target]] for more']) });
     s.createCard({ title: 'Unrelated', content: textDoc(['no links']) });
-    expect(s.getCard(target)?.backlinks).toEqual([{ id: src, title: 'Source' }]);
+    expect(s.getCard(target)?.backlinks.map((b) => [b.id, b.title, b.text])).toEqual([[src, 'Source', 'see [[target]] for more']]);
     expect(s.findCardByTitle('TARGET')).toBe(target);
   });
 
@@ -77,7 +77,7 @@ describe('cards and search', () => {
     s.addTag(b, 'big-idea');
     s.addTag(a, '   ');
     expect(s.getCard(a)?.tags).toEqual(['big-idea']);
-    expect(s.listTags()).toEqual([{ tag: 'big-idea', count: 2 }]);
+    expect(s.listTags().map((t) => [t.tag, t.count])).toEqual([['big-idea', 2]]);
     s.removeTag(a, 'Big Idea');
     expect(s.getCard(a)?.tags).toEqual([]);
     s.addTag(a, 'big-idea'); // re-adding resurrects
@@ -175,6 +175,6 @@ describe('persistence', () => {
     expect(s.listWhiteboards()).toHaveLength(1);
     expect(s.listCards()).toHaveLength(2);
     expect(s.getWhiteboard(s.listWhiteboards()[0]!.id)!.edges).toHaveLength(1);
-    expect(s.listTags()).toEqual([{ tag: 'start-here', count: 1 }]);
+    expect(s.listTags().map((t) => [t.tag, t.count])).toEqual([['start-here', 1]]);
   });
 });

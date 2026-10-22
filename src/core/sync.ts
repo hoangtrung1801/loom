@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { opSchema, type Op } from './entities.js';
+import type { Files } from './files.js';
 import type { Store } from './store.js';
 
 export interface PullResult {
@@ -16,7 +17,7 @@ export interface Transport {
 const BATCH = 500;
 
 /** Pushes local ops, then pulls and merges everything newer than our cursor. */
-export async function runSync(store: Store, transport: Transport): Promise<{ pushed: number; pulled: number }> {
+export async function runSync(store: Store, transport: Transport, _files?: Files): Promise<{ pushed: number; pulled: number }> {
   let pushed = 0;
   let pulled = 0;
   for (;;) {

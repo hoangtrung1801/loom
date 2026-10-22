@@ -5,14 +5,27 @@ import { z } from 'zod';
  * ones an op may write, which keeps remote input from touching arbitrary SQL.
  */
 export const ENTITIES = {
-  card: { table: 'cards', fields: ['title', 'content', 'created_at', 'updated_at', 'deleted_at'] },
-  whiteboard: { table: 'whiteboards', fields: ['name', 'created_at', 'updated_at', 'deleted_at'] },
+  card: {
+    table: 'cards',
+    fields: ['title', 'content', 'kind', 'journal_date', 'inbox', 'file_id', 'meta', 'created_at', 'updated_at', 'deleted_at'],
+  },
+  whiteboard: { table: 'whiteboards', fields: ['name', 'parent_id', 'color', 'created_at', 'updated_at', 'deleted_at'] },
   placement: {
     table: 'placements',
-    fields: ['whiteboard_id', 'card_id', 'x', 'y', 'w', 'h', 'z', 'deleted_at'],
+    fields: [
+      'whiteboard_id', 'card_id', 'x', 'y', 'w', 'h', 'z', 'kind', 'text', 'color', 'ref_id', 'parent_id', 'section_id', 'size',
+      'deleted_at',
+    ],
   },
-  edge: { table: 'edges', fields: ['whiteboard_id', 'from_id', 'to_id', 'label', 'deleted_at'] },
+  edge: { table: 'edges', fields: ['whiteboard_id', 'from_id', 'to_id', 'label', 'color', 'style', 'arrow', 'deleted_at'] },
   cardTag: { table: 'card_tags', fields: ['card_id', 'tag', 'deleted_at'] },
+  tagDef: { table: 'tag_defs', fields: ['color', 'collection', 'description', 'deleted_at'] },
+  tagProp: { table: 'tag_props', fields: ['tag', 'name', 'type', 'options', 'pos', 'deleted_at'] },
+  cardProp: { table: 'card_props', fields: ['card_id', 'prop_id', 'value', 'deleted_at'] },
+  file: { table: 'files', fields: ['name', 'mime', 'size', 'created_at', 'deleted_at'] },
+  chat: { table: 'chats', fields: ['title', 'context', 'created_at', 'updated_at', 'deleted_at'] },
+  chatMessage: { table: 'chat_messages', fields: ['chat_id', 'role', 'content', 'sources', 'created_at', 'deleted_at'] },
+  aiAction: { table: 'ai_actions', fields: ['name', 'prompt', 'kind', 'deleted_at'] },
 } as const;
 
 export type EntityName = keyof typeof ENTITIES;

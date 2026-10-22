@@ -1,23 +1,17 @@
 import { z } from 'zod';
+import { Chats } from './chats.js';
+import { Files, type FileInfo } from './files.js';
 import { httpTransport, runSync } from './sync.js';
+import { TagDb } from './tagdb.js';
 import type { Store } from './store.js';
 
-/**
- * The renderer never touches SQLite. It calls these named methods through
- * Electron IPC (or HTTP in dev); anything not listed here is unreachable.
- */
-export const STORE_METHODS = [
-  'listCards', 'getCard', 'createCard', 'updateCard', 'trashCard', 'findCardByTitle', 'search',
-  'addTag', 'removeTag', 'listTags',
-  'listWhiteboards', 'createWhiteboard', 'renameWhiteboard', 'trashWhiteboard', 'getWhiteboard',
-  'addCardToWhiteboard', 'createCardOnWhiteboard', 'updatePlacements', 'removePlacements',
-  'createEdge', 'setEdgeLabel', 'deleteEdge',
-] as const;
-export const SYNC_METHODS = ['getSyncState', 'setSyncConfig', 'syncNow'] as const;
-export const RPC_METHODS = [...STORE_METHODS, ...SYNC_METHODS] as const;
-
-export type StoreMethod = (typeof STORE_METHODS)[number];
-export type RpcMethod = (typeof RPC_METHODS)[number];
+/** Things the host (Electron main process or the dev server) lends to the core. */
+export interface Host {
+  /** Directory for attachment bytes; null disables attachments (in-memory test databases). */
+  filesDir: string | null;
+  /** Pushes an event to the renderer (streamed AI output etc.). */
+  emit?: (channel: string, payload: unknown) => void;
+}
 
 export interface SyncState {
   url: string;
@@ -26,48 +20,84 @@ export interface SyncState {
   lastSyncedAt: number | null;
 }
 
-export interface SyncApi {
-  getSyncState(): SyncState;
-  setSyncConfig(config: { url: string; token?: string }): SyncState;
-  syncNow(): Promise<{ pushed: number; pulled: number }>;
+function pick<T extends object, K extends keyof T>(source: T, keys: readonly K[]): Pick<T, K> {
+  const out = {} as Pick<T, K>;
+  for (const key of keys) out[key] = (source[key] as unknown as (...a: unknown[]) => unknown).bind(source) as T[K];
+  return out;
 }
 
-export type Api = {
-  [K in StoreMethod]: (...args: Parameters<Store[K]>) => Promise<Awaited<ReturnType<Store[K]>>>;
-} & { [K in keyof SyncApi]: (...args: Parameters<SyncApi[K]>) => Promise<Awaited<ReturnType<SyncApi[K]>>> };
+/**
+ * The renderer never touches SQLite or the filesystem. It calls the named methods built here through
+ * Electron IPC (or HTTP in dev); anything not listed is unreachable.
+ */
+export function buildApp(store: Store, host: Host) {
+  const tags = new TagDb(store);
+  const chats = new Chats(store);
+  const files = new Files(store, host.filesDir);
 
-export const rpcRequestSchema = z.object({
-  method: z.enum(RPC_METHODS),
-  args: z.array(z.unknown()).max(8),
-});
-
-export function createRpc(store: Store): (request: unknown) => Promise<unknown> {
-  const sync: SyncApi = {
-    getSyncState: () => ({
+  const sync = {
+    getSyncState: (): SyncState => ({
       url: store.getMeta('sync_url') ?? '',
       hasToken: !!store.getMeta('sync_token'),
       pending: store.pendingCount(),
       lastSyncedAt: Number(store.getMeta('last_synced_at')) || null,
     }),
-    setSyncConfig: ({ url, token }) => {
+    setSyncConfig: ({ url, token }: { url: string; token?: string }): SyncState => {
       const trimmed = url.trim();
       if (trimmed && !/^https?:\/\//i.test(trimmed)) throw new Error('Sync URL must start with http:// or https://');
       store.setMeta('sync_url', trimmed);
       if (token !== undefined) store.setMeta('sync_token', token);
       return sync.getSyncState();
     },
-    syncNow: async () => {
+    syncNow: async (): Promise<{ pushed: number; pulled: number }> => {
       const url = store.getMeta('sync_url');
       if (!url) throw new Error('Set a sync server URL first.');
-      return runSync(store, httpTransport(url, store.getMeta('sync_token') || undefined));
+      return runSync(store, httpTransport(url, store.getMeta('sync_token') || undefined), files);
     },
   };
 
+  const methods = {
+    ...pick(store, [
+      'listCards', 'getCard', 'createCard', 'updateCard', 'trashCard', 'restoreCard', 'setInbox', 'findCardByTitle', 'cardsMentioning',
+      'titlesById', 'search', 'searchAll', 'relatedCards',
+      'addTag', 'removeTag', 'listTags',
+      'ensureJournal', 'journalDays', 'listJournals', 'listTasks', 'setTaskChecked',
+      'cardHistory', 'restoreCardVersion', 'listTrash',
+      'listWhiteboards', 'createWhiteboard', 'renameWhiteboard', 'setWhiteboardColor', 'moveWhiteboard', 'trashWhiteboard', 'restoreWhiteboard',
+      'getWhiteboard', 'addCardToWhiteboard', 'createCardOnWhiteboard', 'addObject', 'updatePlacements', 'removePlacements',
+      'restorePlacements', 'moveToWhiteboard', 'createEdge', 'updateEdge', 'setEdgeLabel', 'deleteEdge',
+    ] as const),
+    ...pick(tags, [
+      'setTagDef', 'deleteTag', 'renameTag', 'addTagProp', 'updateTagProp', 'removeTagProp', 'setCardProp', 'listTagProps', 'getCardProps', 'getTagTable',
+    ] as const),
+    ...pick(chats, [
+      'createChat', 'listChats', 'getChat', 'renameChat', 'setChatContext', 'deleteChat', 'listAiActions', 'saveAiAction', 'deleteAiAction',
+    ] as const),
+    fileInfo: (id: string): FileInfo | null => files.info(id),
+    ...sync,
+  };
+
+  return { methods, store, tags, chats, files, host };
+}
+
+export type App = ReturnType<typeof buildApp>;
+type Methods = App['methods'];
+export type RpcMethod = keyof Methods;
+export const rpcMethodNames = (app: App): RpcMethod[] => Object.keys(app.methods) as RpcMethod[];
+
+export type Api = { [K in keyof Methods]: (...args: Parameters<Methods[K]>) => Promise<Awaited<ReturnType<Methods[K]>>> };
+
+export const rpcRequestSchema = z.object({
+  method: z.string().min(1).max(60),
+  args: z.array(z.unknown()).max(8),
+});
+
+export function createRpc(app: App): (request: unknown) => Promise<unknown> {
+  const table = new Map<string, (...args: unknown[]) => unknown>(Object.entries(app.methods) as [string, (...args: unknown[]) => unknown][]);
   return async (request) => {
     const { method, args } = rpcRequestSchema.parse(request);
-    const target = (STORE_METHODS as readonly string[]).includes(method)
-      ? (store as unknown as Record<string, (...a: unknown[]) => unknown>)
-      : (sync as unknown as Record<string, (...a: unknown[]) => unknown>);
-    return await target[method]!(...args);
+    const fn = table.get(method);
+    if (!fn) throw new Error(`Unknown method "${method}".`);
+    return await fn(...args);
   };
 }

@@ -2,7 +2,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSyncServer } from '../server/sync-server.js';
-import { createRpc } from '../src/core/rpc.js';
+import { buildApp, createRpc } from '../src/core/rpc.js';
 import { httpTransport, runSync } from '../src/core/sync.js';
 import { Store } from '../src/core/store.js';
 import { textDoc } from '../src/core/text.js';
@@ -169,7 +169,7 @@ describe('demo content', () => {
 describe('rpc', () => {
   it('only exposes whitelisted methods and validates the envelope', async () => {
     const s = mem();
-    const rpc = createRpc(s);
+    const rpc = createRpc(buildApp(s, { filesDir: null }));
     const id = (await rpc({ method: 'createCard', args: [{ title: 'via rpc' }] })) as string;
     expect(((await rpc({ method: 'getCard', args: [id] })) as { title: string }).title).toBe('via rpc');
     for (const bad of ['close', 'deviceId', 'constructor', '__proto__', 'applyRemote', 'setMeta']) {

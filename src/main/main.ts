@@ -1,25 +1,32 @@
-import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol, shell, type IpcMainInvokeEvent } from 'electron';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createRpc } from '../core/rpc.js';
+import { buildApp, createRpc, type App } from '../core/rpc.js';
+import { serveFile } from '../core/serve-file.js';
 import { Store } from '../core/store.js';
 
 const DEV_URL = process.env.LOOM_DEV_URL;
 const INDEX = join(__dirname, '../renderer/index.html');
 const trustedOrigin = DEV_URL ? new URL(DEV_URL).origin : pathToFileURL(INDEX).href;
 
+// Attachments are served from loom-file://<sha256>. Registered before ready so media can stream and seek.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'loom-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+]);
+
 // A custom data dir (tests, portable installs) gets its own single-instance lock and Chromium profile.
 if (process.env.LOOM_DATA_DIR) app.setPath('userData', process.env.LOOM_DATA_DIR);
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let store: Store | undefined;
+let core: App | undefined;
 let mainWindow: BrowserWindow | undefined;
 
 function isExternalUrl(raw: string): boolean {
   try {
-    const { protocol } = new URL(raw);
-    return protocol === 'https:' || protocol === 'http:' || protocol === 'mailto:';
+    const { protocol: p } = new URL(raw);
+    return p === 'https:' || p === 'http:' || p === 'mailto:';
   } catch {
     return false;
   }
@@ -27,10 +34,10 @@ function isExternalUrl(raw: string): boolean {
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1360,
-    height: 880,
-    minWidth: 760,
-    minHeight: 480,
+    width: 1440,
+    height: 900,
+    minWidth: 860,
+    minHeight: 520,
     backgroundColor: '#1b1c1f',
     title: 'Loom',
     webPreferences: {
@@ -51,6 +58,7 @@ function createWindow(): void {
   contents.on('will-navigate', (event, url) => {
     if (!url.startsWith(trustedOrigin)) event.preventDefault();
   });
+  contents.session.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'clipboard-sanitized-write'));
 
   if (DEV_URL) void mainWindow.loadURL(DEV_URL);
   else void mainWindow.loadFile(INDEX);
@@ -67,11 +75,26 @@ app.whenReady().then(() => {
   mkdirSync(dir, { recursive: true });
   store = new Store(join(dir, 'loom.db'));
   store.seedIfEmpty();
-  const rpc = createRpc(store);
+  core = buildApp(store, {
+    filesDir: join(dir, 'files'),
+    emit: (channel, payload) => mainWindow?.webContents.send('loom-event', { channel, payload }),
+  });
+  const rpc = createRpc(core);
 
   ipcMain.handle('rpc', (event, request: unknown) => {
     if (!isTrustedSender(event)) throw new Error('Untrusted sender.');
     return rpc(request);
+  });
+  ipcMain.handle('upload', (event, name: unknown, mime: unknown, bytes: unknown) => {
+    if (!isTrustedSender(event)) throw new Error('Untrusted sender.');
+    if (typeof name !== 'string' || typeof mime !== 'string' || !(bytes instanceof Uint8Array)) throw new Error('Bad upload.');
+    return core!.files.put(bytes, { name, mime });
+  });
+
+  protocol.handle('loom-file', (request) => {
+    const id = new URL(request.url).hostname;
+    const res = serveFile(core!.files, id, request.headers.get('range'));
+    return new Response(res.body as BodyInit | null, { status: res.status, headers: res.headers });
   });
 
   createWindow();

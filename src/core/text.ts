@@ -1,29 +1,4 @@
-/** Minimal view of a ProseMirror JSON node; we only need to read text out of it. */
-interface PmNode {
-  type?: string;
-  text?: string;
-  content?: PmNode[];
-}
-
-const BLOCKS = new Set(['paragraph', 'heading', 'blockquote', 'code_block', 'list_item', 'bullet_list', 'ordered_list']);
-
-export function docToText(content: string): string {
-  if (!content) return '';
-  let doc: PmNode;
-  try {
-    doc = JSON.parse(content) as PmNode;
-  } catch {
-    return '';
-  }
-  const out: string[] = [];
-  const walk = (node: PmNode): void => {
-    if (typeof node.text === 'string') out.push(node.text);
-    node.content?.forEach(walk);
-    if (node.type && BLOCKS.has(node.type)) out.push('\n');
-  };
-  walk(doc);
-  return out.join('').replace(/\n{2,}/g, '\n').trim();
-}
+export { docToText } from './doc.js';
 
 export function snippet(text: string, max = 140): string {
   const flat = text.replace(/\s+/g, ' ').trim();

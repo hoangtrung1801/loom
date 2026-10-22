@@ -130,7 +130,7 @@ export const useApp = create<AppState>((set, get) => {
         await api.renameWhiteboard(id, name.trim() || 'Untitled whiteboard');
         await refreshLists();
         const board = get().board;
-        if (board?.whiteboard.id === id) set({ board: { ...board, whiteboard: { id, name: name.trim() || 'Untitled whiteboard' } } });
+        if (board?.whiteboard.id === id) set({ board: { ...board, whiteboard: { ...board.whiteboard, name: name.trim() || 'Untitled whiteboard' } } });
       });
     },
     async deleteBoard(id) {
