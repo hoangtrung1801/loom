@@ -1,5 +1,6 @@
 import { docToMarkdown, type BlockRange, type MdLine } from '../doc.js';
 import type { ContextRef, SourceRef } from '../chats.js';
+import { priorityOf, statusOf } from '../kinds.js';
 import type { Store } from '../store.js';
 import type { Handles } from './handles.js';
 import { estimateTokens } from './tokens.js';
@@ -24,15 +25,35 @@ const COVERAGE_CAP = 8_000;
 const SLICE_MIN = 120;
 const SLICE_MAX = 500;
 
+function linkDescription(meta: string): string {
+  try {
+    const d = (JSON.parse(meta || '{}') as { description?: unknown }).description;
+    return typeof d === 'string' ? d.replace(/\s+/g, ' ').slice(0, 300) : '';
+  } catch {
+    return '';
+  }
+}
+
 export function loadCardText(store: Store, handles: Handles, id: string, titles?: Map<string, string>): CardText | null {
   const card = store.getCard(id);
   if (!card) return null;
   const lookup = (cardId: string): string | undefined => titles?.get(cardId) ?? store.titlesById([cardId])[cardId];
   const md = docToMarkdown(card.content, lookup);
   const handle = handles.short('c', id);
-  const title = card.title || (card.kind === 'journal' ? card.journalDate : '') || 'Untitled';
-  const attrs = [card.kind, ...card.tags.map((t) => `#${t}`)];
-  if (card.fileId && card.kind !== 'note' && card.kind !== 'journal') attrs.push('attachment not readable as text');
+  const title = card.title || (card.kind === 'journal' ? card.journalDate : '') || (card.kind === 'memo' ? md.lines[0]?.text.slice(0, 60) : '') || 'Untitled';
+  const attrs: string[] = [card.kind];
+  if (card.kind === 'task') {
+    attrs.push(`status ${statusOf(card.status)}`, `priority ${priorityOf(card.priority)}`);
+    if (card.assignee) attrs.push(`assignee ${card.assignee}`);
+    if (card.due) attrs.push(`due ${card.due}`);
+    if (card.parentId) attrs.push(`subtask of ${handles.short('c', card.parentId)}`);
+  } else if (card.kind === 'link' || card.kind === 'web') {
+    if (card.url) attrs.push(card.url);
+    const description = linkDescription(card.meta);
+    if (description) attrs.push(`description: ${description}`);
+  }
+  attrs.push(...card.tags.map((t) => `#${t}`));
+  if (card.fileId && !['note', 'journal', 'task', 'memo', 'link'].includes(card.kind)) attrs.push('attachment not readable as text');
   return { id, handle, title, kind: card.kind, header: `${handle} card "${title}" (${attrs.join(', ')})`, lines: md.lines, blocks: md.blocks };
 }
 

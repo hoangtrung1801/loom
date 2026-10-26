@@ -44,13 +44,16 @@ async function assertPublic(url: URL, resolve: NonNullable<ClipHost['resolve']>)
   if (addresses.some(isPrivateAddress)) throw new Error('That address is private.');
 }
 
-/** Fetches a page and returns its readable text as markdown. */
-export async function clipUrl(raw: string, host: ClipHost = {}): Promise<Clip> {
+/**
+ * Fetches a public URL, following redirects by hand so every hop is re-checked against the private-address rules.
+ * Returns the final response (not yet read) and its URL.
+ */
+export async function fetchPublic(raw: string | URL, host: ClipHost, accept: string): Promise<{ res: Response; url: URL }> {
   const doFetch = host.fetch ?? ((input, init) => fetch(input, init));
   const resolve = host.resolve ?? defaultResolve;
   let url: URL;
   try {
-    url = new URL(raw.trim());
+    url = new URL(String(raw).trim());
   } catch {
     throw new Error('That does not look like a web address.');
   }
@@ -60,7 +63,7 @@ export async function clipUrl(raw: string, host: ClipHost = {}): Promise<Clip> {
     res = await doFetch(url, {
       redirect: 'manual',
       signal: AbortSignal.timeout(20_000),
-      headers: { accept: 'text/html,application/xhtml+xml,text/plain;q=0.8', 'user-agent': 'Mozilla/5.0 (compatible; Loom/1.0)' },
+      headers: { accept, 'user-agent': 'Mozilla/5.0 (compatible; Loom/1.0)' },
     });
     const next = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
     if (!next) break;
@@ -68,29 +71,80 @@ export async function clipUrl(raw: string, host: ClipHost = {}): Promise<Clip> {
     url = new URL(next, url);
   }
   if (!res || !res.ok) throw new Error(`The page responded ${res?.status ?? 'with an error'}.`);
+  return { res, url };
+}
+
+/** Fetches a page and returns its readable text as markdown. */
+export async function clipUrl(raw: string, host: ClipHost = {}): Promise<Clip> {
+  const { res, url } = await fetchPublic(raw, host, 'text/html,application/xhtml+xml,text/plain;q=0.8');
   const type = (res.headers.get('content-type') ?? '').toLowerCase();
   if (type && !/^(text\/html|application\/xhtml\+xml|text\/plain)/.test(type)) throw new Error('Only web pages and plain text can be clipped.');
-  const body = await readCapped(res);
+  const body = new TextDecoder('utf-8', { fatal: false }).decode(await readCapped(res, MAX_BYTES));
   if (type.startsWith('text/plain')) return { url: url.href, title: url.hostname, site: url.hostname, markdown: body.trim() };
   return { url: url.href, ...extract(body, url) };
 }
 
-async function readCapped(res: Response): Promise<string> {
+export interface Preview {
+  url: string;
+  title: string;
+  description: string;
+  site: string;
+  /** Absolute address of the page's preview image, if it declares one. */
+  image: string;
+}
+
+/** Title, description and preview image of a page: what a bookmark shows. Reads at most the first 2 MB. */
+export async function fetchPreview(raw: string, host: ClipHost = {}): Promise<Preview> {
+  const { res, url } = await fetchPublic(raw, host, 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1');
+  const type = (res.headers.get('content-type') ?? '').toLowerCase();
+  if (type && !/^(text\/html|application\/xhtml\+xml)/.test(type)) return { url: url.href, title: '', description: '', site: '', image: '' };
+  const html = new TextDecoder('utf-8', { fatal: false }).decode(await readCapped(res, 2 * 1024 * 1024, true));
+  const head = html.replace(/<!--[\s\S]*?-->/g, '');
+  const title = meta(head, 'og:title', 'twitter:title') || decodeEntities(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(head)?.[1] ?? '').replace(/\s+/g, ' ').trim();
+  const description = meta(head, 'og:description', 'twitter:description', 'description');
+  const site = meta(head, 'og:site_name');
+  let image = '';
+  const declared = meta(head, 'og:image', 'og:image:url', 'twitter:image', 'twitter:image:src');
+  if (declared) {
+    try {
+      const abs = new URL(declared, url);
+      if (abs.protocol === 'http:' || abs.protocol === 'https:') image = abs.href;
+    } catch {
+      /* ignore a malformed image address */
+    }
+  }
+  return { url: url.href, title: title.slice(0, 300), description: description.replace(/\s+/g, ' ').slice(0, 1000), site: site.slice(0, 200), image };
+}
+
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+
+/** Downloads a preview image (small raster images only; SVG can carry scripts, so it is never fetched). */
+export async function fetchImage(raw: string, host: ClipHost = {}): Promise<{ bytes: Uint8Array; mime: string }> {
+  const { res } = await fetchPublic(raw, host, 'image/avif,image/webp,image/png,image/jpeg,image/gif');
+  const mime = (res.headers.get('content-type') ?? '').toLowerCase().split(';')[0]!.trim();
+  if (!IMAGE_TYPES.has(mime)) throw new Error('Not a supported image type.');
+  return { bytes: await readCapped(res, 3 * 1024 * 1024), mime };
+}
+
+/** Reads a body up to `max` bytes. With `truncate` the rest is dropped silently (a page head is enough); otherwise too much is an error. */
+async function readCapped(res: Response, max: number, truncate = false): Promise<Uint8Array> {
   const reader = res.body?.getReader();
-  if (!reader) return '';
+  if (!reader) return new Uint8Array();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_BYTES) {
+    if (size > max) {
       await reader.cancel();
-      throw new Error('That page is too large to clip.');
+      if (!truncate) throw new Error('That page is too large to clip.');
+      chunks.push(value.subarray(0, value.byteLength - (size - max)));
+      break;
     }
     chunks.push(value);
   }
-  return new TextDecoder('utf-8', { fatal: false }).decode(Buffer.concat(chunks));
+  return new Uint8Array(Buffer.concat(chunks));
 }
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', mdash: '—', ndash: '–', hellip: '…', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', copy: '©', reg: '®', trade: '™', middot: '·', bull: '•', euro: '€', pound: '£', deg: '°', times: '×', rarr: '→', larr: '←', eacute: 'é', egrave: 'è', ecirc: 'ê', agrave: 'à', aacute: 'á', acirc: 'â', auml: 'ä', ouml: 'ö', uuml: 'ü', szlig: 'ß', ccedil: 'ç', ntilde: 'ñ', oacute: 'ó', iacute: 'í', uacute: 'ú' };

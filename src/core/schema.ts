@@ -175,4 +175,16 @@ export const MIGRATIONS: string[][] = [
        tokenize = 'unicode61 remove_diacritics 2'
      )`,
   ],
+  // v3: tasks, saved links and memos are cards with a few structured, individually-synced fields.
+  [
+    `ALTER TABLE cards ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE cards ADD COLUMN priority TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE cards ADD COLUMN assignee TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE cards ADD COLUMN due TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE cards ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE cards ADD COLUMN url TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE cards ADD COLUMN completed_at INTEGER NOT NULL DEFAULT 0`,
+    `CREATE INDEX cards_parent ON cards(parent_id) WHERE parent_id != '' AND deleted_at IS NULL`,
+    `CREATE INDEX cards_url ON cards(url) WHERE url != '' AND deleted_at IS NULL`,
+  ],
 ];

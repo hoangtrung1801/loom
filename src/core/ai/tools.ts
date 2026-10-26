@@ -1,5 +1,6 @@
 import type { DocNode } from '../doc.js';
 import { parseDoc } from '../doc.js';
+import { TASK_PRIORITIES, TASK_STATUSES } from '../kinds.js';
 import { markdownToContent } from '../markdown.js';
 import type { Store } from '../store.js';
 import { CARD_KINDS, normalizeTag, type CardKind } from '../store.js';
@@ -7,6 +8,7 @@ import { loadCardText, readCard, type CardText } from './context.js';
 import type { Handles } from './handles.js';
 import type { ToolSpec } from './provider.js';
 import { estimateTokens } from './tokens.js';
+import { Work, type WorkTask } from '../work.js';
 import { serializeBoard } from './whiteboardText.js';
 
 /** Everything one agent run shares: what the model has been shown and what it changed. */
@@ -194,6 +196,64 @@ export const TOOLS: Tool[] = [
     },
   },
 
+  {
+    spec: {
+      name: 'list_tasks',
+      description: 'List the user\'s tasks (planned work with status, priority, assignee, due date, labels, acceptance-criteria progress). Filter by any field. Returns card handles you can read_card.',
+      schema: obj({
+        status: { type: 'string', enum: [...TASK_STATUSES] },
+        priority: { type: 'string', enum: [...TASK_PRIORITIES] },
+        assignee: { type: 'string' },
+        label: { type: 'string', description: 'A tag on the task' },
+        overdue: { type: 'boolean', description: 'Only tasks past their due date that are not done' },
+        include_done: { type: 'boolean', description: 'Default true' },
+        query: { type: 'string', description: 'Words in the title' },
+      }),
+    },
+    describe: (a) => `Listed tasks${str(a.status, 20) ? ` (${str(a.status, 20)})` : ''}`,
+    run: (a, run) => {
+      const tasks = new Work(run.store).listTasks({
+        status: str(a.status, 20) || undefined,
+        priority: str(a.priority, 20) || undefined,
+        assignee: str(a.assignee, 100) || undefined,
+        label: str(a.label, 80) || undefined,
+        overdue: a.overdue === true,
+        includeDone: a.include_done === false ? false : undefined,
+        query: str(a.query, 200) || undefined,
+      });
+      if (!tasks.length) return 'No matching tasks.';
+      return tasks.slice(0, 60).map((t) => taskLine(run, t)).join('\n') + (tasks.length > 60 ? `\n…and ${tasks.length - 60} more` : '');
+    },
+  },
+  {
+    spec: {
+      name: 'list_links',
+      description: 'List or search the user\'s saved links (bookmarks: address, title, description, note, tags). Returns card handles you can read_card.',
+      schema: obj({ query: { type: 'string' }, tag: { type: 'string' }, limit: { type: 'integer' } }),
+    },
+    describe: (a) => `Listed saved links${str(a.query, 40) ? ` for “${str(a.query, 40)}”` : ''}`,
+    run: (a, run) => {
+      const links = new Work(run.store).listLinks({ query: str(a.query, 200) || undefined, tag: str(a.tag, 80) || undefined, limit: Math.min(int(a.limit) ?? 20, 50) });
+      if (!links.length) return 'No saved links.';
+      return links
+        .map((l) => `${run.handles.short('c', l.id)} "${l.title || l.host}" ${l.url}${l.description ? ` — ${l.description.slice(0, 160)}` : ''}${l.note ? ` | note: ${l.note.slice(0, 120)}` : ''}${l.tags.length ? ` ${l.tags.map((t) => `#${t}`).join(' ')}` : ''}`)
+        .join('\n');
+    },
+  },
+  {
+    spec: {
+      name: 'list_memos',
+      description: 'List the user\'s memos (quick captures), newest first, optionally only those containing some words.',
+      schema: obj({ query: { type: 'string' }, limit: { type: 'integer' } }),
+    },
+    describe: () => 'Listed memos',
+    run: (a, run) => {
+      const query = str(a.query, 200).toLowerCase().trim();
+      const memos = run.store.listCards({ kinds: ['memo'], sort: 'created', limit: 200 }).filter((m) => !query || m.preview.toLowerCase().includes(query)).slice(0, Math.min(int(a.limit) ?? 20, 50));
+      return memos.length ? memos.map((m) => `${run.handles.short('c', m.id)} ${new Date(m.createdAt).toISOString().slice(0, 10)}: ${m.preview}`).join('\n') : 'No memos.';
+    },
+  },
+
   // ------------------------------------------------------------------ writers (only with allowWrites)
   {
     write: true,
@@ -303,6 +363,105 @@ export const TOOLS: Tool[] = [
       return `Created mind map ${run.handles.short('p', root)}.`;
     },
   },
+  {
+    write: true,
+    spec: {
+      name: 'create_task',
+      description: 'Create a task. Acceptance criteria become a checklist. Returns its handle.',
+      schema: obj(
+        {
+          title: { type: 'string' },
+          description: { type: 'string' },
+          status: { type: 'string', enum: [...TASK_STATUSES] },
+          priority: { type: 'string', enum: [...TASK_PRIORITIES] },
+          assignee: { type: 'string' },
+          due: { type: 'string', description: 'YYYY-MM-DD' },
+          labels: { type: 'array', items: { type: 'string' } },
+          acceptance: { type: 'array', items: { type: 'string' }, description: 'Acceptance criteria, one per item' },
+          plan: { type: 'string' },
+          parent: { type: 'string', description: 'Handle of the parent task, to make this a subtask' },
+        },
+        ['title'],
+      ),
+    },
+    describe: (a) => `Create task “${str(a.title, 60)}”`,
+    run: (a, run) => {
+      const id = new Work(run.store).createTask({
+        title: str(a.title, 300),
+        description: str(a.description),
+        status: str(a.status, 20) || undefined,
+        priority: str(a.priority, 20) || undefined,
+        assignee: str(a.assignee, 100),
+        due: str(a.due, 10),
+        labels: Array.isArray(a.labels) ? a.labels.slice(0, 10).map((l) => str(l, 80)) : [],
+        acceptance: Array.isArray(a.acceptance) ? a.acceptance.slice(0, 30).map((l) => str(l, 300)) : [],
+        plan: str(a.plan),
+        parentId: a.parent ? card(run, a.parent).id : undefined,
+      });
+      run.changes.push(`Created task “${str(a.title, 60)}”`);
+      return `Created ${run.handles.short('c', id)}.`;
+    },
+  },
+  {
+    write: true,
+    spec: {
+      name: 'update_task',
+      description: 'Change a task\'s status, priority, assignee, due date, title or parent. Use append_to_card for notes.',
+      schema: obj(
+        {
+          task: { type: 'string', description: 'Task card handle' },
+          title: { type: 'string' },
+          status: { type: 'string', enum: [...TASK_STATUSES] },
+          priority: { type: 'string', enum: [...TASK_PRIORITIES] },
+          assignee: { type: 'string' },
+          due: { type: 'string', description: 'YYYY-MM-DD, or empty to clear' },
+          parent: { type: 'string', description: 'Parent task handle, or empty to detach' },
+        },
+        ['task'],
+      ),
+    },
+    describe: (a) => `Update task ${str(a.task, 20)}`,
+    run: (a, run) => {
+      const c = card(run, a.task);
+      const patch: Record<string, string> = {};
+      for (const key of ['title', 'status', 'priority', 'assignee', 'due'] as const) if (typeof a[key] === 'string') patch[key] = str(a[key], 300);
+      if (typeof a.parent === 'string') patch.parentId = a.parent ? card(run, a.parent).id : '';
+      new Work(run.store).updateTask(c.id, patch);
+      run.read.delete(c.id);
+      run.changes.push(`Updated task “${c.title}”`);
+      return 'Updated.';
+    },
+  },
+  {
+    write: true,
+    spec: {
+      name: 'save_link',
+      description: 'Save a web address as a bookmark. This does not open the page, so pass a title and description if you know them.',
+      schema: obj({ url: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, note: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } }, ['url']),
+    },
+    describe: (a) => `Save link ${str(a.url, 60)}`,
+    run: (a, run) => {
+      const saved = new Work(run.store).saveLink({
+        url: str(a.url, 2000),
+        title: str(a.title, 300),
+        description: str(a.description, 1000),
+        note: str(a.note),
+        tags: Array.isArray(a.tags) ? a.tags.slice(0, 10).map((t) => str(t, 80)) : [],
+      });
+      run.changes.push(saved.existed ? 'Updated a saved link' : `Saved link ${str(a.url, 60)}`);
+      return `${saved.existed ? 'Already saved as' : 'Saved as'} ${run.handles.short('c', saved.id)}.`;
+    },
+  },
+  {
+    write: true,
+    spec: { name: 'add_memo', description: 'Capture a quick memo.', schema: obj({ text: { type: 'string' } }, ['text']) },
+    describe: () => 'Add a memo',
+    run: (a, run) => {
+      const id = new Work(run.store).addMemo(str(a.text));
+      run.changes.push('Added a memo');
+      return `Created ${run.handles.short('c', id)}.`;
+    },
+  },
 ];
 
 export function toolSpecs(allowWrites: boolean): ToolSpec[] {
@@ -321,4 +480,10 @@ export function executeTool(run: Run, name: string, args: Record<string, unknown
   } catch (err) {
     return { text: `Error: ${err instanceof Error ? err.message : String(err)}`, label: tool.describe(args) };
   }
+}
+
+function taskLine(run: Run, t: WorkTask): string {
+  const facts = [t.status, t.priority, t.assignee && `@${t.assignee}`, t.due && `due ${t.due}`].filter(Boolean).join(', ');
+  const progress = [t.progress.total && `${t.progress.done}/${t.progress.total} criteria`, t.subtasks.total && `${t.subtasks.done}/${t.subtasks.total} subtasks`].filter(Boolean).join(', ');
+  return `${run.handles.short('c', t.id)} "${t.title}" [${facts}]${progress ? ` ${progress}` : ''}${t.labels.length ? ` ${t.labels.map((l) => `#${l}`).join(' ')}` : ''}`;
 }

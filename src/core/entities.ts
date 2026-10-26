@@ -7,7 +7,10 @@ import { z } from 'zod';
 export const ENTITIES = {
   card: {
     table: 'cards',
-    fields: ['title', 'content', 'kind', 'journal_date', 'inbox', 'file_id', 'meta', 'created_at', 'updated_at', 'deleted_at'],
+    fields: [
+      'title', 'content', 'kind', 'journal_date', 'inbox', 'file_id', 'meta', 'status', 'priority', 'assignee', 'due', 'parent_id', 'url', 'completed_at',
+      'created_at', 'updated_at', 'deleted_at',
+    ],
   },
   whiteboard: { table: 'whiteboards', fields: ['name', 'parent_id', 'color', 'created_at', 'updated_at', 'deleted_at'] },
   placement: {

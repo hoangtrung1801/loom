@@ -16,7 +16,7 @@ export function toMatchQuery(input: string): string | null {
   return tokens
     .slice(0, 12)
     .map((t) => (t.length > 3 && t.endsWith('s') ? `("${t}"* OR "${t.slice(0, -1)}"*)` : `"${t}"*`))
-    .join(' ');
+    .join(' AND ');
 }
 
 /** Builds a ProseMirror doc from plain lines; `# ` prefix makes a heading, `- ` a bullet. */

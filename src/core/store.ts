@@ -23,6 +23,14 @@ export interface CardSummary {
   createdAt: number;
   updatedAt: number;
   tags: string[];
+  /** Task cards: workflow state, priority, who, when it is due (YYYY-MM-DD) and the parent task. */
+  status: string;
+  priority: string;
+  assignee: string;
+  due: string;
+  parentId: string;
+  /** Saved links: the page address. */
+  url: string;
 }
 export interface CardIndexEntry {
   id: string;
@@ -50,6 +58,13 @@ export interface CardDetail {
   inbox: boolean;
   fileId: string;
   meta: string;
+  status: string;
+  priority: string;
+  assignee: string;
+  due: string;
+  parentId: string;
+  url: string;
+  completedAt: number;
   createdAt: number;
   updatedAt: number;
   wordCount: number;
@@ -159,6 +174,36 @@ export interface EdgePatch {
   color?: string;
   style?: string;
   arrow?: string;
+}
+export interface CreateCardInput {
+  title?: string;
+  content?: string;
+  kind?: CardKind;
+  inbox?: boolean;
+  fileId?: string;
+  meta?: string;
+  journalDate?: string;
+  id?: string;
+  status?: string;
+  priority?: string;
+  assignee?: string;
+  due?: string;
+  parentId?: string;
+  url?: string;
+}
+/** Structured card fields that can change on their own (each syncs independently). */
+export interface CardFieldPatch {
+  title?: string;
+  kind?: CardKind;
+  status?: string;
+  priority?: string;
+  assignee?: string;
+  due?: string;
+  parentId?: string;
+  url?: string;
+  completedAt?: number;
+  fileId?: string;
+  meta?: string;
 }
 export interface ListCardsOptions {
   kinds?: CardKind[];
@@ -342,7 +387,7 @@ export class Store {
       );
       switch (op.entity) {
         case 'card':
-          if (field === 'title' || field === 'content' || field === 'deleted_at' || field === 'kind') touched.cards.add(op.entityId);
+          if (['title', 'content', 'deleted_at', 'kind', 'url', 'assignee', 'meta'].includes(field)) touched.cards.add(op.entityId);
           break;
         case 'whiteboard':
           if (field === 'name' || field === 'deleted_at') touched.boards.add(op.entityId);
@@ -385,12 +430,12 @@ export class Store {
   }
 
   private reindex(cardId: string): void {
-    const card = this.get('SELECT title, content, kind, deleted_at FROM cards WHERE id = ?', cardId);
+    const card = this.get('SELECT title, content, kind, url, assignee, meta, deleted_at FROM cards WHERE id = ?', cardId);
     this.run('DELETE FROM search_index WHERE card_id = ?', cardId);
     this.run('DELETE FROM links WHERE source_id = ?', cardId);
     this.run('DELETE FROM tasks WHERE card_id = ?', cardId);
     if (!card || card.deleted_at != null) return;
-    this.run('INSERT INTO search_index(card_id, title, body) VALUES (?, ?, ?)', cardId, card.title, docToText(card.content));
+    this.run('INSERT INTO search_index(card_id, title, body) VALUES (?, ?, ?)', cardId, card.title, [docToText(card.content), searchExtras(card)].filter(Boolean).join('\n'));
     for (const l of extractLinks(card.content)) {
       this.run('INSERT INTO links(source_id, block_id, target_id, target_title, text) VALUES (?, ?, ?, ?, ?)', cardId, l.blockId, l.targetId, l.targetTitle, snippet(l.text, 200));
     }
@@ -453,7 +498,7 @@ export class Store {
   // ------------------------------------------------------------------ cards
 
   createCard(
-    input: { title?: string; content?: string; kind?: CardKind; inbox?: boolean; fileId?: string; meta?: string; journalDate?: string; id?: string } = {},
+    input: CreateCardInput = {},
   ): string {
     const id = input.id ?? randomUUID();
     const now = Date.now();
@@ -472,6 +517,13 @@ export class Store {
           inbox: input.inbox ? 1 : 0,
           file_id: input.fileId ?? '',
           meta: input.meta ?? '',
+          status: input.status ?? '',
+          priority: input.priority ?? '',
+          assignee: input.assignee ?? '',
+          due: input.due ?? '',
+          parent_id: input.parentId ?? '',
+          url: input.url ?? '',
+          completed_at: 0,
           created_at: now,
           updated_at: now,
           deleted_at: null,
@@ -487,6 +539,27 @@ export class Store {
     if (patch.content !== undefined) fields.content = normalizeContent(patch.content); // rejects malformed documents early
     if (patch.meta !== undefined) fields.meta = patch.meta;
     this.requireActive('cards', id);
+    this.commit([{ entity: 'card', id, fields }]);
+  }
+
+  /** Changes structured fields without touching the body. Values are validated by the caller (see `Work`). */
+  patchCard(id: string, patch: CardFieldPatch): void {
+    this.requireActive('cards', id);
+    const fields: Record<string, Scalar> = { updated_at: Date.now() };
+    if (patch.title !== undefined) fields.title = patch.title.slice(0, 500);
+    if (patch.kind !== undefined) {
+      if (!CARD_KINDS.includes(patch.kind)) throw new Error(`Unknown card kind "${patch.kind}".`);
+      fields.kind = patch.kind;
+    }
+    if (patch.status !== undefined) fields.status = patch.status;
+    if (patch.priority !== undefined) fields.priority = patch.priority;
+    if (patch.assignee !== undefined) fields.assignee = patch.assignee.slice(0, 100);
+    if (patch.due !== undefined) fields.due = patch.due;
+    if (patch.parentId !== undefined) fields.parent_id = patch.parentId;
+    if (patch.url !== undefined) fields.url = patch.url.slice(0, 2000);
+    if (patch.completedAt !== undefined) fields.completed_at = patch.completedAt;
+    if (patch.fileId !== undefined) fields.file_id = patch.fileId;
+    if (patch.meta !== undefined) fields.meta = patch.meta;
     this.commit([{ entity: 'card', id, fields }]);
   }
 
@@ -529,7 +602,7 @@ export class Store {
     }
     const order = o.sort === 'title' ? 'lower(c.title)' : o.sort === 'created' ? 'c.created_at DESC' : 'c.updated_at DESC';
     const rows = this.all(
-      `SELECT c.id, c.title, c.content, c.kind, c.journal_date, c.inbox, c.file_id, c.created_at, c.updated_at FROM cards c
+      `SELECT c.id, c.title, c.content, c.kind, c.journal_date, c.inbox, c.file_id, c.status, c.priority, c.assignee, c.due, c.parent_id, c.url, c.created_at, c.updated_at FROM cards c
        WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ?`,
       ...params, Math.min(o.limit ?? 1000, 5000),
     );
@@ -556,6 +629,13 @@ export class Store {
       inbox: !!r.inbox,
       fileId: r.file_id,
       meta: r.meta,
+      status: r.status,
+      priority: r.priority,
+      assignee: r.assignee,
+      due: r.due,
+      parentId: r.parent_id,
+      url: r.url,
+      completedAt: r.completed_at,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       wordCount: wordCount(r.content),
@@ -731,7 +811,7 @@ export class Store {
       .map(([tag, count]) => ({ tag, count, color: defs.get(tag)?.color ?? '', collection: defs.get(tag)?.collection ?? '', description: defs.get(tag)?.description ?? '' }))
       .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   }
-  private tagsByCard(only?: string): Map<string, string[]> {
+  tagsByCard(only?: string): Map<string, string[]> {
     const rows = only
       ? this.all('SELECT card_id, tag FROM card_tags WHERE deleted_at IS NULL AND card_id = ? ORDER BY tag', only)
       : this.all('SELECT card_id, tag FROM card_tags WHERE deleted_at IS NULL ORDER BY tag');
@@ -1193,6 +1273,22 @@ function rowToOp(r: Row): Op {
   return { id: r.id, entity: r.entity, entityId: r.entity_id, fields: JSON.parse(r.fields), ts: r.ts, device: r.device };
 }
 
+/** Words from structured fields that should be findable: a saved link's address and description, a task's assignee. */
+function searchExtras(card: Row): string {
+  const parts: string[] = [];
+  if (card.url) parts.push(String(card.url).replace(/^https?:\/\//, ''));
+  if (card.assignee) parts.push(card.assignee);
+  if (card.kind === 'link' && card.meta) {
+    try {
+      const d = (JSON.parse(card.meta) as { description?: unknown }).description;
+      if (typeof d === 'string') parts.push(d);
+    } catch {
+      /* no description */
+    }
+  }
+  return parts.join('\n');
+}
+
 function toSummary(r: Row, tags: string[]): CardSummary {
   return {
     id: r.id,
@@ -1205,6 +1301,12 @@ function toSummary(r: Row, tags: string[]): CardSummary {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     tags,
+    status: r.status ?? '',
+    priority: r.priority ?? '',
+    assignee: r.assignee ?? '',
+    due: r.due ?? '',
+    parentId: r.parent_id ?? '',
+    url: r.url ?? '',
   };
 }
 

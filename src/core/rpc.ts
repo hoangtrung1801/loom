@@ -2,12 +2,15 @@ import { z } from 'zod';
 import { Ai } from './ai/service.js';
 import type { createLlm } from './ai/provider.js';
 import { Chats } from './chats.js';
-import { clipUrl, type ClipHost } from './clip.js';
+import { clipUrl, fetchImage, fetchPreview, type ClipHost } from './clip.js';
 import { exportAll } from './export.js';
 import { Files, type FileInfo } from './files.js';
 import { markdownToContent } from './markdown.js';
+import { normalizeUrl, parseWebUrl } from './url.js';
 import { httpTransport, runSync, type SyncResult } from './sync.js';
 import { TagDb } from './tagdb.js';
+import type { CardKind } from './kinds.js';
+import { Work, type LinkFilter, type TaskFilter, type TaskInput, type TaskPatch } from './work.js';
 import type { Store } from './store.js';
 
 /** Things the host (Electron main process or the dev server) lends to the core. */
@@ -42,6 +45,7 @@ function pick<T extends object, K extends keyof T>(source: T, keys: readonly K[]
 export function buildApp(store: Store, host: Host) {
   const tags = new TagDb(store);
   const chats = new Chats(store);
+  const work = new Work(store);
   const files = new Files(store, host.filesDir);
   const ai = new Ai(store, chats, host.emit, host.llmFactory);
 
@@ -80,6 +84,44 @@ export function buildApp(store: Store, host: Host) {
     ...pick(tags, [
       'setTagDef', 'deleteTag', 'renameTag', 'addTagProp', 'updateTagProp', 'removeTagProp', 'setCardProp', 'listTagProps', 'getCardProps', 'getTagTable',
     ] as const),
+    // Tasks, saved links and memos: the structured kinds of knowledge.
+    createWorkTask: (input: TaskInput) => work.createTask(input),
+    updateWorkTask: (id: string, patch: TaskPatch) => work.updateTask(id, patch),
+    getWorkTask: (id: string) => work.getTask(id),
+    listWorkTasks: (filter?: TaskFilter) => work.listTasks(filter),
+    /**
+     * Saves a bookmark. The page's title, description and preview image are fetched when the address is public;
+     * if that fails (offline, private address, blocked) the link is still saved with its host as the title.
+     */
+    saveLink: async (url: string, options: { note?: string; tags?: string[]; title?: string } = {}): Promise<{ id: string; existed: boolean; fetchError: string }> => {
+      const parsed = parseWebUrl(url);
+      const userTags = (options.tags ?? []).filter((t) => t.trim());
+      if (work.findLink(normalizeUrl(parsed.href))) return { ...work.saveLink({ url: parsed.href, note: options.note, tags: userTags }), fetchError: '' };
+      let preview = { title: '', description: '', site: '', image: '' };
+      let fetchError = '';
+      try {
+        preview = await fetchPreview(parsed.href, host.clip);
+      } catch (err) {
+        fetchError = err instanceof Error ? err.message : String(err);
+      }
+      let imageFileId = '';
+      if (preview.image && host.filesDir) {
+        try {
+          const image = await fetchImage(preview.image, host.clip);
+          imageFileId = files.put(image.bytes, { name: `${parsed.hostname}-preview`, mime: image.mime });
+        } catch {
+          /* the bookmark is fine without a picture */
+        }
+      }
+      const title = (options.title ?? '').trim() || preview.title;
+      let tags = userTags;
+      if (!tags.length && !fetchError) tags = await ai.suggestLinkTags({ url: parsed.href, title, description: preview.description }).catch(() => []);
+      return { ...work.saveLink({ url: parsed.href, title, description: preview.description, site: preview.site, note: options.note, imageFileId, tags }), fetchError };
+    },
+    updateLink: (id: string, patch: { title?: string; description?: string; url?: string }) => work.updateLink(id, patch),
+    listLinks: (filter?: LinkFilter) => work.listLinks(filter),
+    addMemo: (text: string) => work.addMemo(text),
+    convertCard: (id: string, to: CardKind) => work.convertCard(id, to),
     ...pick(chats, [
       'createChat', 'listChats', 'getChat', 'renameChat', 'setChatContext', 'deleteChat', 'listAiActions', 'saveAiAction', 'deleteAiAction',
     ] as const),
@@ -108,7 +150,7 @@ export function buildApp(store: Store, host: Host) {
     ...sync,
   };
 
-  return { methods, store, tags, chats, files, ai, host };
+  return { methods, store, tags, chats, work, files, ai, host };
 }
 
 export type App = ReturnType<typeof buildApp>;
