@@ -73,6 +73,7 @@ export function CardPage({ id }: { id: string }) {
 }
 
 function Attachment({ card }: { card: CardDetail }) {
+  if (card.kind === 'web') return <Source card={card} />;
   if (!isFileId(card.fileId)) return card.kind === 'highlight' ? <Quote card={card} /> : null;
   const url = fileUrl(card.fileId);
   switch (card.kind) {
@@ -89,6 +90,16 @@ function Attachment({ card }: { card: CardDetail }) {
     default:
       return null;
   }
+}
+
+function Source({ card }: { card: CardDetail }) {
+  let url = '';
+  try {
+    url = (JSON.parse(card.meta || '{}') as { url?: string }).url ?? '';
+  } catch {
+    /* no source metadata */
+  }
+  return /^https?:\/\//i.test(url) ? <a className="file-link" href={url} target="_blank" rel="noreferrer noopener">Open original · {new URL(url).hostname}</a> : null;
 }
 
 function Quote({ card }: { card: CardDetail }) {

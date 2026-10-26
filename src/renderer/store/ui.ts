@@ -24,12 +24,14 @@ interface UiState {
   chatAuto: string | null;
   menu: { x: number; y: number; items: MenuItem[] } | null;
   researchOpen: boolean;
+  clipOpen: boolean;
 
   setPanel(panel: PanelId | null): void;
   togglePanel(panel: PanelId): void;
   setSearch(open: boolean): void;
   setPalette(open: boolean): void;
   setResearch(open: boolean): void;
+  setClip(open: boolean): void;
   openChat(seed?: ContextRef[] | null, chatId?: string | null, auto?: string | null): void;
   clearChatAuto(): void;
   showMenu(x: number, y: number, items: MenuItem[]): void;
@@ -57,6 +59,7 @@ export const useUi = create<UiState>((set, get) => ({
   chatAuto: null,
   menu: null,
   researchOpen: false,
+  clipOpen: false,
 
   setPanel(panel) {
     set({ panel });
@@ -71,6 +74,7 @@ export const useUi = create<UiState>((set, get) => ({
   setSearch: (searchOpen) => set({ searchOpen, paletteOpen: false }),
   setPalette: (paletteOpen) => set({ paletteOpen, searchOpen: false }),
   setResearch: (researchOpen) => set({ researchOpen }),
+  setClip: (clipOpen) => set({ clipOpen }),
   openChat(seed = null, chatId = null, auto = null) {
     set({ chatSeed: seed, chatId, chatAuto: auto });
     get().setPanel('chat');

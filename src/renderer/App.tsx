@@ -4,6 +4,7 @@ import { api } from './api.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { GlobalSearch } from './components/GlobalSearch.js';
 import { LeftSidebar } from './components/LeftSidebar.js';
+import { ClipDialog } from './components/ClipDialog.js';
 import { ResearchDialog } from './components/ResearchDialog.js';
 import { RightSidebar } from './components/RightSidebar.js';
 import { TabView } from './components/TabView.js';
@@ -82,6 +83,7 @@ export function App() {
       <GlobalSearch />
       <CommandPalette />
       <ResearchDialog />
+      <ClipDialog />
       <ContextMenu />
       {error && (
         <div className="toast" role="alert">

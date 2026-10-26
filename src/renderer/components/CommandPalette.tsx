@@ -26,6 +26,7 @@ function commands(): Command[] {
     { id: 'journal', label: "Open today's journal", icon: 'journal', run: () => void openJournal() },
     { id: 'search', label: 'Search everything', icon: 'search', hint: '⌘O', run: () => ui.setSearch(true) },
     { id: 'research', label: 'Research a topic', icon: 'sparkle', run: () => ui.setResearch(true) },
+    { id: 'clip', label: 'Clip a web page', icon: 'globe', run: () => ui.setClip(true) },
     { id: 'sync', label: 'Sync now', icon: 'sync', run: () => void useSync.getState().sync() },
     { id: 'pin', label: tab.pinned ? 'Unpin tab' : 'Pin tab', icon: 'pin', run: () => tabs.pin(tab.id, !tab.pinned) },
     { id: 'settings', label: 'Open settings', icon: 'settings', run: () => openApp('settings') },

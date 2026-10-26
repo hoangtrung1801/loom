@@ -14,6 +14,7 @@ const START: { label: string; icon: IconName; run(): void }[] = [
   { label: 'New whiteboard', icon: 'board', run: () => void newBoard() },
   { label: 'Search…', icon: 'search', run: () => useUi.getState().setSearch(true) },
   { label: 'Research a topic', icon: 'sparkle', run: () => useUi.getState().setResearch(true) },
+  { label: 'Clip a web page', icon: 'globe', run: () => useUi.getState().setClip(true) },
   { label: 'Card Library', icon: 'library', run: () => openApp('library') },
 ];
 

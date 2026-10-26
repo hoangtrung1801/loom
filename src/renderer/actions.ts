@@ -1,4 +1,5 @@
 import type { CardKind } from '../core/store.js';
+import { docxToMarkdown } from '../core/docx.js';
 import { markdownToContent } from '../core/markdown.js';
 import { api, errorMessage, uploadFile } from './api.js';
 import { todayIso } from './editor/commands.js';
@@ -79,9 +80,10 @@ export function cardTitle(id: string): string {
   return useData.getState().index.find((c) => c.id === id)?.title || 'Untitled';
 }
 
-export function kindForFile(file: Pick<File, 'name' | 'type'>): CardKind | 'text' {
+export function kindForFile(file: Pick<File, 'name' | 'type'>): CardKind | 'text' | 'docx' {
   const name = file.name.toLowerCase();
   if (file.type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('video/')) return 'video';
   if (file.type.startsWith('audio/')) return 'audio';
@@ -103,6 +105,10 @@ export async function importFiles(files: File[], target?: { boardId: string; x: 
       let id: string;
       if (kind === 'text') {
         const text = await file.text();
+        const heading = /^#\s+(.+)$/m.exec(text);
+        id = await api.createCard({ title: heading ? heading[1]!.trim() : title, content: markdownToContent(heading ? text.replace(heading[0], '').trimStart() : text), inbox: true });
+      } else if (kind === 'docx') {
+        const text = await docxToMarkdown(new Uint8Array(await file.arrayBuffer()));
         const heading = /^#\s+(.+)$/m.exec(text);
         id = await api.createCard({ title: heading ? heading[1]!.trim() : title, content: markdownToContent(heading ? text.replace(heading[0], '').trimStart() : text), inbox: true });
       } else {

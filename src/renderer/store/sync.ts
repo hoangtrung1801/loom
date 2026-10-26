@@ -35,7 +35,7 @@ export const useSync = create<SyncStore>((set, get) => ({
     try {
       const r = await api.syncNow();
       if (r.pulled && !hasPendingSaves()) await refresh();
-      set({ message: `Synced · ${r.pushed} sent, ${r.pulled} received` });
+      set({ message: `Synced · ${r.pushed} sent, ${r.pulled} received${r.files.up + r.files.down ? `, ${r.files.up + r.files.down} files` : ''}${r.files.failed ? `, ${r.files.failed} files will retry` : ''}` });
     } catch (err) {
       set({ message: quiet ? 'Last sync failed' : errorMessage(err) });
     } finally {

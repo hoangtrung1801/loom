@@ -1,9 +1,14 @@
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSyncServer } from '../server/sync-server.js';
 import { buildApp, createRpc } from '../src/core/rpc.js';
 import { httpTransport, runSync } from '../src/core/sync.js';
+import { Files } from '../src/core/files.js';
 import { Store } from '../src/core/store.js';
 import { textDoc } from '../src/core/text.js';
 
@@ -163,6 +168,63 @@ describe('demo content', () => {
       expect(data.edges).toHaveLength(1);
     }
     expect(snapshot(a)).toEqual(snapshot(b));
+  });
+});
+
+describe('attachment sync', () => {
+  const dirs: string[] = [];
+  afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
+  const device = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'loom-blobs-'));
+    dirs.push(dir);
+    const store = mem();
+    return { store, files: new Files(store, dir) };
+  };
+
+  it('uploads attachment bytes and downloads them on another device, verified by hash', async () => {
+    const url = await serve();
+    const a = device();
+    const b = device();
+    const bytes = new Uint8Array(70_000).map((_, i) => (i * 7) % 256);
+    const fileId = a.files.put(bytes, { name: 'pic.png', mime: 'image/png' });
+    const card = a.store.createCard({ title: 'Picture', kind: 'image', fileId });
+
+    expect(await runSync(a.store, httpTransport(url), a.files)).toMatchObject({ files: { up: 1, down: 0, failed: 0 } });
+    // metadata arrives with the ops, bytes with the blob phase of the same sync
+    const result = await runSync(b.store, httpTransport(url), b.files);
+    expect(result.files).toEqual({ up: 0, down: 1, failed: 0 });
+    expect(b.store.getCard(card)?.fileId).toBe(fileId);
+    expect(createHash('sha256').update(b.files.read(fileId)).digest('hex')).toBe(fileId);
+    // nothing left to move
+    expect((await runSync(b.store, httpTransport(url), b.files)).files).toEqual({ up: 0, down: 0, failed: 0 });
+  });
+
+  it('rejects bytes that do not hash to their id and leaves other files unaffected', async () => {
+    const url = await serve('tok');
+    const wrong = 'a'.repeat(64);
+    const res = await fetch(`${url}/files/${wrong}`, { method: 'PUT', headers: { authorization: 'Bearer tok' }, body: new Uint8Array([1, 2, 3]) });
+    expect(res.status).toBe(400);
+    expect((await fetch(`${url}/files/${wrong}`, { method: 'GET', headers: { authorization: 'Bearer tok' } })).status).toBe(404);
+    expect((await fetch(`${url}/files/${wrong}`, { method: 'PUT', body: new Uint8Array([1]) })).status).toBe(401);
+    expect((await fetch(`${url}/files/not-a-hash`, { method: 'GET', headers: { authorization: 'Bearer tok' } })).status).toBe(404);
+  });
+
+  it('refuses to store a download that does not match, and keeps syncing ops', async () => {
+    const url = await serve();
+    const a = device();
+    const b = device();
+    const fileId = a.files.put(new Uint8Array([9, 9, 9]), { name: 'x.txt', mime: 'text/plain' });
+    a.store.createCard({ title: 'Doc', kind: 'file', fileId });
+    await runSync(a.store, httpTransport(url), a.files);
+    const honest = httpTransport(url);
+    const lying = { ...honest, blobs: { ...honest.blobs!, get: async () => new Uint8Array([1, 2, 3]) } };
+    const result = await runSync(b.store, lying, b.files);
+    expect(result.files).toEqual({ up: 0, down: 0, failed: 1 });
+    expect(result.pulled).toBeGreaterThan(0);
+    expect(b.files.has(fileId)).toBe(false);
+    // the next sync with an honest server repairs it
+    expect((await runSync(b.store, httpTransport(url), b.files)).files.down).toBe(1);
+    expect(b.files.has(fileId)).toBe(true);
   });
 });
 

@@ -2,9 +2,11 @@ import { z } from 'zod';
 import { Ai } from './ai/service.js';
 import type { createLlm } from './ai/provider.js';
 import { Chats } from './chats.js';
+import { clipUrl, type ClipHost } from './clip.js';
 import { exportAll } from './export.js';
 import { Files, type FileInfo } from './files.js';
-import { httpTransport, runSync } from './sync.js';
+import { markdownToContent } from './markdown.js';
+import { httpTransport, runSync, type SyncResult } from './sync.js';
 import { TagDb } from './tagdb.js';
 import type { Store } from './store.js';
 
@@ -16,6 +18,8 @@ export interface Host {
   emit?: (channel: string, payload: unknown) => void;
   /** Test seam: replaces the real model client. */
   llmFactory?: typeof createLlm;
+  /** Test seam: replaces the network used by the web clipper. */
+  clip?: ClipHost;
 }
 
 export interface SyncState {
@@ -55,7 +59,7 @@ export function buildApp(store: Store, host: Host) {
       if (token !== undefined) store.setMeta('sync_token', token);
       return sync.getSyncState();
     },
-    syncNow: async (): Promise<{ pushed: number; pulled: number }> => {
+    syncNow: async (): Promise<SyncResult> => {
       const url = store.getMeta('sync_url');
       if (!url) throw new Error('Set a sync server URL first.');
       return runSync(store, httpTransport(url, store.getMeta('sync_token') || undefined), files);
@@ -79,6 +83,18 @@ export function buildApp(store: Store, host: Host) {
     ...pick(chats, [
       'createChat', 'listChats', 'getChat', 'renameChat', 'setChatContext', 'deleteChat', 'listAiActions', 'saveAiAction', 'deleteAiAction',
     ] as const),
+    /** Fetches a public web page and saves its readable text as a `web` card in the inbox. */
+    clipWebPage: async (url: string): Promise<string> => {
+      const clip = await clipUrl(String(url), host.clip);
+      const intro = `Clipped from [${clip.site}](${clip.url})\n\n`;
+      return store.createCard({
+        title: clip.title,
+        kind: 'web',
+        inbox: true,
+        content: markdownToContent(intro + clip.markdown),
+        meta: JSON.stringify({ url: clip.url, site: clip.site, clippedAt: Date.now() }),
+      });
+    },
     fileInfo: (id: string): FileInfo | null => files.info(id),
     exportAll: (format: 'markdown' | 'json') => exportAll(store, format === 'json' ? 'json' : 'markdown'),
     getAiConfig: ai.getAiConfig,

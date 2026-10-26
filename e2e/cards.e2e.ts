@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { zip } from '../tests/zip.js';
 import { pw, useBrowser } from './harness.js';
 
 const h = useBrowser();
@@ -189,5 +190,35 @@ describe('cards and the editor', () => {
     const list = await h.rpc<{ title: string; kind: string }[]>('listCards', {});
     expect(list.find((c) => c.title === 'Imported note')?.kind).toBe('note');
     expect(list.find((c) => c.title === 'data')?.kind).toBe('file');
+  });
+
+  it('imports a Word document as an editable note with headings, lists and a table', async () => {
+    const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+    const p = (t: string, props = '') => `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ''}<w:r><w:t>${t}</w:t></w:r></w:p>`;
+    const doc = `<w:document ${W}><w:body>${p('Quarterly review', '<w:pStyle w:val="Heading1"/>')}${p('Wins', '<w:pStyle w:val="Heading2"/>')}${p('Shipped the beta', '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>')}<w:tbl><w:tr><w:tc>${p('Metric')}</w:tc><w:tc>${p('Value')}</w:tc></w:tr><w:tr><w:tc>${p('Users')}</w:tc><w:tc>${p('42')}</w:tc></w:tr></w:tbl></w:body></w:document>`;
+    const numbering = `<w:numbering ${W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`;
+    await page().click('.app-link:has-text("Card Library")');
+    const chooser = page().waitForEvent('filechooser');
+    await page().click('button:has-text("Import files")');
+    await (await chooser).setFiles({ name: 'review.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: Buffer.from(zip({ 'word/document.xml': doc, 'word/numbering.xml': numbering })) });
+    await pw(page().locator('.card-row .title:text-is("Quarterly review")')).toBeVisible();
+    await page().locator('.card-row', { has: page().locator('.title:text-is("Quarterly review")') }).click();
+    await pw(editor().locator('h2')).toHaveText('Wins');
+    await pw(editor().locator('li')).toHaveText('Shipped the beta');
+    await pw(editor().locator('table')).toContainText('Users');
+    await pw(editor().locator('table')).toContainText('42');
+    expect((await h.rpc<{ title: string; kind: string }[]>('listCards', {})).find((c) => c.title === 'Quarterly review')?.kind).toBe('note');
+  });
+
+  it('refuses to clip private addresses and explains why', async () => {
+    await page().keyboard.press('Control+k');
+    await page().fill('input[aria-label="Command"]', 'clip a web page');
+    await page().keyboard.press('Enter');
+    await page().fill('input[aria-label="Web address"]', 'http://127.0.0.1:8080/secret');
+    await page().keyboard.press('Enter');
+    await pw(page().locator('[role="dialog"][aria-label="Clip a web page"] [role="alert"]')).toContainText('private');
+    await page().keyboard.press('Escape');
+    await pw(page().locator('[role="dialog"][aria-label="Clip a web page"]')).toHaveCount(0);
+    expect((await h.rpc<{ kind: string }[]>('listCards', {})).filter((c) => c.kind === 'web')).toHaveLength(0);
   });
 });
