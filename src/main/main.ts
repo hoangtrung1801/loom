@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { buildApp, createRpc, type App } from '../core/rpc.js';
 import { serveFile } from '../core/serve-file.js';
 import { Store } from '../core/store.js';
+import { installMenu } from './menu.js';
 
 const DEV_URL = process.env.LOOM_DEV_URL;
 const INDEX = join(__dirname, '../renderer/index.html');
@@ -97,6 +98,7 @@ app.whenReady().then(() => {
     return new Response(res.body as BodyInit | null, { status: res.status, headers: res.headers });
   });
 
+  installMenu((command) => mainWindow?.webContents.send('loom-event', { channel: 'command', payload: command }), { dev: !!DEV_URL });
   createWindow();
   app.on('activate', () => {
     if (!BrowserWindow.getAllWindows().length) createWindow();

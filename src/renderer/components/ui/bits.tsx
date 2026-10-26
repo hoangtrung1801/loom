@@ -46,7 +46,7 @@ type Row = Pick<CardSummary, 'id' | 'title' | 'kind'> & Partial<Pick<CardSummary
 export function CardRow({ card, hit, onOpen, extra, selected }: { card: Row; hit?: SearchHit; onOpen?(newTab: boolean): void; extra?: React.ReactNode; selected?: boolean }) {
   const title = card.title || (card.kind === 'journal' ? card.journalDate : '') || 'Untitled';
   return (
-    <li>
+    <li className="card-li">
       <button
         className={`card-row${selected ? ' selected' : ''}`}
         draggable
@@ -63,13 +63,10 @@ export function CardRow({ card, hit, onOpen, extra, selected }: { card: Row; hit
         ) : (
           card.preview && <span className="snippet ellipsis">{card.preview}</span>
         )}
-        {(card.tags?.length || extra) && (
-          <span className="meta">
-            {card.tags?.map((t) => <em key={t}>#{t}</em>)}
-            {extra}
-          </span>
-        )}
+        {!!card.tags?.length && <span className="meta">{card.tags.map((t) => <em key={t}>#{t}</em>)}</span>}
       </button>
+      {/* a sibling, not a child: buttons cannot nest inside the row button */}
+      {extra && <span className="row-extra">{extra}</span>}
     </li>
   );
 }

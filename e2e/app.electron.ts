@@ -73,6 +73,54 @@ describe('packaged-style Electron app', () => {
     expect(hit).toHaveLength(1);
   });
 
+  it('renders attachments through loom-file:// under the CSP: image, range reads and a PDF', async () => {
+    const png = Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+    const pdfText = '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 44>>stream\nBT /F1 24 Tf 20 100 Td (Hello PDF) Tj ET\nendstream endobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R/Size 6>>\n%%EOF';
+    const pdf = Uint8Array.from(Buffer.from(pdfText, 'latin1'));
+    const ids = await page.evaluate(async ([a, b]) => {
+      const up = window.loom!.upload as (name: string, mime: string, bytes: Uint8Array) => Promise<string>;
+      return [await up('dot.png', 'image/png', new Uint8Array(a!)), await up('doc.pdf', 'application/pdf', new Uint8Array(b!))];
+    }, [[...png], [...pdf]]);
+    await rpc<string>('createCard', { title: 'Dot', kind: 'image', fileId: ids[0] });
+    await rpc<string>('createCard', { title: 'Doc', kind: 'pdf', fileId: ids[1] });
+
+    const range = await page.evaluate(async (id) => {
+      const r = await fetch(`loom-file://${id}`, { headers: { range: 'bytes=0-7' } });
+      return { status: r.status, bytes: (await r.arrayBuffer()).byteLength, type: r.headers.get('content-type'), sniff: r.headers.get('x-content-type-options') };
+    }, ids[0]);
+    expect(range).toEqual({ status: 206, bytes: 8, type: 'image/png', sniff: 'nosniff' });
+
+    await page.reload();
+    await page.waitForSelector('.sidebar');
+    await page.click('.app-link:has-text("Card Library")');
+    await page.locator('.card-row', { has: page.locator('.title:text-is("Dot")') }).click();
+    await pw(page.locator('img.attachment')).toHaveJSProperty('naturalWidth', 1);
+
+    await page.click('.app-link:has-text("Card Library")');
+    await page.locator('.card-row', { has: page.locator('.title:text-is("Doc")') }).click();
+    await pw(page.locator('.pdf canvas').first()).toBeVisible({ timeout: 15000 });
+    await pw(page.locator('.pdf-page .textLayer, .pdf-page span').first()).toContainText('Hello PDF', { timeout: 15000 });
+  });
+
+  it('has an application menu whose commands drive the page, without double-firing shortcuts', async () => {
+    const labels = await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.items.map((i) => i.label) ?? []);
+    expect(labels).toEqual(expect.arrayContaining(['File', 'Edit', 'Go', 'View']));
+    const tabs = () => page.locator('.tab-list .tab').count();
+    const before = await tabs();
+    await app.evaluate(({ Menu }) => {
+      const file = Menu.getApplicationMenu()!.items.find((i) => i.label === 'File')!;
+      file.submenu!.items.find((i) => i.label === 'New Tab')!.click();
+    });
+    await pw(page.locator('.tab-list .tab')).toHaveCount(before + 1);
+    await page.keyboard.press('Control+t'); // keyboard path: exactly one more tab
+    await pw(page.locator('.tab-list .tab')).toHaveCount(before + 1); // a blank tab is reused rather than stacked
+    await app.evaluate(({ Menu }) => {
+      const file = Menu.getApplicationMenu()!.items.find((i) => i.label === 'File')!;
+      file.submenu!.items.find((i) => i.label === 'Close Tab')!.click();
+    });
+    await pw(page.locator('.tab-list .tab')).toHaveCount(before);
+  });
+
   it('opens http links externally and never navigates the app window away', async () => {
     const before = page.url();
     await page.evaluate(() => { location.href = 'https://example.com/'; });

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { newCard, openCard, openNewTab, pruneTabs } from './actions.js';
-import { api } from './api.js';
+import { newCard, openApp, openCard, openNewTab, pruneTabs } from './actions.js';
+import { api, onEvent } from './api.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { GlobalSearch } from './components/GlobalSearch.js';
 import { LeftSidebar } from './components/LeftSidebar.js';
@@ -46,18 +46,29 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const run = (command: string): void => {
+      const ui = useUi.getState();
+      const tabs = useTabs.getState();
+      if (command === 'search') ui.setSearch(!ui.searchOpen);
+      else if (command === 'palette') ui.setPalette(!ui.paletteOpen);
+      else if (command === 'new-card') void newCard();
+      else if (command === 'new-tab') openNewTab();
+      else if (command === 'close-tab') tabs.close(activeGroup(tabs).activeTab);
+      else if (command === 'clip') ui.setClip(true);
+      else if (command === 'sync') void useSync.getState().sync();
+      else if (command === 'settings') openApp('settings');
+    };
     const onKey = (e: KeyboardEvent): void => {
       const mod = e.metaKey || e.ctrlKey;
       if (!mod || e.altKey) return;
       const key = e.key.toLowerCase();
-      const ui = useUi.getState();
-      const tabs = useTabs.getState();
-      if (key === 'o') (e.preventDefault(), ui.setSearch(!ui.searchOpen));
-      else if (key === 'k' && !e.shiftKey) (e.preventDefault(), ui.setPalette(!ui.paletteOpen));
-      else if (key === 'n' && !e.shiftKey) (e.preventDefault(), void newCard());
-      else if (key === 't') (e.preventDefault(), openNewTab());
-      else if (key === 'w') (e.preventDefault(), tabs.close(activeGroup(tabs).activeTab));
-      else if (e.key === 'Tab' || key === ']' || key === '[') {
+      const command = key === 'o' ? 'search' : key === 'k' && !e.shiftKey ? 'palette' : key === 'n' && !e.shiftKey ? 'new-card' : key === 't' ? 'new-tab' : key === 'w' ? 'close-tab' : '';
+      if (command) {
+        e.preventDefault();
+        return run(command);
+      }
+      if (e.key === 'Tab' || key === ']' || key === '[') {
+        const tabs = useTabs.getState();
         const g = activeGroup(tabs);
         const i = g.tabs.findIndex((t) => t.id === g.activeTab);
         const step = e.shiftKey || key === '[' ? -1 : 1;
@@ -66,7 +77,12 @@ export function App() {
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // In Electron the application menu reports the commands it owns (macOS binds these keys itself).
+    const stopMenu = onEvent('command', (payload) => typeof payload === 'string' && run(payload));
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      stopMenu();
+    };
   }, []);
 
   useEffect(() => {

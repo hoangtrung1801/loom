@@ -124,3 +124,7 @@ dt { color: var(--muted); } dd { margin: 0; }
 .journal-day h2 { margin-bottom: 14px; max-width: 760px; margin-inline: auto; }
 .journal-day .editor { max-width: 760px; margin: 0 auto; }
 @media (max-width: 760px) { .app, .app.with-panel { grid-template-columns: 200px minmax(0, 1fr); } .rightbar { display: none; } .journal-app { grid-template-columns: 1fr; } }
+
+/* Row actions (e.g. Archive in the inbox) sit over the row's bottom-right corner. */
+.card-li { position: relative; }
+.row-extra { position: absolute; right: 10px; bottom: 8px; font-size: 12px; }

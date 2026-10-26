@@ -1,12 +1,41 @@
 # Loom
 
-A local-first visual note-taking app: write **cards**, arrange them on infinite **whiteboards**, connect them, link them with `[[wikilinks]]`, and search everything instantly. Optional sync between devices through a small self-hosted server.
+A local-first visual note-taking app in the spirit of Heptabase: write **cards**, arrange them on infinite **whiteboards**, link them, tag them into **databases**, and ask an **AI** that reads your own notes and cites what it used. Everything lives in one SQLite file on your machine; syncing between devices through a small self-hosted server is optional.
 
-Loom is an original implementation. It was inspired by the general shape of tools like Heptabase (cards + whiteboards, local SQLite, Electron), but shares no code, assets or branding with any of them.
+Loom is an original implementation. It follows the *concepts* described in Heptabase's public documentation (fundamental elements, user-interface logic, use cases) and applies the same ideas to its AI context handling, but shares no code, assets or branding with it.
+
+## What's in it
+
+| Area | What you get |
+|---|---|
+| **Cards** | Eight kinds: note, journal, PDF, image, video, audio, file, highlight, plus web (clipped pages). Every block has a stable id. `/` block menu (headings, lists, to-dos, toggles, tables, callouts, code, math, dates, media), `@` to link a card or a single block, `[[wikilinks]]`, backlinks with the linking block, version history, tasks collected from every card. |
+| **Whiteboards** | Infinite canvas with pan/zoom, cards placed on many boards at once, sub-whiteboards, **sections** that carry what's inside them, text, **mind maps** (Tab adds a child), colours, connections with labels/styles/arrows, box select, duplicate (`Ctrl/⌘ D`), arrow-key nudging, undo/redo, in-board search (`Ctrl/⌘ F`), paste or drop images and files to create cards. |
+| **Apps** (left sidebar) | Inbox · Journal · Whiteboards · Card Library · Tag Database · Highlights · Chat · Trash · Settings. |
+| **Tabs** | Normal and pinned tabs, folders for pinned tabs, tab groups, drag to reorder, state restored on launch. |
+| **Side panels** | Chat · Card Library · Related cards · Journal · Highlights · Table of contents · Info · Whiteboard location · Insight · Tasks. |
+| **Search** | `Ctrl/⌘ O` searches cards, whiteboards, text on whiteboards, chats and tags with filters by kind/scope and sorting. `Ctrl/⌘ K` is the command palette. |
+| **Tags & databases** | `#tags` with typed properties (text, number, date, select, multi-select, checkbox, URL), table view per tag, values edited on the card. |
+| **PDF & media** | PDF reader with text selection → **highlight cards** that link back to the page; image/video/audio cards; content-addressed file storage. |
+| **Import / export** | Import Markdown, text, **Word (.docx)**, PDF, images, audio, video; clip a public **web page**. Export everything as Markdown or JSON from Settings. |
+| **AI** | Chat panel/app with citations that open the cited block, built-in actions (translate, summarize, mind map) and custom ones, **Research a topic**, per-card Insight suggestions. Anthropic and any OpenAI-compatible endpoint. |
+| **Sync** (optional) | Op-log replication with per-field last-write-wins; attachments sync as hashed blobs. |
+
+### How the AI gets context
+
+The chat does not paste your whole library into a prompt. The model works the way you would: it **searches**, then **reads** only what it needs, with a bounded budget.
+
+- Cards are shown as **line-addressable markdown**; the model cites `[c1:12-14]` (card handle, line range) and Loom resolves that to the real block, so a citation opens the exact paragraph.
+- Cards, boards and objects get **short run-scoped handles** (`c1`, `w1`, `p1`) instead of UUIDs, which keeps prompts small and prevents the model from inventing ids.
+- Reads go through a **three-phase token budget**: guarantee every attached card some coverage, then fill the smallest remainders first, then admit more until the budget is spent. Long cards are paged with `offset`/`limit`.
+- Whiteboards are serialized as a **tree** (sections as parents, `a -> b` for connections), with a layout mode (viewport vs. peripheral clusters) and structural truncation when large.
+- Tools are executed locally and pulled by the model in an agent loop of up to 8 steps: `search_notes`, `read_card`, `read_backlinks`, `list_whiteboards`, `read_whiteboard`, `list_tags`, `cards_with_tag`, `read_journal`. Mutating tools (`create_card`, `append_to_card`, `create_whiteboard`, `place_cards`, `create_connection`, `create_mind_map`) only run when **Allow edits** is switched on.
+- Your API key is stored locally, never returned to the page and never placed in a prompt.
+
+Configure it in **Settings → AI** (provider, model, optional base URL, key). Nothing is sent anywhere until you do, and then only to the endpoint you chose.
 
 ## Run it
 
-Requires [Bun](https://bun.sh). It's used as package manager, script runner, dev server and test runner, and it runs the sync server directly from TypeScript. Storage uses the built-in `node:sqlite`, so there are **no native modules** to rebuild.
+Requires [Bun](https://bun.sh). It's the package manager, script runner, dev server and test runner, and it runs the sync server directly from TypeScript. Storage uses the built-in `node:sqlite`, so there are **no native modules** to rebuild.
 
 | Task | Minimum Bun |
 |---|---|
@@ -22,11 +51,13 @@ bun run dev                         # renderer only, in a normal browser (talks 
 bun run package                     # installers via electron-builder (AppImage/deb, dmg, nsis)
 ```
 
-> **What Bun does not run:** the Electron app itself. Electron's main process always uses the Node.js bundled inside Electron, so the shipped app is unaffected by which runtime you develop with.
+> **What Bun does not run:** the Electron app itself. Electron's main process always uses the Node.js bundled inside Electron (Electron 45), so the shipped app is unaffected by which runtime you develop with.
 
-Bun skips dependency install scripts unless trusted; `package.json` trusts `electron` (downloads its binary) and `esbuild`. `electron-winstaller` (Windows Squirrel installers, unused here) stays blocked.
+Bun skips dependency install scripts unless trusted; `package.json` trusts `electron` (downloads its binary) and `esbuild`.
 
-Using it: double-click empty canvas to make a card · drag a card's header to move it · drag the dot on a card's edge onto another card to connect (double-click a line to label it) · `Ctrl/⌘ K` to search · scroll to pan, `Ctrl/⌘`+scroll to zoom · type `# `, `- `, `> `, `1. `, ` ``` ` for Markdown shortcuts · `[[Card title]]` links to (or creates) a card.
+### Keyboard
+
+`Ctrl/⌘ O` search · `Ctrl/⌘ K` commands · `Ctrl/⌘ N` new card · `Ctrl/⌘ T` new tab · `Ctrl/⌘ W` close tab · `Ctrl/⌘ Tab` or `[` `]` switch tabs · `/` block menu · `@` mention · on a board: `V` select, `T` text, `S` section, `M` mind map, `C` connect, `N` new card, `Ctrl/⌘ Z` undo, `Ctrl/⌘ D` duplicate, `Ctrl/⌘ F` find on the board, `Tab` adds a mind-map child and `Shift+Enter` a sibling, `Space`+drag pan, `Ctrl/⌘`+scroll zoom.
 
 ### Sync (optional)
 
@@ -34,12 +65,12 @@ Using it: double-click empty canvas to make a card · drag a card's header to mo
 LOOM_SYNC_TOKEN=choose-a-secret bun run sync-server      # listens on 127.0.0.1:8787 (PORT, LOOM_SYNC_DB to change)
 ```
 
-Then in the app: sidebar → **Sync**, enter the URL and token. Put it behind HTTPS (e.g. a reverse proxy) before exposing it beyond localhost.
+Then **Settings → Sync**, enter the URL and token. Put it behind HTTPS (e.g. a reverse proxy) before exposing it beyond localhost. Attachments (images, PDFs, …) upload to the server by SHA-256 and every download is hash-verified before it is stored; a file that fails is retried on the next sync without blocking notes.
 
 ## Troubleshooting
 
-- **`Electron failed to install correctly`**: the Electron binary wasn't downloaded. Bun doesn't run dependency install scripts unless they're trusted, and even when it does it runs them with your system `node`; on Node 26 Electron's downloader silently does nothing and exits 0. `bun run start` (and `dev:electron`) detect a missing binary and fetch it with Bun instead, falling back to Node, and only trust the result if the binary exists afterwards. If both fail it prints the installer's error and which `ELECTRON_*`/proxy variable *names* are set (never values). `ELECTRON_SKIP_BINARY_DOWNLOAD` in your environment also makes Electron skip the download; the script ignores it for the repair, but check `env | grep -i electron`. By hand: `rm -rf node_modules/electron && bun install`.
-- **`ResolveMessage {}` / `No such built-in module: node:sqlite`**: your Bun is older than 1.4. Run `bun upgrade`. (`build` and `start` no longer need it.)
+- **`Electron failed to install correctly`**: the Electron binary wasn't downloaded. Bun doesn't run dependency install scripts unless they're trusted, and even when it does it runs them with your system `node`; on Node 26 Electron's downloader silently does nothing and exits 0. `bun run start` (and `dev:electron`) detect a missing binary and fetch it with Bun instead, falling back to Node, and only trust the result if the binary exists afterwards. By hand: `rm -rf node_modules/electron && bun install`.
+- **`ResolveMessage {}` / `No such built-in module: node:sqlite`**: your Bun is older than 1.4. Run `bun upgrade`. (`build` and `start` don't need it.)
 - **`Running as root without --no-sandbox`** (containers): `bun run dev:electron --no-sandbox`.
 
 ## Architecture
@@ -48,34 +79,51 @@ Then in the app: sidebar → **Sync**, enter the URL and token. Put it behind HT
 src/core      pure TypeScript, no Electron: the whole data model, fully unit-tested
   store.ts      SQLite (node:sqlite) repository + op log + FTS5 search
   entities.ts   allow-list of synced tables/fields + zod schema for ops
-  clock.ts      hybrid logical clock
-  sync.ts       push/pull engine + HTTP transport
+  tagdb.ts      tag definitions, typed properties, table view
+  chats.ts      chat history and saved AI actions
+  files.ts      content-addressed attachment storage
+  sync.ts       push/pull engine + attachment blobs + HTTP transport
+  clip.ts       web clipper (SSRF-guarded)   docx.ts  Word → markdown
+  ai/           context budget, handles, whiteboard serializer, tools, agent loop, providers
   rpc.ts        the only surface the UI can call (named, whitelisted methods)
-src/main      Electron main + sandboxed preload (exposes just `loom.rpc`)
-src/renderer  React + Zustand + ProseMirror; whiteboard is DOM + SVG
-server        reference sync server (append-only op log over HTTP); run with `bun server/main.ts`
+src/main      Electron main + sandboxed preload + application menu
+src/renderer  React + Zustand + ProseMirror; whiteboard is DOM + SVG; pdf.js viewer
+server        reference sync server (append-only op log + blob store); `bun server/main.ts`
 ```
 
-**Data & sync.** Every change is an *op*: `{entity, entityId, fields, hlc timestamp, device}`. Ops are applied with per-field last-write-wins ordered by a hybrid logical clock, so merging is idempotent, commutative and needs no coordination. Rows live in ordinary tables (so queries are plain SQL); the `ops` table is the replication log. Deletes are soft (`deleted_at`). The server never interprets ops.
+**Data & sync.** Every change is an *op*: `{entity, entityId, fields, hlc timestamp, device}`. Ops are applied with per-field last-write-wins ordered by a hybrid logical clock, so merging is idempotent, commutative and needs no coordination. Rows live in ordinary tables (so queries are plain SQL); the `ops` table is the replication log. Deletes are soft (`deleted_at`). Backlinks, tasks and the search indexes are derived locally and never synced. The server never interprets ops.
 
-**Search.** FTS5 index of title + body text, rebuilt on every card change (local or remote). Prefix matching so results update as you type.
+**Search.** FTS5 over card title and body (and whiteboard names, board text, chats), prefix matching so results update as you type.
 
-**Security.** Context isolation + sandbox on; renderer has no Node access; IPC checks the sender's origin and a method whitelist; navigation is locked and links open in the OS browser; strict CSP. Because card content can come from other devices it is treated as untrusted: ops are validated against the field allow-list before touching SQL, link `href`s are limited to http/https/mailto, and the editor schema has no images. Content that can't be parsed opens read-only and is never overwritten.
+**Security.** Context isolation and sandbox on; the page has no Node access, only `rpc`, `upload` and `onEvent`; IPC checks the sender's origin and a method whitelist; navigation is locked and links open in the OS browser; strict CSP. Attachments are served from `loom-file://` with range support, `nosniff` and a MIME allow-list (anything else downloads as opaque bytes). Because content can arrive from other devices it is treated as untrusted: ops are validated against the field allow-list before touching SQL, link `href`s are limited to http/https/mailto, and content that can't be parsed opens read-only and is never overwritten. The web clipper only fetches public http(s) addresses: it resolves DNS itself, refuses loopback/private/link-local/metadata ranges (re-checked on every redirect), caps size and time, and never runs scripts.
 
 ## Tests
 
 ```bash
 bun run typecheck
-bun run test            # 24 unit tests: store, search, merge/convergence, sync server, RPC
-bun run test:e2e        # 11 browser tests (Playwright + Chromium) against the dev server
-bun run test:electron   # real Electron under xvfb, incl. two devices syncing via the server
+bun run test            # 85 unit tests: store, search, merge/convergence, sync + attachments, AI engine against a mock LLM (Anthropic and OpenAI protocols), clipper, docx, RPC
+bun run test:e2e        # 37 browser tests (Playwright + Chromium): cards/editor, whiteboards, tabs/search/commands/export, AI chat; fails on any console error
+bun run test:electron   # real Electron under xvfb: isolation, CSP + loom-file:// + PDF rendering, menu, restart persistence, two devices syncing
 ```
+
+The browser tests need a Chromium for Playwright (`/opt/pw-browsers/chromium-*` or `CHROME` in `e2e/harness.ts`).
+
+## Not included (on purpose)
+
+Loom covers the single-user, local-first core. These parts of Heptabase are **not** implemented:
+
+- Real-time collaboration, shared whiteboards, teams and permissions
+- Mobile apps
+- Zotero / Readwise / other third-party integrations
+- Accounts, billing and hosted AI (bring your own key instead)
+- YouTube transcripts and an embedded browser tab; web pages are clipped as text cards instead (no scripts, no login-gated pages)
+- OCR, and importing `.doc`/Pages/Notion/Evernote archives (Markdown, text and `.docx` are supported)
 
 ## Known limitations
 
-- **Concurrent edits to the *same card body* are last-writer-wins for the whole document** (title, position, tags etc. merge per field). A text CRDT (e.g. Yjs) would merge typing from two devices; this does not.
-- Sync has no history compaction, no end-to-end encryption, and a single shared token. The token is stored unencrypted in the local database.
-- Renaming a card doesn't rewrite `[[links]]` that point at it.
-- No trash/restore UI yet (deletes are soft, so it's possible to add), and no images, PDFs, web cards, mind maps or AI features.
+- **Concurrent edits to the *same card body* are last-writer-wins for the whole document** (title, position, tags, properties etc. merge per field). A text CRDT (e.g. Yjs) would merge typing from two devices; this does not.
+- Sync has no history compaction, no end-to-end encryption, and a single shared token stored unencrypted in the local database. The reference server keeps attachment bytes in SQLite, which is fine for personal use but not for large libraries.
+- Renaming a card doesn't rewrite `[[links]]` that point at it (`@` mentions follow the card id and stay correct).
+- The AI quality depends on the model you configure; with tools that mutate notes, review what it did (Undo on boards, History on cards, Trash).
 - `node:sqlite` is still flagged experimental by Node and Electron; the API surface used here is small and covered by tests.
-- Installers other than the unpacked Linux build were configured but not built here.
+- Installers other than the unpacked Linux build were configured but not built here (the Linux build was verified to start from its `app.asar`).

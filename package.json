@@ -15,6 +15,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "katex": "^0.19.0",
+    "pdfjs-dist": "^6.4.299",
     "playwright-core": "^1.64.1",
     "prosemirror-commands": "^1.7.2",
     "prosemirror-dropcursor": "^1.8.4",
@@ -90,8 +91,5 @@
   "trustedDependencies": [
     "electron",
     "esbuild"
-  ],
-  "dependencies": {
-    "pdfjs-dist": "^6.4.299"
-  }
+  ]
 }

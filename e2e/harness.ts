@@ -34,12 +34,17 @@ export function useBrowser(options: { open?: boolean } = {}): Harness {
     await browser?.close();
     await server?.close();
   });
+  afterEach(() => {
+    expect(errors, 'the page logged errors').toEqual([]);
+  });
   beforeEach(async () => {
     await context?.close();
     errors.length = 0;
     const ctx = (context = await browser.newContext({ viewport: { width: 1400, height: 860 } }));
     page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push(e.message));
+    // Failed RPCs are expected in tests that check error handling; everything else on the console is a bug.
+    page.on('console', (m) => m.type() === 'error' && !m.text().startsWith('Failed to load resource') && errors.push(`console: ${m.text()}`));
     // Registering listeners makes Playwright intercept native dialogs/file choosers instead of leaving them blocking input.
     page.on('dialog', (d) => void d.dismiss());
     page.on('filechooser', () => undefined);
