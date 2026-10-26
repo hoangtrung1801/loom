@@ -24,6 +24,7 @@ const PATHS = {
   location: 'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11zm0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
   task: 'M9 11l3 3 7-8M5 5h9M5 19h14',
+  memo: 'M5 5h14v10l-4 4H5V5zM15 19v-4h4M8 9h8M8 13h4',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   card: 'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm0 5h15',
   pdf: 'M6 3h8l5 5v13H6V3zm8 0v5h5',
@@ -73,4 +74,7 @@ export const KIND_ICON: Record<string, IconName> = {
   file: 'file',
   highlight: 'highlight',
   web: 'globe',
+  task: 'task',
+  link: 'link',
+  memo: 'memo',
 };

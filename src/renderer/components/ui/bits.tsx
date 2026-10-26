@@ -44,7 +44,7 @@ type Row = Pick<CardSummary, 'id' | 'title' | 'kind'> & Partial<Pick<CardSummary
 
 /** One card in any list: draggable onto whiteboards, opens on click. */
 export function CardRow({ card, hit, onOpen, extra, selected }: { card: Row; hit?: SearchHit; onOpen?(newTab: boolean): void; extra?: React.ReactNode; selected?: boolean }) {
-  const title = card.title || (card.kind === 'journal' ? card.journalDate : '') || 'Untitled';
+  const title = card.title || (card.kind === 'journal' ? card.journalDate : '') || (card.kind === 'memo' ? card.preview?.split('\n')[0]?.slice(0, 80) : '') || 'Untitled';
   return (
     <li className="card-li">
       <button

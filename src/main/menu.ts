@@ -1,6 +1,6 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron';
 
-export type MenuCommand = 'new-card' | 'new-tab' | 'close-tab' | 'search' | 'palette' | 'clip' | 'sync' | 'settings';
+export type MenuCommand = 'new-card' | 'new-tab' | 'close-tab' | 'search' | 'palette' | 'clip' | 'save-link' | 'new-task' | 'sync' | 'settings';
 
 /**
  * The application menu. Without one, macOS binds Cmd+W to "Close Window" and Cmd+N to nothing, so tab and
@@ -27,6 +27,8 @@ export function installMenu(send: (command: MenuCommand) => void, options: { dev
         item('New Tab', 'CmdOrCtrl+T', 'new-tab'),
         item('Close Tab', 'CmdOrCtrl+W', 'close-tab'),
         { type: 'separator' },
+        item('New Task', undefined, 'new-task'),
+        item('Save Link…', undefined, 'save-link'),
         item('Clip Web Page…', undefined, 'clip'),
         item('Sync Now', undefined, 'sync'),
         ...(mac ? [] : [{ type: 'separator' } as MenuItemConstructorOptions, item('Settings', undefined, 'settings'), { role: 'quit' } as MenuItemConstructorOptions]),

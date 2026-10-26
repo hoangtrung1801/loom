@@ -12,7 +12,7 @@ export const PANELS: Record<PanelId, { label: string; icon: IconName }> = {
   info: { label: 'Info', icon: 'info' },
   location: { label: 'Whiteboard location', icon: 'location' },
   insight: { label: 'Insight', icon: 'star' },
-  tasks: { label: 'Tasks', icon: 'task' },
+  tasks: { label: 'To-dos', icon: 'task' },
 };
 
 /** Which side panels make sense for a tab, in button order. */

@@ -19,7 +19,7 @@ export function TasksPanel({ tab }: { tab: Tab }) {
   }, [tab.type, tab.ref, version]);
   return (
     <div className="panel">
-      {tasks.length === 0 ? <Empty title="No tasks">Type [] at the start of a line to add a to-do.</Empty> : <ul className="task-list">{tasks.map((t) => <TaskRow key={`${t.cardId}:${t.blockId}`} task={t} />)}</ul>}
+      {tasks.length === 0 ? <Empty title="No to-dos">Type [] at the start of a line to add a to-do.</Empty> : <ul className="task-list">{tasks.map((t) => <TaskRow key={`${t.cardId}:${t.blockId}`} task={t} />)}</ul>}
     </div>
   );
 }

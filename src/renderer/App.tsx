@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { newCard, openApp, openCard, openNewTab, pruneTabs } from './actions.js';
+import { newCard, newTask, openApp, openCard, openNewTab, pruneTabs } from './actions.js';
 import { api, onEvent } from './api.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { GlobalSearch } from './components/GlobalSearch.js';
@@ -54,7 +54,9 @@ export function App() {
       else if (command === 'new-card') void newCard();
       else if (command === 'new-tab') openNewTab();
       else if (command === 'close-tab') tabs.close(activeGroup(tabs).activeTab);
-      else if (command === 'clip') ui.setClip(true);
+      else if (command === 'clip') ui.setClip(true, 'page');
+      else if (command === 'save-link') ui.setClip(true, 'link');
+      else if (command === 'new-task') void newTask();
       else if (command === 'sync') void useSync.getState().sync();
       else if (command === 'settings') openApp('settings');
     };

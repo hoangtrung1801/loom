@@ -8,11 +8,12 @@ Loom is an original implementation. It follows the *concepts* described in Hepta
 
 | Area | What you get |
 |---|---|
-| **Cards** | Eight kinds: note, journal, PDF, image, video, audio, file, highlight, plus web (clipped pages). Every block has a stable id. `/` block menu (headings, lists, to-dos, toggles, tables, callouts, code, math, dates, media), `@` to link a card or a single block, `[[wikilinks]]`, backlinks with the linking block, version history, tasks collected from every card. |
+| **Cards** | Twelve kinds: note, journal, PDF, image, video, audio, file, highlight, web (clipped pages), and the three below. Every block has a stable id. `/` block menu (headings, lists, to-dos, toggles, tables, callouts, code, math, dates, media), `@` to link a card or a single block, `[[wikilinks]]`, backlinks with the linking block, version history, tasks collected from every card. |
+| **Tasks, links, memos** | Three more kinds of knowledge, modelled on [Know-Me](https://github.com/hoangtrung1801/know-me). They are cards, so they sit on whiteboards, take tags, show backlinks, appear in search, export, sync and reach the AI like any other card. **Tasks**: status (to do / in progress / in review / done / blocked / on hold), priority, assignee, due date, labels (tags), subtasks, acceptance criteria and plan as to-do lists; a Kanban board (drag between columns) and a list view with filters. **Links**: paste an address and Loom reads the title, description and preview image from a public page (SSRF-guarded), suggests tags when AI is configured (reusing your existing tags), and treats tracking-parameter variants of a URL as the same link. **Memos**: type, Enter, saved; later turn one into a note or a task. |
 | **Whiteboards** | Infinite canvas with pan/zoom, cards placed on many boards at once, sub-whiteboards, **sections** that carry what's inside them, text, **mind maps** (Tab adds a child), colours, connections with labels/styles/arrows, box select, duplicate (`Ctrl/⌘ D`), arrow-key nudging, undo/redo, in-board search (`Ctrl/⌘ F`), paste or drop images and files to create cards. |
-| **Apps** (left sidebar) | Inbox · Journal · Whiteboards · Card Library · Tag Database · Highlights · Chat · Trash · Settings. |
+| **Apps** (left sidebar) | Inbox · Journal · Whiteboards · Card Library · Tag Database · Tasks · Links · Memos · Highlights · Chat · Trash · Settings. |
 | **Tabs** | Normal and pinned tabs, folders for pinned tabs, tab groups, drag to reorder, state restored on launch. |
-| **Side panels** | Chat · Card Library · Related cards · Journal · Highlights · Table of contents · Info · Whiteboard location · Insight · Tasks. |
+| **Side panels** | Chat · Card Library · Related cards · Journal · Highlights · Table of contents · Info · Whiteboard location · Insight · To-dos (the checkbox items from every card). |
 | **Search** | `Ctrl/⌘ O` searches cards, whiteboards, text on whiteboards, chats and tags with filters by kind/scope and sorting. `Ctrl/⌘ K` is the command palette. |
 | **Tags & databases** | `#tags` with typed properties (text, number, date, select, multi-select, checkbox, URL), table view per tag, values edited on the card. |
 | **PDF & media** | PDF reader with text selection → **highlight cards** that link back to the page; image/video/audio cards; content-addressed file storage. |
@@ -28,7 +29,7 @@ The chat does not paste your whole library into a prompt. The model works the wa
 - Cards, boards and objects get **short run-scoped handles** (`c1`, `w1`, `p1`) instead of UUIDs, which keeps prompts small and prevents the model from inventing ids.
 - Reads go through a **three-phase token budget**: guarantee every attached card some coverage, then fill the smallest remainders first, then admit more until the budget is spent. Long cards are paged with `offset`/`limit`.
 - Whiteboards are serialized as a **tree** (sections as parents, `a -> b` for connections), with a layout mode (viewport vs. peripheral clusters) and structural truncation when large.
-- Tools are executed locally and pulled by the model in an agent loop of up to 8 steps: `search_notes`, `read_card`, `read_backlinks`, `list_whiteboards`, `read_whiteboard`, `list_tags`, `cards_with_tag`, `read_journal`. Mutating tools (`create_card`, `append_to_card`, `create_whiteboard`, `place_cards`, `create_connection`, `create_mind_map`) only run when **Allow edits** is switched on.
+- Tools are executed locally and pulled by the model in an agent loop of up to 8 steps: `search_notes`, `read_card`, `read_backlinks`, `list_whiteboards`, `read_whiteboard`, `list_tags`, `cards_with_tag`, `read_journal`, `list_tasks`, `list_links`, `list_memos`. Mutating tools (`create_card`, `append_to_card`, `create_task`, `update_task`, `save_link`, `add_memo`, `create_whiteboard`, `place_cards`, `create_connection`, `create_mind_map`) only run when **Allow edits** is switched on.
 - Your API key is stored locally, never returned to the page and never placed in a prompt.
 
 Configure it in **Settings → AI** (provider, model, optional base URL, key). Nothing is sent anywhere until you do, and then only to the endpoint you chose.
@@ -83,7 +84,8 @@ src/core      pure TypeScript, no Electron: the whole data model, fully unit-tes
   chats.ts      chat history and saved AI actions
   files.ts      content-addressed attachment storage
   sync.ts       push/pull engine + attachment blobs + HTTP transport
-  clip.ts       web clipper (SSRF-guarded)   docx.ts  Word → markdown
+  work.ts       tasks, saved links, memos   url.ts  link normalisation
+  clip.ts       web clipper + link previews (SSRF-guarded)   docx.ts  Word → markdown
   ai/           context budget, handles, whiteboard serializer, tools, agent loop, providers
   rpc.ts        the only surface the UI can call (named, whitelisted methods)
 src/main      Electron main + sandboxed preload + application menu
@@ -101,8 +103,8 @@ server        reference sync server (append-only op log + blob store); `bun serv
 
 ```bash
 bun run typecheck
-bun run test            # 85 unit tests: store, search, merge/convergence, sync + attachments, AI engine against a mock LLM (Anthropic and OpenAI protocols), clipper, docx, RPC
-bun run test:e2e        # 37 browser tests (Playwright + Chromium): cards/editor, whiteboards, tabs/search/commands/export, AI chat; fails on any console error
+bun run test            # 110 unit tests: store, search, merge/convergence, sync + attachments, AI engine against a mock LLM (Anthropic and OpenAI protocols), clipper, docx, tasks/links/memos, RPC
+bun run test:e2e        # 42 browser tests (Playwright + Chromium): cards/editor, whiteboards, tabs/search/commands/export, AI chat, tasks/links/memos; fails on any console error
 bun run test:electron   # real Electron under xvfb: isolation, CSP + loom-file:// + PDF rendering, menu, restart persistence, two devices syncing
 ```
 

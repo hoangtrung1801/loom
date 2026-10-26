@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CardSummary } from '../../../core/store.js';
 import { api } from '../../api.js';
-import { newBoard, newCard, openApp, openJournal } from '../../actions.js';
+import { newBoard, newCard, newTask, openApp, openJournal } from '../../actions.js';
 import { useData } from '../../store/data.js';
 import { useUi } from '../../store/ui.js';
 import { Icon, type IconName } from '../Icon.js';
@@ -14,7 +14,10 @@ const START: { label: string; icon: IconName; run(): void }[] = [
   { label: 'New whiteboard', icon: 'board', run: () => void newBoard() },
   { label: 'Search…', icon: 'search', run: () => useUi.getState().setSearch(true) },
   { label: 'Research a topic', icon: 'sparkle', run: () => useUi.getState().setResearch(true) },
-  { label: 'Clip a web page', icon: 'globe', run: () => useUi.getState().setClip(true) },
+  { label: 'New task', icon: 'task', run: () => void newTask() },
+  { label: 'Quick memo', icon: 'memo', run: () => openApp('memos') },
+  { label: 'Save a link', icon: 'link', run: () => useUi.getState().setClip(true, 'link') },
+  { label: 'Clip a web page', icon: 'globe', run: () => useUi.getState().setClip(true, 'page') },
   { label: 'Card Library', icon: 'library', run: () => openApp('library') },
 ];
 

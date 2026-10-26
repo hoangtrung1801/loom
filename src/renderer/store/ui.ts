@@ -25,13 +25,15 @@ interface UiState {
   menu: { x: number; y: number; items: MenuItem[] } | null;
   researchOpen: boolean;
   clipOpen: boolean;
+  /** 'link' saves a bookmark with a preview; 'page' clips the readable text into a card. */
+  clipMode: 'link' | 'page';
 
   setPanel(panel: PanelId | null): void;
   togglePanel(panel: PanelId): void;
   setSearch(open: boolean): void;
   setPalette(open: boolean): void;
   setResearch(open: boolean): void;
-  setClip(open: boolean): void;
+  setClip(open: boolean, mode?: 'link' | 'page'): void;
   openChat(seed?: ContextRef[] | null, chatId?: string | null, auto?: string | null): void;
   clearChatAuto(): void;
   showMenu(x: number, y: number, items: MenuItem[]): void;
@@ -60,6 +62,7 @@ export const useUi = create<UiState>((set, get) => ({
   menu: null,
   researchOpen: false,
   clipOpen: false,
+  clipMode: 'link',
 
   setPanel(panel) {
     set({ panel });
@@ -74,7 +77,7 @@ export const useUi = create<UiState>((set, get) => ({
   setSearch: (searchOpen) => set({ searchOpen, paletteOpen: false }),
   setPalette: (paletteOpen) => set({ paletteOpen, searchOpen: false }),
   setResearch: (researchOpen) => set({ researchOpen }),
-  setClip: (clipOpen) => set({ clipOpen }),
+  setClip: (clipOpen, mode) => set((s) => ({ clipOpen, clipMode: mode ?? s.clipMode })),
   openChat(seed = null, chatId = null, auto = null) {
     set({ chatSeed: seed, chatId, chatAuto: auto });
     get().setPanel('chat');

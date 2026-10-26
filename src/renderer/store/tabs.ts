@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 
 export type TabType = 'newtab' | 'app' | 'whiteboard' | 'card' | 'tag' | 'chat';
-export type AppId = 'inbox' | 'journal' | 'whiteboards' | 'library' | 'tags' | 'highlights' | 'chats' | 'trash' | 'settings';
-export const APP_IDS: readonly AppId[] = ['inbox', 'journal', 'whiteboards', 'library', 'tags', 'highlights', 'chats', 'trash', 'settings'];
+export type AppId = 'inbox' | 'journal' | 'whiteboards' | 'library' | 'tags' | 'highlights' | 'tasks' | 'links' | 'memos' | 'chats' | 'trash' | 'settings';
+export const APP_IDS: readonly AppId[] = ['inbox', 'journal', 'whiteboards', 'library', 'tags', 'highlights', 'tasks', 'links', 'memos', 'chats', 'trash', 'settings'];
 
 export interface Tab {
   id: string;

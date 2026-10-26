@@ -23,6 +23,19 @@ export async function newCard(options: { open?: boolean; title?: string } = {}):
   return id;
 }
 
+/** A task with the Acceptance criteria / Plan / Notes headings, opened for editing. */
+export async function newTask(options: { open?: boolean; title?: string; status?: string; parentId?: string } = {}): Promise<string | undefined> {
+  const id = await mutate(() => api.createWorkTask({ title: options.title ?? NEW_TASK_TITLE, status: options.status, parentId: options.parentId, scaffold: options.title === undefined }));
+  if (id && options.open !== false) openCard(id);
+  return id;
+}
+export const NEW_TASK_TITLE = 'New task';
+
+/** Quick capture: a memo is just the text, no title. */
+export async function newMemo(text: string): Promise<string | undefined> {
+  return mutate(() => api.addMemo(text));
+}
+
 export async function newBoard(name = 'Untitled whiteboard', parentId = ''): Promise<string | undefined> {
   const id = await mutate(() => api.createWhiteboard(name, parentId));
   if (id) openBoard(id);

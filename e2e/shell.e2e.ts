@@ -87,8 +87,8 @@ describe('search, commands and tabs', () => {
     await page().click('.card-row:has(.title:text-is("Welcome to Loom"))');
     await page().click('button[aria-label="Table of contents"]');
     await pw(page().locator('.rightbar')).toContainText('No headings');
-    await page().click('button[aria-label="Tasks"]');
-    await pw(page().locator('.rightbar')).toContainText('No tasks');
+    await page().click('button[aria-label="To-dos"]');
+    await pw(page().locator('.rightbar')).toContainText('No to-dos');
     await pw(page().locator('button[aria-label="Related cards"]')).toHaveCount(0); // only offered on whiteboards
     await page().click('button[aria-label="Journal"]');
     await pw(page().locator('.rightbar[aria-label="Journal"]')).toBeVisible();

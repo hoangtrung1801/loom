@@ -1,13 +1,14 @@
 import { lazy, Suspense, useEffect, useRef } from 'react';
 import { fileUrl } from '../../api.js';
 import { api } from '../../api.js';
-import { openByTitle, trashCard } from '../../actions.js';
+import { NEW_TASK_TITLE, openByTitle, trashCard } from '../../actions.js';
 import { Editor } from '../../editor/Editor.js';
 import { mutate } from '../../store/data.js';
 import { editCard, useCardDetail } from '../../store/edits.js';
 import { CardProps } from '../CardProps.js';
 import { Icon } from '../Icon.js';
 import { TagEditor } from '../TagEditor.js';
+import { ConvertBar, LinkHeader, TaskHeader } from '../WorkHeaders.js';
 import { Empty, timeAgo } from '../ui/bits.js';
 import { isFileId } from '../../../core/fileid.js';
 import type { CardDetail } from '../../../core/store.js';
@@ -39,17 +40,22 @@ export function CardPage({ id }: { id: string }) {
         <input
           className="card-title"
           value={card.title}
-          placeholder={card.kind === 'journal' ? card.journalDate : 'Untitled'}
+          placeholder={card.kind === 'journal' ? card.journalDate : card.kind === 'memo' ? 'Memo (no title)' : 'Untitled'}
           aria-label="Card title"
+          autoFocus={card.kind === 'task' && card.title === NEW_TASK_TITLE}
+          onFocus={(e) => card.kind === 'task' && card.title === NEW_TASK_TITLE && e.currentTarget.select()}
           onChange={(e) => editCard(card.id, { title: e.target.value })}
         />
         <p className="card-meta">
           <span className="kind">{card.kind}</span>
           <span>Edited {timeAgo(card.updatedAt)}</span>
           <span>{card.wordCount} words</span>
+          <ConvertBar card={card} />
           {card.inbox && <button className="link" onClick={() => void mutate(() => api.setInbox(card.id, false))}>Archive from inbox</button>}
         </p>
 
+        {card.kind === 'task' && <TaskHeader card={card} />}
+        {card.kind === 'link' && <LinkHeader card={card} />}
         <TagEditor cardId={card.id} tags={card.tags} />
         <CardProps cardId={card.id} />
 
@@ -60,7 +66,7 @@ export function CardPage({ id }: { id: string }) {
           value={card.content}
           onChange={(json) => editCard(card.id, { content: json })}
           onOpenLink={(t) => void openByTitle(t)}
-          placeholder={card.kind === 'note' || card.kind === 'journal' ? 'Write something… type / for blocks, @ to link a card' : 'Add notes…'}
+          placeholder={card.kind === 'note' || card.kind === 'journal' || card.kind === 'memo' ? 'Write something… type / for blocks, @ to link a card' : 'Add notes…'}
           autoFocus={!card.title && !card.content}
         />
 

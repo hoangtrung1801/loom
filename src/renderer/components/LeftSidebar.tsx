@@ -13,16 +13,19 @@ const APPS: { id: AppId; label: string; icon: IconName }[] = [
   { id: 'whiteboards', label: 'Whiteboards', icon: 'board' },
   { id: 'library', label: 'Card Library', icon: 'library' },
   { id: 'tags', label: 'Tag Database', icon: 'tag' },
+  { id: 'tasks', label: 'Tasks', icon: 'task' },
+  { id: 'links', label: 'Links', icon: 'link' },
+  { id: 'memos', label: 'Memos', icon: 'memo' },
   { id: 'highlights', label: 'Highlights', icon: 'highlight' },
   { id: 'chats', label: 'Chat', icon: 'chat' },
 ];
 
 export const APP_LABEL: Record<AppId, string> = {
   inbox: 'Inbox', journal: 'Journal', whiteboards: 'Whiteboards', library: 'Card Library', tags: 'Tag Database', highlights: 'Highlights',
-  chats: 'Chat', trash: 'Trash', settings: 'Settings',
+  tasks: 'Tasks', links: 'Links', memos: 'Memos', chats: 'Chat', trash: 'Trash', settings: 'Settings',
 };
 const APP_ICON: Record<AppId, IconName> = {
-  inbox: 'inbox', journal: 'journal', whiteboards: 'board', library: 'library', tags: 'tag', highlights: 'highlight', chats: 'chat', trash: 'trash', settings: 'settings',
+  inbox: 'inbox', journal: 'journal', whiteboards: 'board', library: 'library', tags: 'tag', highlights: 'highlight', tasks: 'task', links: 'link', memos: 'memo', chats: 'chat', trash: 'trash', settings: 'settings',
 };
 
 /** Label and icon for a tab, resolved from live data so renames show immediately. */
@@ -37,7 +40,7 @@ export function useTabMeta(): (tab: Tab) => { title: string; icon: IconName } {
       case 'whiteboard': return { title: boards.find((b) => b.id === tab.ref)?.name || 'Untitled whiteboard', icon: 'board' };
       case 'card': {
         const c = index.find((x) => x.id === tab.ref);
-        return { title: c ? c.title || (c.kind === 'journal' ? c.journalDate : 'Untitled') : 'Card', icon: KIND_ICON[c?.kind ?? 'note'] ?? 'card' };
+        return { title: c ? c.title || (c.kind === 'journal' ? c.journalDate : c.kind === 'memo' ? 'Memo' : 'Untitled') : 'Card', icon: KIND_ICON[c?.kind ?? 'note'] ?? 'card' };
       }
       case 'tag': return { title: `#${tab.ref}`, icon: 'tag' };
       case 'chat': return { title: chats.find((c) => c.id === tab.ref)?.title || 'Chat', icon: 'chat' };

@@ -28,8 +28,8 @@ export function Inbox() {
         <button className="btn primary" onClick={() => void newCard()}><Icon name="plus" size={14} /> New card</button>
       </div>
       {tasks.length > 0 && (
-        <section aria-label="Unfinished tasks">
-          <h3>Unfinished tasks</h3>
+        <section aria-label="Unfinished to-dos">
+          <h3>Unfinished to-dos</h3>
           <ul className="task-list">
             {tasks.map((t) => <TaskRow key={`${t.cardId}:${t.blockId}`} task={t} />)}
           </ul>
