@@ -1,9 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { activeTab, useTabs, type Tab } from '../store/tabs.js';
-import { useUi } from '../store/ui.js';
-import { Icon } from './Icon.js';
 import { useTabMeta } from './LeftSidebar.js';
-import { PANELS, panelsFor } from './panels/registry.js';
 import { CardLibrary } from './pages/CardLibrary.js';
 import { CardPage } from './pages/CardPage.js';
 import { ChatsApp } from './pages/ChatsApp.js';
@@ -51,30 +48,9 @@ function Page({ tab }: { tab: Tab }) {
 export function TabView() {
   const tab = useTabs((s) => activeTab(s));
   const meta = useTabMeta()(tab);
-  const panel = useUi((s) => s.panel);
-  const toggle = useUi((s) => s.togglePanel);
-  const available = panelsFor(tab);
 
   return (
     <section className="tabview" aria-label={meta.title}>
-      <header className="tabhead">
-        <Icon name={meta.icon} />
-        <h1 className="ellipsis grow">{meta.title}</h1>
-        <div className="panel-buttons" role="toolbar" aria-label="Side panels">
-          {available.map((id) => (
-            <button
-              key={id}
-              className={`icon-btn${panel === id ? ' on' : ''}`}
-              aria-pressed={panel === id}
-              title={PANELS[id].label}
-              aria-label={PANELS[id].label}
-              onClick={() => toggle(id)}
-            >
-              <Icon name={PANELS[id].icon} />
-            </button>
-          ))}
-        </div>
-      </header>
       <div className="tabbody" key={tab.id}>
         <Page tab={tab} />
       </div>

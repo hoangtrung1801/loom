@@ -2,28 +2,28 @@
 .canvas { position: relative; flex: 1; overflow: hidden; touch-action: none; background-image: radial-gradient(circle, var(--grid) 1.2px, transparent 1.3px); user-select: none; }
 .layer { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
 .edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
-.edge-line { fill: none; stroke: var(--edge); stroke-width: 2; }
+.edge-line { fill: none; stroke: var(--edge); stroke-width: 1.6; }
 .edge-line.preview { stroke: var(--accent); stroke-dasharray: 5 4; }
 .edge-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
 .edge.selected .edge-line { stroke-width: 3.5; filter: drop-shadow(0 0 3px var(--accent)); }
 .edge-label { fill: var(--text); font-size: 13px; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
-.mind-edge { fill: none; stroke: var(--edge); stroke-width: 2.2; }
-.board-head { position: absolute; top: 10px; left: 14px; z-index: 5; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 3px 8px; box-shadow: var(--shadow); }
+.mind-edge { fill: none; stroke: var(--edge); stroke-width: 1.8; }
+.board-head { position: absolute; top: 12px; left: 14px; z-index: 5; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 3px 8px; box-shadow: var(--shadow); font-size: 13px; }
 .board-title { border: 0; background: transparent; font-weight: 600; font-size: 14px; width: 220px; padding: 3px 4px; }
 .board-empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; color: var(--muted); pointer-events: none; }
 .board-empty strong { color: var(--text); }
 
-.obj { position: absolute; background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: visible; cursor: grab; }
+.obj { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: visible; cursor: grab; }
 .obj:active { cursor: grabbing; }
 .obj.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .obj.dim { opacity: 0.25; }
 .obj.match { box-shadow: 0 0 0 3px var(--c-yellow), var(--shadow); }
 .obj[class*='c-']:not(.mind):not(.text-obj) { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
 .obj.editing { cursor: default; z-index: 3; }
-.card-obj > header { display: flex; gap: 6px; align-items: center; padding: 6px 8px 4px 10px; color: var(--muted); }
+.card-obj > header { display: flex; gap: 6px; align-items: center; padding: 10px 10px 4px 12px; color: var(--muted); }
 .card-obj > header strong { color: var(--text); flex: 1; min-width: 0; font-size: 13px; }
 .obj-title { flex: 1; min-width: 0; border: 0; background: transparent; font-weight: 600; padding: 0; }
-.obj-body { padding: 0 10px 8px; overflow: hidden; flex: 1; min-height: 0; font-size: 12.5px; }
+.obj-body { padding: 0 12px 10px; color: var(--text-2); overflow: hidden; flex: 1; min-height: 0; font-size: 12.5px; }
 .obj.editing .obj-body { overflow: auto; cursor: text; }
 .obj-body img, .obj-body video { width: 100%; max-height: 100%; object-fit: cover; border-radius: 6px; display: block; }
 .obj-body .md { font-size: 12.5px; line-height: 1.45; max-height: 100%; overflow: hidden; }
@@ -36,8 +36,8 @@
 .text-obj.mind.c-red, .text-obj.mind.c-orange, .text-obj.mind.c-yellow, .text-obj.mind.c-green, .text-obj.mind.c-blue, .text-obj.mind.c-purple, .text-obj.mind.c-pink, .text-obj.mind.c-gray { color: var(--text); background: color-mix(in srgb, var(--c) 14%, var(--surface)); }
 .text-body { white-space: pre-wrap; word-break: break-word; line-height: 1.3; }
 .text-obj textarea { width: 100%; height: 100%; border: 0; background: transparent; resize: none; padding: 0; line-height: 1.3; outline: none; }
-.section-obj { background: color-mix(in srgb, var(--c, var(--c-gray)) 8%, transparent); border: 2px dashed color-mix(in srgb, var(--c, var(--c-gray)) 50%, var(--border)); box-shadow: none; cursor: grab; }
-.section-obj > header { padding: 8px 12px; font-size: 14px; color: var(--muted); }
+.section-obj { background: color-mix(in srgb, var(--c, var(--accent)) 7%, transparent); border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 22%, var(--border)); border-radius: var(--r-lg); box-shadow: none; cursor: grab; }
+.section-obj > header { padding: 10px 14px; font-size: 13px; font-weight: 600; color: color-mix(in srgb, var(--c, var(--accent)) 70%, var(--text)); }
 .section-obj > header input { background: transparent; border: 0; font: inherit; width: 100%; padding: 0; }
 .board-obj { align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 8px; border-style: dashed; }
 .board-obj strong { max-width: 100%; }
@@ -47,10 +47,10 @@
 .marquee { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; }
 .marquee.section { border-style: dashed; }
 
-.board-toolbar { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 2px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; box-shadow: var(--shadow); }
+.board-toolbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 2px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 13px; padding: 5px; box-shadow: var(--shadow-lg); }
 .tool { display: grid; justify-items: center; gap: 1px; padding: 4px 9px; border-radius: 8px; color: var(--muted); font-size: 11px; min-width: 48px; }
 .tool:hover { background: var(--surface-2); color: var(--text); }
-.tool.on { background: var(--accent-soft); color: var(--accent); }
+.tool.on { background: var(--ink); color: var(--on-ink); }
 .board-toolbar .sep, .selection-bar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 4px 2px; }
 .selection-bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; box-shadow: var(--shadow); }
 .selection-bar input, .selection-bar select { padding: 2px 6px; font-size: 12.5px; }

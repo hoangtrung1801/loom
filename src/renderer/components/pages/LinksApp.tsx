@@ -42,9 +42,14 @@ export function LinksApp() {
   }, [q, tag, version]);
 
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [allCount, setAllCount] = useState(0);
   useEffect(() => {
     let live = true;
-    void api.listLinks({}).then((l) => live && setAllTags([...new Set(l.flatMap((x) => x.tags))].sort()));
+    void api.listLinks({}).then((l) => {
+      if (!live) return;
+      setAllTags([...new Set(l.flatMap((x) => x.tags))].sort());
+      setAllCount(l.length);
+    });
     return () => {
       live = false;
     };
@@ -63,18 +68,18 @@ export function LinksApp() {
 
   return (
     <div className="page wide links-app">
-      <div className="page-head"><h2 className="grow">Links</h2></div>
+      <div className="page-head"><h2>Links</h2><span className="count grow">{allCount} saved</span></div>
       <form className="link-add" onSubmit={(e) => { e.preventDefault(); void add(); }}>
-        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link to save…" aria-label="Link address" />
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why it matters (optional)" aria-label="Note about the link" />
+        <label className="link-add-url"><Icon name="link" /><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link — Loom reads the title and preview" aria-label="Link address" /></label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why save it? (optional)" aria-label="Note about the link" />
         <button className="btn primary" type="submit" disabled={!url.trim() || busy}>{busy ? 'Saving…' : 'Save link'}</button>
       </form>
       <div className="filters">
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Search saved links…" aria-label="Search links" />
-        <select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Filter links by tag">
-          <option value="">All tags</option>
-          {allTags.map((t) => <option key={t} value={t}>#{t}</option>)}
-        </select>
+        <div className="tag-pills" role="group" aria-label="Filter links by tag">
+          <button className={`pill${tag === '' ? ' on' : ''}`} aria-pressed={tag === ''} onClick={() => setTag('')}>All</button>
+          {allTags.map((t) => <button key={t} className={`pill${tag === t ? ' on' : ''}`} aria-pressed={tag === t} onClick={() => setTag(tag === t ? '' : t)}>#{t}</button>)}
+        </div>
+        <input className="filter-search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Search links" aria-label="Search links" />
       </div>
       {links.length === 0 ? (
         <Empty title={text || tag ? 'No links match' : 'No saved links yet'}>{text || tag ? 'Try different words.' : 'Paste an address above. Loom reads the title, description and image, and suggests tags.'}</Empty>
@@ -98,13 +103,15 @@ function LinkCard({ link }: { link: LinkView }) {
         { label: 'Move to trash', danger: true, onClick: () => void trashCard(link.id) },
       ])}
     >
-      {isFileId(link.fileId) && <img className="link-thumb" src={fileUrl(link.fileId)} alt="" loading="lazy" />}
+      {isFileId(link.fileId) ? <img className="link-thumb" src={fileUrl(link.fileId)} alt="" loading="lazy" /> : <div className="link-thumb blank" aria-hidden><span>{link.host}</span></div>}
       <div className="link-body">
         <button className="link-title" onClick={(e) => openCard(link.id, e.metaKey || e.ctrlKey)}>{link.title}</button>
-        <a className="link-host" href={link.url} target="_blank" rel="noreferrer noopener" aria-label={`Open ${link.host}`}><Icon name="globe" size={12} /> {link.host}</a>
         {link.description && <p className="link-desc">{link.description}</p>}
-        {link.note && <p className="link-note">{link.note}</p>}
-        {link.tags.length > 0 && <div className="task-meta">{link.tags.map((t) => <em key={t} className="label">#{t}</em>)}</div>}
+        {link.note && <p className="link-note"><Icon name="memo" size={13} /> {link.note}</p>}
+        <div className="link-foot">
+          <a className="link-host" href={link.url} target="_blank" rel="noreferrer noopener" aria-label={`Open ${link.host}`}><Icon name="globe" size={12} /> {link.host}</a>
+          {link.tags.map((t) => <em key={t} className="label">#{t}</em>)}
+        </div>
       </div>
     </li>
   );

@@ -8,6 +8,7 @@ import { ClipDialog } from './components/ClipDialog.js';
 import { ResearchDialog } from './components/ResearchDialog.js';
 import { RightSidebar } from './components/RightSidebar.js';
 import { TabView } from './components/TabView.js';
+import { TabStrip } from './components/Tabs.js';
 import { ContextMenu } from './components/ui/ContextMenu.js';
 import { configureEditor } from './editor/env.js';
 import { uploadFile } from './api.js';
@@ -96,7 +97,7 @@ export function App() {
   return (
     <div className={`app${panel ? ' with-panel' : ''}`}>
       <LeftSidebar />
-      <main className="main">{ready ? <TabView /> : <div className="loading">Loading…</div>}</main>
+      <main className="main"><TabStrip />{ready ? <TabView /> : <div className="loading">Loading…</div>}</main>
       <RightSidebar />
       <GlobalSearch />
       <CommandPalette />

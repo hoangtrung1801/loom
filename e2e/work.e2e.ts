@@ -40,7 +40,7 @@ describe('tasks', () => {
     await openApp('Tasks');
     const card = column('In review').locator('.task-card', { hasText: 'Write the report' });
     await pw(card).toContainText('high');
-    await pw(card).toContainText('@sam');
+    await pw(card.locator('.avatar[title="sam"]')).toHaveText('S');
     await pw(card.locator('.due.overdue')).toHaveText('2020-01-02');
     await pw(card).toContainText('1/1 subtasks');
 

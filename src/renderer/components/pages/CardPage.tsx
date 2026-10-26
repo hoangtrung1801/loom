@@ -37,6 +37,13 @@ export function CardPage({ id }: { id: string }) {
   return (
     <div className="card-page" ref={scroller}>
       <article className="card-doc">
+        <p className="card-meta">
+          <span className={`kind kind-chip k-${card.kind}`}>{card.kind}</span>
+          <span>Edited {timeAgo(card.updatedAt)}</span>
+          <span>{card.wordCount} words</span>
+          <ConvertBar card={card} />
+          {card.inbox && <button className="link" onClick={() => void mutate(() => api.setInbox(card.id, false))}>Archive from inbox</button>}
+        </p>
         <input
           className="card-title"
           value={card.title}
@@ -46,13 +53,6 @@ export function CardPage({ id }: { id: string }) {
           onFocus={(e) => card.kind === 'task' && card.title === NEW_TASK_TITLE && e.currentTarget.select()}
           onChange={(e) => editCard(card.id, { title: e.target.value })}
         />
-        <p className="card-meta">
-          <span className="kind">{card.kind}</span>
-          <span>Edited {timeAgo(card.updatedAt)}</span>
-          <span>{card.wordCount} words</span>
-          <ConvertBar card={card} />
-          {card.inbox && <button className="link" onClick={() => void mutate(() => api.setInbox(card.id, false))}>Archive from inbox</button>}
-        </p>
 
         {card.kind === 'task' && <TaskHeader card={card} />}
         {card.kind === 'link' && <LinkHeader card={card} />}

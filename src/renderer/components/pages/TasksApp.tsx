@@ -73,13 +73,13 @@ export function TasksApp() {
       <div className="page-head">
         <h2 className="grow">Tasks</h2>
         <div className="seg" role="group" aria-label="View">
-          <button className={`pill${view === 'board' ? ' on' : ''}`} aria-pressed={view === 'board'} onClick={() => setView('board')}>Board</button>
-          <button className={`pill${view === 'list' ? ' on' : ''}`} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
+          <button className={`seg-btn${view === 'board' ? ' on' : ''}`} aria-pressed={view === 'board'} onClick={() => setView('board')}>Board</button>
+          <button className={`seg-btn${view === 'list' ? ' on' : ''}`} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
         </div>
         <button className="btn primary" onClick={() => void newTask()}><Icon name="plus" size={14} /> New task</button>
       </div>
       <div className="filters">
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Filter tasks…" aria-label="Filter tasks" />
+        <input className="filter-search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Filter tasks…" aria-label="Filter tasks" />
         <select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Filter by priority">
           <option value="">Any priority</option>
           {TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -162,28 +162,47 @@ function Column({ status, items, onDrop }: { status: string; items: WorkTask[]; 
         }
       }}
     >
-      <h3>{label} <span className="count">{items.length}</span></h3>
+      <h3><StatusIcon status={status} /><span className="grow">{label}</span><span className="count">{items.length}</span></h3>
       <ul className="kanban-list">
         {items.map((t) => <TaskCardView key={t.id} task={t} onMove={onDrop} />)}
       </ul>
       <form onSubmit={(e) => { e.preventDefault(); add(); }}>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task" aria-label={`Add a task to ${label}`} />
+        <Icon name="plus" size={14} /><input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task" aria-label={`Add a task to ${label}`} />
       </form>
     </section>
   );
 }
 
+const initials = (name: string): string => name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
+
+/** Ring icons tell statuses apart by shape as well as color. */
+const STATUS_MARK: Record<string, string> = {
+  todo: '',
+  'in-progress': 'M12 7v5l3 2',
+  'in-review': 'M8 12h8',
+  blocked: 'M7 17L17 7',
+  'on-hold': 'M10 9v6M14 9v6',
+  done: 'M8 12l3 3 5-6',
+};
+function StatusIcon({ status }: { status: string }) {
+  return (
+    <svg className={`icon status-icon s-${status}`} width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={`M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z${STATUS_MARK[status] ?? ''}`} />
+    </svg>
+  );
+}
+
 function Progress({ task }: { task: WorkTask }) {
   const parts: string[] = [];
-  if (task.progress.total) parts.push(`${task.progress.done}/${task.progress.total} to-dos`);
   if (task.subtasks.total) parts.push(`${task.subtasks.done}/${task.subtasks.total} subtasks`);
+  if (task.progress.total) parts.push(`${task.progress.done}/${task.progress.total} to-dos`);
   return parts.length ? <span className="progress">{parts.join(' · ')}</span> : null;
 }
 
 function TaskCardView({ task, onMove }: { task: WorkTask; onMove(id: string, status: string): void }) {
   return (
     <li
-      className={`task-card prio-${task.priority || 'medium'}`}
+      className={`task-card${statusOf(task.status) === 'done' ? ' done' : ''}`}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(TASK_MIME, task.id);
@@ -196,14 +215,17 @@ function TaskCardView({ task, onMove }: { task: WorkTask; onMove(id: string, sta
         ...TASK_STATUSES.filter((s) => s !== statusOf(task.status)).map((s) => ({ label: `Move to ${TASK_STATUS_LABELS[s]}`, onClick: () => onMove(task.id, s) })),
       ])}
     >
+      <div className="task-meta">
+        <span className={`prio p-${task.priority || 'medium'}`}>{task.priority || 'medium'}</span>
+        {task.labels.map((l) => <em key={l} className="label">#{l}</em>)}
+      </div>
       <button className="task-title" onClick={(e) => openCard(task.id, e.metaKey || e.ctrlKey)}>{task.title}</button>
       <div className="task-meta">
-        <span className="badge">{task.priority || 'medium'}</span>
         {task.due && <span className={`due${isOverdue(task) ? ' overdue' : ''}`}>{task.due}</span>}
-        {task.assignee && <span className="assignee">@{task.assignee}</span>}
         <Progress task={task} />
+        <span className="grow" />
+        {task.assignee && <span className="avatar" title={task.assignee}>{initials(task.assignee)}</span>}
       </div>
-      {task.labels.length > 0 && <div className="task-meta">{task.labels.map((l) => <em key={l} className="label">#{l}</em>)}</div>}
       <StatusSelect task={task} onChange={onMove} />
     </li>
   );
