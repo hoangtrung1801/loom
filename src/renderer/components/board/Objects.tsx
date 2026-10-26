@@ -145,6 +145,7 @@ function SectionObject(props: Props) {
         {editing ? (
           <input
             autoFocus
+            onFocus={(e) => e.currentTarget.select()}
             value={draft}
             aria-label="Section title"
             onPointerDown={(e) => e.stopPropagation()}

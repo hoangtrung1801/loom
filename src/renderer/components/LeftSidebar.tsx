@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { newBoard, newCard, openApp, openJournal, openNewTab } from '../actions.js';
+import { newBoard, newCard, openApp, openNewTab } from '../actions.js';
 import { useData } from '../store/data.js';
 import { activeGroup, activeTab, useTabs, type AppId, type Tab } from '../store/tabs.js';
 import { useUi } from '../store/ui.js';
@@ -76,7 +76,7 @@ export function LeftSidebar() {
           <button
             key={a.id}
             className={`app-link${current.type === 'app' && current.ref === a.id ? ' active' : ''}`}
-            onClick={(e) => (a.id === 'journal' ? void openJournal() : openApp(a.id, e.metaKey || e.ctrlKey))}
+            onClick={(e) => openApp(a.id, e.metaKey || e.ctrlKey)}
             onContextMenu={menuFor(() => [{ label: 'Open in new tab', onClick: () => openApp(a.id, true) }])}
           >
             <Icon name={a.icon} />

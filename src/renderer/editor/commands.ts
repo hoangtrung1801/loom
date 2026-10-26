@@ -75,7 +75,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   block('h3', 'Heading 3', 'Small section title', 'H3', 'header', (v) => setBlockType(n.heading!, { level: 3 })(v.state, v.dispatch)),
   block('bullet', 'Bulleted list', 'Simple list', '•', 'ul unordered', (v) => wrapInList(n.bullet_list!)(v.state, v.dispatch)),
   block('ordered', 'Numbered list', 'List with numbers', '1.', 'ol ordered', (v) => wrapInList(n.ordered_list!)(v.state, v.dispatch)),
-  block('todo', 'To-do list', 'Track tasks', '☐', 'task checkbox check', (v) => wrapInList(n.todo_list!)(v.state, v.dispatch)),
+  block('todo', 'To-do list', 'Track tasks', '☐', 'todo task checkbox check', (v) => wrapInList(n.todo_list!)(v.state, v.dispatch)),
   block('toggle', 'Toggle list', 'Collapsible section', '▸', 'collapse fold details', (v) => {
     const { $from } = v.state.selection;
     if ($from.parent.type === n.paragraph) wrapIn(n.toggle!)(v.state, v.dispatch);
@@ -96,10 +96,10 @@ export const SLASH_ITEMS: SlashItem[] = [
 
 /** Slash-menu filtering: every query word must prefix-match the title or a keyword. */
 export function filterSlash(query: string): SlashItem[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = query.toLowerCase().replace(/-/g, '').split(/\s+/).filter(Boolean);
   if (!words.length) return SLASH_ITEMS;
   return SLASH_ITEMS.filter((item) => {
-    const hay = `${item.title} ${item.keywords}`.toLowerCase().split(/\s+/);
+    const hay = `${item.title} ${item.keywords}`.toLowerCase().replace(/-/g, '').split(/\s+/);
     return words.every((w) => hay.some((h) => h.startsWith(w)));
   });
 }

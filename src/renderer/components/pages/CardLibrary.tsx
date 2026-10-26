@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CardKind, CardSummary } from '../../../core/store.js';
 import { CARD_KINDS } from '../../../core/kinds.js';
 import { api } from '../../api.js';
-import { newCard } from '../../actions.js';
+import { importFiles, newCard } from '../../actions.js';
+import { pickFiles } from '../../editor/commands.js';
 import { useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { CardRow, Empty, useDebounced } from '../ui/bits.js';
@@ -43,6 +44,7 @@ export function CardLibrary() {
     <div className="page">
       <div className="page-head">
         <h2 className="grow">Card Library</h2>
+        <button className="btn" onClick={() => void pickFiles('*/*', true).then((files) => importFiles(files))}><Icon name="upload" size={14} /> Import files</button>
         <button className="btn primary" onClick={() => void newCard()}><Icon name="plus" size={14} /> New card</button>
       </div>
       <div className="filters">

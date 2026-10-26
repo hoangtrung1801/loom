@@ -2,7 +2,7 @@ import type { CardKind } from '../core/store.js';
 import { markdownToContent } from '../core/markdown.js';
 import { api, errorMessage, uploadFile } from './api.js';
 import { todayIso } from './editor/commands.js';
-import { discardPending, flushAll } from './store/edits.js';
+import { flushAll } from './store/edits.js';
 import { mutate, refresh, toast, useData } from './store/data.js';
 import { useTabs, type AppId, type TabType } from './store/tabs.js';
 
@@ -48,7 +48,7 @@ export async function openByTitle(title: string): Promise<void> {
 }
 
 export async function trashCard(id: string): Promise<void> {
-  discardPending(id);
+  await flushAll(); // keep what was just typed, so the trash entry has its title
   await mutate(() => api.trashCard(id));
   pruneTabs();
 }

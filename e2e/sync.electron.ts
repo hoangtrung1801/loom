@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSyncServer } from '../server/sync-server.js';
 
 const dirs: string[] = [];
@@ -22,15 +22,28 @@ async function launch(): Promise<Page> {
   });
   apps.push(app);
   const page = await app.firstWindow();
-  await page.waitForSelector('.node');
+  await page.waitForSelector('.sidebar');
   return page;
 }
 
+const section = (page: Page) => page.locator('section[aria-label="Sync"]');
+const doc = (text: string) => JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+const rpc = <T>(page: Page, method: string, ...args: unknown[]) =>
+  page.evaluate(([m, a]) => window.loom!.rpc({ method: m as string, args: a as unknown[] }), [method, args]) as Promise<T>;
+
+async function openSync(page: Page): Promise<void> {
+  if (!(await section(page).isVisible())) await page.locator('.sync-badge').click();
+}
 async function connect(page: Page, token: string): Promise<void> {
-  await page.locator('.sync > button').click();
+  await openSync(page);
   await page.getByLabel('Server URL').fill(serverUrl);
-  await page.getByLabel(/Access token/).fill(token);
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByLabel('Token').fill(token);
+  await section(page).getByRole('button', { name: 'Save' }).click();
+}
+async function syncNow(page: Page): Promise<void> {
+  await openSync(page);
+  await section(page).getByRole('button', { name: 'Sync now' }).click();
+  await pw(section(page)).toContainText('Synced');
 }
 
 beforeAll(async () => {
@@ -49,44 +62,35 @@ describe('two Electron devices syncing through a server', () => {
     const b = await launch();
 
     await connect(a, 'wrong');
-    await pw(a.locator('.sync .msg')).toContainText('401');
-    await a.getByLabel(/Access token/).fill('e2e-token');
-    await a.getByRole('button', { name: 'Save' }).click();
-    await pw(a.locator('.sync .msg')).toContainText('Synced');
+    await section(a).getByRole('button', { name: 'Sync now' }).click();
+    await pw(section(a)).toContainText('401');
+    await a.getByLabel('Token').fill('e2e-token');
+    await section(a).getByRole('button', { name: 'Save' }).click();
+    await syncNow(a);
 
     await connect(b, 'e2e-token');
-    await pw(b.locator('.sync .msg')).toContainText('Synced');
+    await syncNow(b);
     // demo content seeded independently on both devices must not be duplicated
-    await pw(b.locator('.sidebar .list').first().locator('li')).toHaveCount(1);
-    await pw(b.locator('.node')).toHaveCount(2);
+    expect(await rpc<{ name: string }[]>(b, 'listWhiteboards')).toHaveLength(1);
 
     // A creates a card; B receives it without a restart
-    await a.mouse.dblclick(500, 770);
-    await a.waitForFunction(() => document.querySelectorAll('.node').length === 3);
-    const node = a.locator('.node').last();
-    await node.locator('.node-title').fill('Made on device A');
-    await node.locator('.ProseMirror').click();
-    await a.keyboard.type('hello from the other side');
-    await a.waitForTimeout(900);
-    await a.getByRole('button', { name: 'Sync now' }).click();
-    await pw(a.locator('.sync .msg')).toContainText('Synced');
+    const id = await rpc<string>(a, 'createCard', { title: 'Made on device A', content: doc('hello from the other side') });
+    await syncNow(a);
+    await syncNow(b);
+    await b.click('.app-link:has-text("Card Library")');
+    await pw(b.locator('.card-row .title:text-is("Made on device A")')).toBeVisible();
 
-    await b.getByRole('button', { name: 'Sync now' }).click();
-    await pw(b.locator('.node')).toHaveCount(3);
-    await pw(b.locator('.node-title').nth(2)).toHaveValue('Made on device A');
-    await pw(b.locator('.node').nth(2).locator('.ProseMirror')).toContainText('hello from the other side');
-
-    // and B can find it with search
-    await b.keyboard.press('Control+k');
-    await b.keyboard.type('other side');
-    await pw(b.locator('.cards .card-row').first().locator('.title')).toHaveText('Made on device A');
+    // and B can find it with global search
+    await b.keyboard.press('Control+o');
+    await b.fill('input[aria-label="Search everything"]', 'other side');
+    await pw(b.locator('.result').first()).toContainText('Made on device A');
+    await b.keyboard.press('Escape');
 
     // B edits the same card; A sees the change
-    await b.keyboard.press('Escape');
-    await b.locator('.node').nth(2).locator('.node-title').fill('Renamed on B');
-    await b.waitForTimeout(900);
-    await b.getByRole('button', { name: 'Sync now' }).click();
-    await a.getByRole('button', { name: 'Sync now' }).click();
-    await pw(a.locator('.node-title').nth(2)).toHaveValue('Renamed on B');
+    await rpc(b, 'updateCard', id, { title: 'Renamed on B' });
+    await syncNow(b);
+    await syncNow(a);
+    await a.click('.app-link:has-text("Card Library")');
+    await pw(a.locator('.card-row .title:text-is("Renamed on B")')).toBeVisible();
   });
 });
