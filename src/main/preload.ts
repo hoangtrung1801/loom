@@ -9,4 +9,8 @@ contextBridge.exposeInMainWorld('loom', {
     ipcRenderer.on('loom-event', wrapped);
     return () => ipcRenderer.removeListener('loom-event', wrapped);
   },
+  /** Tells the main process the page is listening, so links that opened the app can be delivered. */
+  ready: (): void => ipcRenderer.send('renderer-ready'),
+  /** The local automation API: read its state, or switch it on and off. */
+  localApi: (enabled?: boolean): Promise<unknown> => ipcRenderer.invoke('local-api', enabled),
 });

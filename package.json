@@ -41,6 +41,9 @@
   },
   "description": "Loom: a local-first visual note-taking app (cards on whiteboards)",
   "main": "dist/electron/main.cjs",
+  "bin": {
+    "loom": "dist/cli/loom.cjs"
+  },
   "engines": {
     "bun": ">=1.2"
   },
@@ -50,6 +53,7 @@
     "build": "bunx --bun vite build && bun scripts/build-main.mjs",
     "start": "bun run build && bun scripts/ensure-electron.mjs && electron .",
     "sync-server": "bun server/main.ts",
+    "loom": "bun src/cli/loom.ts",
     "typecheck": "tsc -p .",
     "test": "bunx --bun vitest run",
     "test:e2e": "bunx --bun vitest run -c vitest.e2e.config.ts",
@@ -65,11 +69,15 @@
     },
     "files": [
       "dist/electron/**",
+      "dist/cli/**",
       "dist/renderer/**",
       "package.json",
       "!**/*.map"
     ],
     "asar": true,
+    "asarUnpack": [
+      "dist/electron/core-worker.cjs"
+    ],
     "linux": {
       "target": [
         "AppImage",

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Ai } from './ai/service.js';
 import type { createLlm } from './ai/provider.js';
+import { Backups, type BackupInfo } from './backup.js';
 import { Chats } from './chats.js';
 import { clipUrl, fetchImage, fetchPreview, type ClipHost } from './clip.js';
 import { exportAll } from './export.js';
@@ -17,6 +18,8 @@ import type { Store } from './store.js';
 export interface Host {
   /** Directory for attachment bytes; null disables attachments (in-memory test databases). */
   filesDir: string | null;
+  /** Directory for daily database snapshots; omitted or null disables backups. */
+  backupsDir?: string | null;
   /** Pushes an event to the renderer (streamed AI output etc.). */
   emit?: (channel: string, payload: unknown) => void;
   /** Test seam: replaces the real model client. */
@@ -48,6 +51,7 @@ export function buildApp(store: Store, host: Host) {
   const work = new Work(store);
   const files = new Files(store, host.filesDir);
   const ai = new Ai(store, chats, host.emit, host.llmFactory);
+  const backups = host.backupsDir ? new Backups(store, host.backupsDir) : null;
 
   const sync = {
     getSyncState: (): SyncState => ({
@@ -148,9 +152,14 @@ export function buildApp(store: Store, host: Host) {
     cardInsights: ai.cardInsights,
     promoteInsight: ai.promoteInsight,
     ...sync,
+    listBackups: (): { dir: string; backups: BackupInfo[] } | null => (backups ? { dir: backups.dir, backups: backups.list() } : null),
+    backupNow: (): BackupInfo => {
+      if (!backups) throw new Error('Backups are not available here.');
+      return backups.run();
+    },
   };
 
-  return { methods, store, tags, chats, work, files, ai, host };
+  return { methods, store, tags, chats, work, files, ai, backups, host };
 }
 
 export type App = ReturnType<typeof buildApp>;

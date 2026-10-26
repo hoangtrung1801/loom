@@ -6,6 +6,7 @@ import type { Plugin } from 'vite';
 import type * as RpcModule from '../src/core/rpc.js';
 import type * as ServeModule from '../src/core/serve-file.js';
 import type * as StoreModule from '../src/core/store.js';
+import type * as LibraryModule from '../src/core/library.js';
 
 const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 const MAX_UPLOAD = 512 * 1024 * 1024;
@@ -25,10 +26,12 @@ export function devBridge(dbPath = process.env.LOOM_DB ?? '.dev/loom.db'): Plugi
     // and which fails outright on Bun < 1.4.
     async configureServer(server) {
       let Store: typeof StoreModule.Store;
+      let openLibrary: typeof LibraryModule.openLibrary;
       let rpcModule: typeof RpcModule;
       let serveFile: typeof ServeModule.serveFile;
       try {
         ({ Store } = (await server.ssrLoadModule('/@fs' + resolve('src/core/store.ts'))) as typeof StoreModule);
+        ({ openLibrary } = (await server.ssrLoadModule('/@fs' + resolve('src/core/library.ts'))) as typeof LibraryModule);
         rpcModule = (await server.ssrLoadModule('/@fs' + resolve('src/core/rpc.ts'))) as typeof RpcModule;
         ({ serveFile } = (await server.ssrLoadModule('/@fs' + resolve('src/core/serve-file.ts'))) as typeof ServeModule);
       } catch (err) {
@@ -44,9 +47,10 @@ export function devBridge(dbPath = process.env.LOOM_DB ?? '.dev/loom.db'): Plugi
         for (const res of listeners) res.write(data);
       };
       const open = (path: string) => {
-        const store = new Store(path);
+        // Development data is a JSON library too, next to where the old SQLite file lived.
+        const store = path === ':memory:' ? new Store(path) : openLibrary(dirname(path));
         store.seedIfEmpty();
-        const core = rpcModule.buildApp(store, { filesDir: filesDir(), emit });
+        const core = rpcModule.buildApp(store, { filesDir: filesDir(), backupsDir: path === ':memory:' ? null : join(dirname(path), 'backups'), emit });
         return { store, core, rpc: rpcModule.createRpc(core) };
       };
       let state = open(dbPath);

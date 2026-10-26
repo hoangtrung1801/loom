@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Clock } from './clock.js';
 import { docToText, extractHeadings, extractLinks, extractTasks, setTaskChecked, wordCount, withBlockIds, type HeadingRef } from './doc.js';
 import { ENTITIES, opSchema, type EntityName, type Op, type Scalar } from './entities.js';
+import { JsonStorage, snapshot, type LoadReport } from './json-storage.js';
 import { MIGRATIONS } from './schema.js';
 import { snippet, textDoc, toMatchQuery } from './text.js';
 
@@ -261,17 +262,56 @@ export class Store {
   private readonly clock: Clock;
   private depth = 0;
   private readonly stmts = new Map<string, StatementSync>();
+  /** What was read from disk when the library opened (JSON-backed stores only). */
+  readonly loaded: LoadReport | null = null;
 
-  constructor(path: string) {
+  /**
+   * Opens a Loom library: a folder of JSON files (see json-storage.ts). SQLite runs in memory as the
+   * query and search engine; every committed change is written back to the files before the call returns.
+   */
+  static open(dir: string): Store {
+    return new Store(':memory:', new JsonStorage(dir));
+  }
+
+  /**
+   * `new Store(':memory:')` is a throwaway store (tests). A file path opens a SQLite database file,
+   * which Loom only does to import libraries saved by versions before the JSON format.
+   */
+  constructor(path: string, private readonly storage?: JsonStorage) {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
     this.migrate();
+    if (storage) {
+      this.loaded = storage.load(this);
+      if (this.loaded.records) this.rebuildDerived();
+    }
     this.deviceId = this.getMeta('device_id') ?? this.setMeta('device_id', randomUUID());
     this.clock = new Clock(this.deviceId, this.getMeta('hlc') ?? undefined);
   }
 
+  /** Where the library lives on disk, or null for an in-memory store. */
+  get libraryDir(): string | null {
+    return this.storage?.dir ?? null;
+  }
+
   close(): void {
+    if (this.storage?.pending) this.storage.flush(this);
     this.db.close();
+  }
+
+  /** The whole current state as one JSON document, without secrets. */
+  snapshot(): Record<string, unknown> {
+    return snapshot(this);
+  }
+
+  /** Writes the store's complete state into a new JSON library at `dir` (imports from older formats). */
+  writeLibrary(dir: string): void {
+    new JsonStorage(dir).writeAll(this);
+  }
+
+  /** Persists writes made outside a transaction (a single setMeta, say) immediately. */
+  private persist(): void {
+    if (this.depth === 0) this.storage?.flush(this);
   }
 
   // ---------------------------------------------------------------- plumbing
@@ -299,16 +339,20 @@ export class Store {
     if (this.depth > 0) return fn();
     this.db.exec('BEGIN IMMEDIATE');
     this.depth++;
+    let result: T;
     try {
-      const result = fn();
+      result = fn();
       this.db.exec('COMMIT');
-      return result;
     } catch (err) {
       this.db.exec('ROLLBACK');
+      this.storage?.discard();
       throw err;
     } finally {
       this.depth--;
     }
+    // Committed: the change reaches disk before the caller sees success.
+    this.storage?.flush(this);
+    return result;
   }
 
   private migrate(): void {
@@ -330,10 +374,14 @@ export class Store {
   }
   setMeta(key: string, value: string): string {
     this.run('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, value);
+    this.storage?.touchMeta();
+    this.persist();
     return value;
   }
   deleteMeta(key: string): void {
     this.run('DELETE FROM meta WHERE key = ?', key);
+    this.storage?.touchMeta();
+    this.persist();
   }
 
   // -------------------------------------------------------- op log + merging
@@ -365,6 +413,7 @@ export class Store {
       'INSERT INTO ops(id, entity, entity_id, fields, ts, device, pushed) VALUES (?, ?, ?, ?, ?, ?, ?)',
       op.id, op.entity, op.entityId, JSON.stringify(op.fields), op.ts, op.device, pushed,
     );
+    this.storage?.addOp(op, pushed === 1);
     return true;
   }
 
@@ -380,6 +429,7 @@ export class Store {
       // table and field come from the ENTITIES allow-list (enforced by opSchema), never from raw input.
       this.run(`INSERT OR IGNORE INTO ${table}(id) VALUES (?)`, op.entityId);
       this.run(`UPDATE ${table} SET ${field} = ? WHERE id = ?`, value, op.entityId);
+      this.storage?.touch(table, op.entityId);
       this.run(
         `INSERT INTO field_clock(entity, entity_id, field, ts) VALUES (?, ?, ?, ?)
          ON CONFLICT(entity, entity_id, field) DO UPDATE SET ts = excluded.ts`,
@@ -475,6 +525,7 @@ export class Store {
     return this.get('SELECT COUNT(*) AS n FROM ops WHERE pushed = 0')?.n as number;
   }
   markPushed(ids: string[]): void {
+    this.storage?.touchOutbox();
     this.tx(() => ids.forEach((id) => this.run('UPDATE ops SET pushed = 1 WHERE id = ?', id)));
   }
 

@@ -131,6 +131,10 @@ dt { color: var(--muted); } dd { margin: 0; }
 .settings section { margin-bottom: 28px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); }
 .settings section h3:first-child { margin-top: 0; }
 .settings form { display: grid; }
+.backup-dir { margin: 8px 0 0; font-size: 12px; word-break: break-all; }
+.local-api-info { margin-top: 12px; }
+.local-api-info code { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.snippet-block { margin: 10px 0 0; padding: 12px 14px; background: var(--sidebar); border: 1px solid var(--border); border-radius: var(--r); font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ── Card page ──────────────────────────────────────────────────────────── */
 .card-page { padding: 28px 32px 80px; background: var(--surface); min-height: 100%; }

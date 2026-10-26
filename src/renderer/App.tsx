@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { newCard, newTask, openApp, openCard, openNewTab, pruneTabs } from './actions.js';
+import { newCard, newTask, openApp, openBoard, openCard, openJournal, openNewTab, pruneTabs } from './actions.js';
 import { api, onEvent } from './api.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { GlobalSearch } from './components/GlobalSearch.js';
@@ -82,9 +82,21 @@ export function App() {
     window.addEventListener('keydown', onKey);
     // In Electron the application menu reports the commands it owns (macOS binds these keys itself).
     const stopMenu = onEvent('command', (payload) => typeof payload === 'string' && run(payload));
+    // loom://card/<id>, loom://whiteboard/<id> and loom://journal/<date>, from the OS or another app.
+    const stopLinks = onEvent('open-link', (payload) => {
+      const link = payload as { type?: string; id?: string } | null;
+      if (!link?.id) return;
+      if (link.type === 'card') openCard(link.id);
+      else if (link.type === 'whiteboard') openBoard(link.id);
+      else if (link.type === 'journal') void openJournal(link.id);
+    });
+    const stopCoreErrors = onEvent('core-error', (payload) => typeof payload === 'string' && useData.getState().setError(payload));
+    window.loom?.ready?.();
     return () => {
       window.removeEventListener('keydown', onKey);
       stopMenu();
+      stopLinks();
+      stopCoreErrors();
     };
   }, []);
 

@@ -56,7 +56,7 @@ function placementId(run: Run, handle: unknown): string {
   return id;
 }
 
-function appendBlocks(store: Store, id: string, markdown: string): void {
+export function appendBlocks(store: Store, id: string, markdown: string): void {
   const existing = store.getCard(id);
   if (!existing) throw new Error('That card no longer exists.');
   const base = parseDoc(existing.content) ?? { type: 'doc', content: [] };
@@ -66,7 +66,7 @@ function appendBlocks(store: Store, id: string, markdown: string): void {
 }
 
 /** Free space below everything already on a board. */
-function freeY(store: Store, id: string): number {
+export function freeY(store: Store, id: string): number {
   const b = store.getWhiteboard(id);
   return b && b.placements.length ? Math.max(...b.placements.map((p) => p.y + p.h)) + 80 : 0;
 }

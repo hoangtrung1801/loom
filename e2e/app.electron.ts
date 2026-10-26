@@ -1,8 +1,8 @@
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { expect as pw } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -46,7 +46,7 @@ describe('packaged-style Electron app', () => {
       process: typeof (globalThis as { process?: unknown }).process,
       keys: Object.keys(window.loom ?? {}),
     }));
-    expect(exposed).toEqual({ require: 'undefined', process: 'undefined', keys: ['rpc', 'upload', 'onEvent'] });
+    expect(exposed).toEqual({ require: 'undefined', process: 'undefined', keys: ['rpc', 'upload', 'onEvent', 'ready', 'localApi'] });
   });
 
   it('only accepts whitelisted RPC methods and never exposes the AI key', async () => {
@@ -58,19 +58,55 @@ describe('packaged-style Electron app', () => {
     expect(JSON.stringify(await rpc('getAiConfig'))).not.toContain('sk-secret');
   });
 
-  it('persists UI edits to the SQLite file in the data dir', async () => {
+  it('persists UI edits as JSON files in the data dir', async () => {
     await page.click('.side-actions button[aria-label="New card"]');
     await page.fill('input[aria-label="Card title"]', 'From Electron');
     await page.locator('.ProseMirror').click();
     await pw(page.locator('.ProseMirror')).toBeFocused();
     await page.keyboard.type('stored via ipc');
     await page.waitForTimeout(1500);
-    const db = new DatabaseSync(join(dataDir, 'loom.db'), { readOnly: true });
-    const row = db.prepare("SELECT title, content FROM cards WHERE title = 'From Electron'").get() as { title: string; content: string } | undefined;
-    const hit = db.prepare("SELECT card_id FROM search_index WHERE search_index MATCH 'stored*'").all();
-    db.close();
-    expect(row?.content).toContain('stored via ipc');
-    expect(hit).toHaveLength(1);
+    const cards = join(dataDir, 'library', 'cards');
+    const row = readdirSync(cards)
+      .map((n) => JSON.parse(readFileSync(join(cards, n), 'utf8')) as { title: string; content: unknown })
+      .find((c) => c.title === 'From Electron');
+    expect(JSON.stringify(row?.content)).toContain('stored via ipc');
+    expect(existsSync(join(dataDir, 'loom.db'))).toBe(false);
+    expect((await rpc<{ id: string }[]>('search', 'stored')).length).toBe(1);
+    // The daily backup was taken at startup, as one JSON file.
+    expect(readdirSync(join(dataDir, 'backups')).filter((n) => /^loom-.*\.json$/.test(n))).toHaveLength(1);
+  });
+
+  it('runs the local API for the loom CLI only while it is switched on', async () => {
+    const infoFile = join(dataDir, 'local-server.json');
+    const off = await page.evaluate(() => window.loom!.localApi!());
+    expect(off).toMatchObject({ enabled: false });
+    expect(existsSync(infoFile)).toBe(false);
+
+    const on = (await page.evaluate(() => window.loom!.localApi!(true))) as { enabled: boolean; port: number };
+    expect(on.enabled).toBe(true);
+    expect(statSync(infoFile).mode & 0o777).toBe(0o600);
+    const cli = (...args: string[]) =>
+      execFileSync(process.execPath, [join(process.cwd(), 'dist/cli/loom.cjs'), ...args], { env: { ...process.env, LOOM_DATA_DIR: dataDir }, encoding: 'utf8' });
+    const made = JSON.parse(cli('note', 'From the CLI', '--body', 'piped **words**', '--tag', 'cli', '--json')) as { id: string };
+    expect(cli('read', made.id)).toContain('piped **words**');
+    expect(cli('search', 'piped')).toContain('From the CLI');
+    await page.click('.app-link:has-text("Card Library")');
+    await pw(page.locator('.card-row .title:text-is("From the CLI")')).toBeVisible();
+
+    await page.evaluate(() => window.loom!.localApi!(false));
+    expect(existsSync(infoFile)).toBe(false);
+    expect(() => execFileSync(process.execPath, [join(process.cwd(), 'dist/cli/loom.cjs'), 'health'], { env: { ...process.env, LOOM_DATA_DIR: dataDir }, stdio: 'pipe' })).toThrow();
+  });
+
+  it('opens loom:// links in the running window', async () => {
+    const id = await rpc<string>('createCard', { title: 'Deep linked', content: doc('arrived by link') });
+    await app.evaluate(({ app: a }, link) => {
+      a.emit('open-url', { preventDefault: () => undefined }, link);
+    }, `loom://card/${id}`);
+    await pw(page.locator('input[aria-label="Card title"]')).toHaveValue('Deep linked');
+    // Anything else is ignored rather than guessed at.
+    await app.evaluate(({ app: a }) => a.emit('open-url', { preventDefault: () => undefined }, 'loom://card/..%2F..%2Fetc'));
+    await pw(page.locator('input[aria-label="Card title"]')).toHaveValue('Deep linked');
   });
 
   it('renders attachments through loom-file:// under the CSP: image, range reads and a PDF', async () => {
@@ -131,8 +167,9 @@ describe('packaged-style Electron app', () => {
     expect(app.windows()).toHaveLength(1);
   });
 
-  it('restores data after a restart', async () => {
+  it('restores data and the window size after a restart', async () => {
     await rpc<string>('createCard', { title: 'Second run', content: doc('persisted') });
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setBounds({ width: 1111, height: 777 }));
     await app.close();
     app = await launch();
     page = await app.firstWindow();
@@ -140,5 +177,7 @@ describe('packaged-style Electron app', () => {
     await page.click('.app-link:has-text("Card Library")');
     await pw(page.locator('.card-row .title:text-is("From Electron")')).toBeVisible();
     await pw(page.locator('.card-row .title:text-is("Second run")')).toBeVisible();
+    const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.getBounds());
+    expect(size).toMatchObject({ width: 1111, height: 777 });
   });
 });

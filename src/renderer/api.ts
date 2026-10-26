@@ -7,6 +7,8 @@ declare global {
       rpc(request: unknown): Promise<unknown>;
       upload(name: string, mime: string, bytes: Uint8Array): Promise<string>;
       onEvent(listener: (event: { channel: string; payload: unknown }) => void): () => void;
+      ready?(): void;
+      localApi?(enabled?: boolean): Promise<unknown>;
     };
   }
 }

@@ -1,6 +1,6 @@
 # Loom
 
-A local-first visual note-taking app in the spirit of Heptabase: write **cards**, arrange them on infinite **whiteboards**, link them, tag them into **databases**, and ask an **AI** that reads your own notes and cites what it used. Everything lives in one SQLite file on your machine; syncing between devices through a small self-hosted server is optional.
+A local-first visual note-taking app in the spirit of Heptabase: write **cards**, arrange them on infinite **whiteboards**, link them, tag them into **databases**, and ask an **AI** that reads your own notes and cites what it used. Everything lives on your machine as plain JSON files, one per card, whiteboard and object; syncing between devices through a small self-hosted server is optional.
 
 Loom is an original implementation. It follows the *concepts* described in Heptabase's public documentation (fundamental elements, user-interface logic, use cases) and applies the same ideas to its AI context handling, but shares no code, assets or branding with it.
 
@@ -21,6 +21,8 @@ Loom is an original implementation. It follows the *concepts* described in Hepta
 | **Import / export** | Import Markdown, text, **Word (.docx)**, PDF, images, audio, video; clip a public **web page**. Export everything as Markdown or JSON from Settings. |
 | **AI** | Chat panel/app with citations that open the cited block, built-in actions (translate, summarize, mind map) and custom ones, **Research a topic**, per-card Insight suggestions. Anthropic and any OpenAI-compatible endpoint. |
 | **Sync** (optional) | Op-log replication with per-field last-write-wins; attachments sync as hashed blobs. |
+| **Your data** | A folder of JSON files (`<data dir>/library/`), written atomically on every change; daily JSON snapshots in `backups/` (last 7 kept, *Back up now* in Settings). |
+| **Automation** | An opt-in local API (127.0.0.1, bearer token) and a `loom` CLI: search, read cards as markdown, capture notes, memos, tasks, links and journal entries from scripts or agents. `loom://card/<id>` links open a card in the app. |
 
 ### How the AI gets context
 
@@ -69,6 +71,21 @@ LOOM_SYNC_TOKEN=choose-a-secret bun run sync-server      # listens on 127.0.0.1:
 
 Then **Settings → Sync**, enter the URL and token. Put it behind HTTPS (e.g. a reverse proxy) before exposing it beyond localhost. Attachments (images, PDFs, …) upload to the server by SHA-256 and every download is hash-verified before it is stored; a file that fails is retried on the next sync without blocking notes.
 
+### Local API and CLI (optional)
+
+Turn it on in **Settings → Local API**. The app then listens on `127.0.0.1` and writes its port and a fresh token to `~/.loom/local-server.json` (only you can read it). The CLI picks that up:
+
+```bash
+bun run build && bun link            # or run it in place: bun run loom <command>
+loom search "spaced repetition"
+loom read <card-id>                  # a card as markdown
+echo "## Notes" | loom append <card-id>
+loom task add "Draft the outline" --priority high --due 2026-11-02
+loom ops                             # every operation, with its input schema
+```
+
+Browsers can't use it: requests with an `Origin` header or a non-local `Host` are refused. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the protocol.
+
 ## Troubleshooting
 
 - **`Electron failed to install correctly`**: the Electron binary wasn't downloaded. Bun doesn't run dependency install scripts unless they're trusted, and even when it does it runs them with your system `node`; on Node 26 Electron's downloader silently does nothing and exits 0. `bun run start` (and `dev:electron`) detect a missing binary and fetch it with Bun instead, falling back to Node, and only trust the result if the binary exists afterwards. By hand: `rm -rf node_modules/electron && bun install`.
@@ -77,9 +94,13 @@ Then **Settings → Sync**, enter the URL and token. Put it behind HTTPS (e.g. a
 
 ## Architecture
 
+The full write-up, including what was taken from Heptabase's design and what was deliberately left out, is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```
 src/core      pure TypeScript, no Electron: the whole data model, fully unit-tested
-  store.ts      SQLite (node:sqlite) repository + op log + FTS5 search
+  store.ts      repository + op log; an in-memory SQLite (node:sqlite) for queries and FTS5 search
+  json-storage.ts  the JSON files on disk: atomic writes, load, snapshots   library.ts  open + one-time SQLite import
+  backup.ts     daily JSON snapshots   local-api.ts  named, zod-validated operations for the local API
   entities.ts   allow-list of synced tables/fields + zod schema for ops
   tagdb.ts      tag definitions, typed properties, table view
   chats.ts      chat history and saved AI actions
@@ -89,24 +110,26 @@ src/core      pure TypeScript, no Electron: the whole data model, fully unit-tes
   clip.ts       web clipper + link previews (SSRF-guarded)   docx.ts  Word → markdown
   ai/           context budget, handles, whiteboard serializer, tools, agent loop, providers
   rpc.ts        the only surface the UI can call (named, whitelisted methods)
-src/main      Electron main + sandboxed preload + application menu
+src/main      Electron main + sandboxed preload + menu; core-worker.ts runs the core in a worker thread;
+              local-server.ts is the loopback HTTP server for the local API
+src/cli       the `loom` command-line client
 src/renderer  React + Zustand + ProseMirror; whiteboard is DOM + SVG; pdf.js viewer
 server        reference sync server (append-only op log + blob store); `bun server/main.ts`
 ```
 
-**Data & sync.** Every change is an *op*: `{entity, entityId, fields, hlc timestamp, device}`. Ops are applied with per-field last-write-wins ordered by a hybrid logical clock, so merging is idempotent, commutative and needs no coordination. Rows live in ordinary tables (so queries are plain SQL); the `ops` table is the replication log. Deletes are soft (`deleted_at`). Backlinks, tasks and the search indexes are derived locally and never synced. The server never interprets ops.
+**Data & sync.** Every change is an *op*: `{entity, entityId, fields, hlc timestamp, device}`. Ops are applied with per-field last-write-wins ordered by a hybrid logical clock, so merging is idempotent, commutative and needs no coordination. Each record is a JSON file with its per-field clocks; at startup they are loaded into an in-memory SQLite so queries are plain SQL, and every committed change is written straight back. `ops.jsonl` is the replication log. Deletes are soft (`deleted_at`). Backlinks, tasks and the search indexes are derived locally and never synced. The server never interprets ops.
 
 **Search.** FTS5 over card title and body (and whiteboard names, board text, chats), prefix matching so results update as you type.
 
-**Security.** Context isolation and sandbox on; the page has no Node access, only `rpc`, `upload` and `onEvent`; IPC checks the sender's origin and a method whitelist; navigation is locked and links open in the OS browser; strict CSP. Attachments are served from `loom-file://` with range support, `nosniff` and a MIME allow-list (anything else downloads as opaque bytes). Because content can arrive from other devices it is treated as untrusted: ops are validated against the field allow-list before touching SQL, link `href`s are limited to http/https/mailto, and content that can't be parsed opens read-only and is never overwritten. The web clipper only fetches public http(s) addresses: it resolves DNS itself, refuses loopback/private/link-local/metadata ranges (re-checked on every redirect), caps size and time, and never runs scripts.
+**Security.** Context isolation and sandbox on; the page has no Node access, only `rpc`, `upload`, `onEvent`, `ready` and `localApi`; every IPC handler checks the sender's origin, and `rpc` is a method whitelist; the data core runs in a worker thread and restarts after a crash; navigation is locked and links open in the OS browser; strict CSP. Attachments are served from `loom-file://` with range support, `nosniff` and a MIME allow-list (anything else downloads as opaque bytes). Because content can arrive from other devices it is treated as untrusted: ops are validated against the field allow-list before touching SQL, link `href`s are limited to http/https/mailto, and content that can't be parsed opens read-only and is never overwritten. The web clipper only fetches public http(s) addresses: it resolves DNS itself, refuses loopback/private/link-local/metadata ranges (re-checked on every redirect), caps size and time, and never runs scripts.
 
 ## Tests
 
 ```bash
 bun run typecheck
-bun run test            # 110 unit tests: store, search, merge/convergence, sync + attachments, AI engine against a mock LLM (Anthropic and OpenAI protocols), clipper, docx, tasks/links/memos, RPC
+bun run test            # 127 unit tests: store, search, merge/convergence, sync + attachments, AI engine against a mock LLM (Anthropic and OpenAI protocols), clipper, docx, tasks/links/memos, RPC, JSON library (reopen, rollback, corrupt files, SQLite import), backups, local API + server
 bun run test:e2e        # 42 browser tests (Playwright + Chromium): cards/editor, whiteboards, tabs/search/commands/export, AI chat, tasks/links/memos; fails on any console error
-bun run test:electron   # real Electron under xvfb: isolation, CSP + loom-file:// + PDF rendering, menu, restart persistence, two devices syncing
+bun run test:electron   # 11 tests in real Electron under xvfb: isolation, JSON files on disk, CSP + loom-file:// + PDF rendering through the worker, local API driven by the CLI, deep links, menu, restart persistence with window size, two devices syncing
 ```
 
 The browser tests need a Chromium for Playwright (`/opt/pw-browsers/chromium-*` or `CHROME` in `e2e/harness.ts`).
@@ -125,8 +148,9 @@ Loom covers the single-user, local-first core. These parts of Heptabase are **no
 ## Known limitations
 
 - **Concurrent edits to the *same card body* are last-writer-wins for the whole document** (title, position, tags, properties etc. merge per field). A text CRDT (e.g. Yjs) would merge typing from two devices; this does not.
-- Sync has no history compaction, no end-to-end encryption, and a single shared token stored unencrypted in the local database. The reference server keeps attachment bytes in SQLite, which is fine for personal use but not for large libraries.
+- Sync has no history compaction, no end-to-end encryption, and a single shared token stored unencrypted (in `meta.json`, readable only by you). The reference server keeps attachment bytes in SQLite, which is fine for personal use but not for large libraries.
 - Renaming a card doesn't rewrite `[[links]]` that point at it (`@` mentions follow the card id and stay correct).
 - The AI quality depends on the model you configure; with tools that mutate notes, review what it did (Undo on boards, History on cards, Trash).
+- The whole library is loaded into memory at startup and indexes are rebuilt each time; that is quick for a personal library but grows with it.
 - `node:sqlite` is still flagged experimental by Node and Electron; the API surface used here is small and covered by tests.
 - Installers other than the unpacked Linux build were configured but not built here (the Linux build was verified to start from its `app.asar`).
