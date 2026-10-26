@@ -1,5 +1,8 @@
 import { z } from 'zod';
+import { Ai } from './ai/service.js';
+import type { createLlm } from './ai/provider.js';
 import { Chats } from './chats.js';
+import { exportAll } from './export.js';
 import { Files, type FileInfo } from './files.js';
 import { httpTransport, runSync } from './sync.js';
 import { TagDb } from './tagdb.js';
@@ -11,6 +14,8 @@ export interface Host {
   filesDir: string | null;
   /** Pushes an event to the renderer (streamed AI output etc.). */
   emit?: (channel: string, payload: unknown) => void;
+  /** Test seam: replaces the real model client. */
+  llmFactory?: typeof createLlm;
 }
 
 export interface SyncState {
@@ -34,6 +39,7 @@ export function buildApp(store: Store, host: Host) {
   const tags = new TagDb(store);
   const chats = new Chats(store);
   const files = new Files(store, host.filesDir);
+  const ai = new Ai(store, chats, host.emit, host.llmFactory);
 
   const sync = {
     getSyncState: (): SyncState => ({
@@ -58,7 +64,7 @@ export function buildApp(store: Store, host: Host) {
 
   const methods = {
     ...pick(store, [
-      'listCards', 'getCard', 'createCard', 'updateCard', 'trashCard', 'restoreCard', 'setInbox', 'findCardByTitle', 'cardsMentioning',
+      'listCards', 'cardIndex', 'getCard', 'createCard', 'updateCard', 'trashCard', 'restoreCard', 'setInbox', 'findCardByTitle', 'cardsMentioning',
       'titlesById', 'search', 'searchAll', 'relatedCards',
       'addTag', 'removeTag', 'listTags',
       'ensureJournal', 'journalDays', 'listJournals', 'listTasks', 'setTaskChecked',
@@ -74,10 +80,19 @@ export function buildApp(store: Store, host: Host) {
       'createChat', 'listChats', 'getChat', 'renameChat', 'setChatContext', 'deleteChat', 'listAiActions', 'saveAiAction', 'deleteAiAction',
     ] as const),
     fileInfo: (id: string): FileInfo | null => files.info(id),
+    exportAll: (format: 'markdown' | 'json') => exportAll(store, format === 'json' ? 'json' : 'markdown'),
+    getAiConfig: ai.getAiConfig,
+    setAiConfig: ai.setAiConfig,
+    sendChat: ai.sendChat,
+    stopChat: ai.stopChat,
+    runAiAction: ai.runAiAction,
+    generateMindMap: ai.generateMindMap,
+    cardInsights: ai.cardInsights,
+    promoteInsight: ai.promoteInsight,
     ...sync,
   };
 
-  return { methods, store, tags, chats, files, host };
+  return { methods, store, tags, chats, files, ai, host };
 }
 
 export type App = ReturnType<typeof buildApp>;

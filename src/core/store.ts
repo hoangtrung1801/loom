@@ -1,3 +1,4 @@
+import { CARD_KINDS, type CardKind } from './kinds.js';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { Clock } from './clock.js';
@@ -8,8 +9,7 @@ import { snippet, textDoc, toMatchQuery } from './text.js';
 
 type Row = Record<string, any>;
 
-export type CardKind = 'note' | 'journal' | 'pdf' | 'image' | 'video' | 'audio' | 'file' | 'highlight' | 'web';
-export const CARD_KINDS: readonly CardKind[] = ['note', 'journal', 'pdf', 'image', 'video', 'audio', 'file', 'highlight', 'web'];
+export { CARD_KINDS, type CardKind };
 export type ObjectKind = 'card' | 'text' | 'section' | 'board';
 
 export interface CardSummary {
@@ -23,6 +23,16 @@ export interface CardSummary {
   createdAt: number;
   updatedAt: number;
   tags: string[];
+}
+export interface CardIndexEntry {
+  id: string;
+  title: string;
+  kind: CardKind;
+  inbox: boolean;
+  journalDate: string;
+  fileId: string;
+  createdAt: number;
+  updatedAt: number;
 }
 export interface BacklinkView {
   id: string;
@@ -154,6 +164,8 @@ export interface ListCardsOptions {
   kinds?: CardKind[];
   tag?: string;
   inbox?: boolean;
+  /** Highlight cards remember the card they were taken from in meta.sourceId. */
+  sourceId?: string;
   sort?: 'updated' | 'created' | 'title';
   limit?: number;
 }
@@ -511,6 +523,10 @@ export class Store {
       where.push('EXISTS (SELECT 1 FROM card_tags t WHERE t.card_id = c.id AND t.tag = ? AND t.deleted_at IS NULL)');
       params.push(o.tag);
     }
+    if (o.sourceId) {
+      where.push("json_extract(CASE WHEN json_valid(c.meta) THEN c.meta ELSE '{}' END, '$.sourceId') = ?");
+      params.push(o.sourceId);
+    }
     const order = o.sort === 'title' ? 'lower(c.title)' : o.sort === 'created' ? 'c.created_at DESC' : 'c.updated_at DESC';
     const rows = this.all(
       `SELECT c.id, c.title, c.content, c.kind, c.journal_date, c.inbox, c.file_id, c.created_at, c.updated_at FROM cards c
@@ -519,6 +535,13 @@ export class Store {
     );
     const tags = this.tagsByCard();
     return rows.map((r) => toSummary(r, tags.get(r.id) ?? []));
+  }
+
+  /** Every live card without its body: what title lookups, the mention menu and counters need. Cheap enough to refresh after each edit. */
+  cardIndex(): CardIndexEntry[] {
+    return this.all(
+      'SELECT id, title, kind, inbox, journal_date, file_id, created_at, updated_at FROM cards WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 20000',
+    ).map((r) => ({ id: r.id, title: r.title, kind: r.kind, inbox: !!r.inbox, journalDate: r.journal_date, fileId: r.file_id, createdAt: r.created_at, updatedAt: r.updated_at }));
   }
 
   getCard(id: string): CardDetail | null {
@@ -1204,7 +1227,7 @@ function edgeFields(p: EdgePatch): Record<string, Scalar> {
   if (p.label !== undefined) out.label = p.label.slice(0, 200);
   if (p.color !== undefined) out.color = validColor(p.color);
   if (p.style !== undefined) {
-    if (!['solid', 'dashed'].includes(p.style)) throw new Error('Edge style is solid or dashed.');
+    if (!['solid', 'dashed', 'dotted'].includes(p.style)) throw new Error('Edge style is solid, dashed or dotted.');
     out.style = p.style;
   }
   if (p.arrow !== undefined) {

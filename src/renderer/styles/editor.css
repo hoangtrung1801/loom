@@ -1,0 +1,69 @@
+.editor { position: relative; min-height: 120px; }
+.ProseMirror { outline: none; white-space: pre-wrap; word-wrap: break-word; padding: 4px 0 40px; min-height: 100px; line-height: 1.65; font-size: 15px; }
+.ProseMirror p { margin: 0 0 0.6em; }
+.ProseMirror h1 { font-size: 1.7em; margin: 1em 0 0.4em; } .ProseMirror h2 { font-size: 1.4em; margin: 0.9em 0 0.4em; text-transform: none; letter-spacing: 0; color: inherit; }
+.ProseMirror h3 { font-size: 1.15em; margin: 0.8em 0 0.3em; text-transform: none; letter-spacing: 0; color: inherit; }
+.ProseMirror p.is-empty:first-child::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; float: left; height: 0; }
+.ProseMirror blockquote { margin: 0.6em 0; padding: 0 0 0 14px; border-left: 3px solid var(--border); color: var(--muted); }
+.ProseMirror ul, .ProseMirror ol { margin: 0 0 0.6em; padding-left: 1.5em; }
+.ProseMirror li > p { margin: 0 0 0.2em; }
+.ProseMirror ul.todo { list-style: none; padding-left: 0; }
+.ProseMirror li.todo-item { display: flex; gap: 8px; align-items: flex-start; }
+.todo-box { flex: none; margin-top: 0.4em; }
+.todo-content { flex: 1; min-width: 0; }
+.ProseMirror li.todo-item[data-checked='true'] > .todo-content > p:first-child { color: var(--muted); text-decoration: line-through; }
+.ProseMirror .toggle { margin: 0.4em 0; }
+.toggle-btn { float: left; width: 20px; height: 1.65em; color: var(--muted); }
+.toggle-body { margin-left: 22px; }
+.toggle[data-open='false'] .toggle-body > :not(:first-child) { display: none; }
+.ProseMirror .callout { display: flex; gap: 10px; padding: 10px 12px; margin: 0.6em 0; border-radius: 8px; background: var(--accent-soft); }
+.callout-emoji { user-select: none; } .callout-body { flex: 1; min-width: 0; } .callout-body > :last-child { margin-bottom: 0; }
+.ProseMirror pre { background: var(--surface-2); border-radius: 8px; padding: 10px 14px; overflow: auto; font: 13px/1.5 ui-monospace, Menlo, monospace; margin: 0.6em 0; }
+.ProseMirror code { font-size: 0.9em; }
+.ProseMirror pre code { background: none; padding: 0; }
+.ProseMirror hr { border: 0; border-top: 1px solid var(--border); margin: 1.2em 0; }
+.ProseMirror mark { background: color-mix(in srgb, var(--c-yellow) 38%, transparent); }
+.ProseMirror .wikilink { color: var(--accent); cursor: pointer; }
+.ProseMirror table { border-collapse: collapse; margin: 0.8em 0; width: 100%; table-layout: fixed; overflow: hidden; }
+.ProseMirror td, .ProseMirror th { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; position: relative; min-width: 40px; }
+.ProseMirror th { background: var(--surface-2); text-align: left; }
+.ProseMirror td > p, .ProseMirror th > p { margin: 0; }
+.ProseMirror .selectedCell::after { content: ''; position: absolute; inset: 0; background: var(--accent-soft); opacity: 0.6; pointer-events: none; }
+.ProseMirror .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: 0; width: 4px; background: var(--accent); pointer-events: none; }
+.ProseMirror.resize-cursor { cursor: col-resize; }
+.ProseMirror-selectednode { outline: 2px solid var(--accent); border-radius: 4px; }
+.ProseMirror-gapcursor { display: none; pointer-events: none; position: absolute; }
+.ProseMirror-gapcursor::after { content: ''; display: block; position: absolute; top: -2px; width: 20px; border-top: 1px solid var(--text); animation: blink 1.1s steps(2, start) infinite; }
+.ProseMirror-focused .ProseMirror-gapcursor { display: block; }
+@keyframes blink { to { visibility: hidden; } }
+.ProseMirror-dropcursor { background: var(--accent) !important; height: 2px !important; }
+.math-block { text-align: center; padding: 8px; margin: 0.4em 0; cursor: pointer; border-radius: 6px; }
+.math-block:hover, .math-inline:hover { background: var(--surface-2); }
+.math-inline { cursor: pointer; border-radius: 4px; }
+.math-empty { color: var(--muted); font-style: italic; }
+.math-field { width: 100%; font-family: ui-monospace, monospace; }
+.mention { background: var(--accent-soft); color: var(--accent); border-radius: 5px; padding: 0 5px; cursor: pointer; white-space: nowrap; }
+.mention.missing { color: var(--muted); text-decoration: line-through; }
+.date { background: var(--surface-2); border-radius: 5px; padding: 0 6px; cursor: pointer; font-size: 0.92em; }
+.date-field { width: 130px; }
+.media { display: block; max-width: 100%; margin: 0.6em 0; border-radius: 8px; }
+.media-audio { width: 100%; }
+.file-block { display: flex; gap: 10px; align-items: center; margin: 0.6em 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.file-block .file-link { margin: 0; border: 0; padding: 0; }
+.menu { position: fixed; z-index: 95; width: 280px; max-height: 340px; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; }
+.menu-item { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 5px 8px; border-radius: 7px; }
+.menu-item.active { background: var(--accent-soft); }
+.menu-icon { width: 28px; height: 28px; display: grid; place-items: center; background: var(--surface-2); border-radius: 6px; flex: none; }
+.menu-text { display: grid; min-width: 0; } .menu-text small { color: var(--muted); }
+.toolbar { position: fixed; z-index: 96; display: flex; gap: 2px; align-items: center; padding: 4px; background: var(--text); color: var(--bg); border-radius: 9px; box-shadow: var(--shadow); }
+.toolbar button { min-width: 26px; height: 26px; border-radius: 6px; padding: 0 6px; color: inherit; }
+.toolbar button:hover, .toolbar button.on { background: rgb(255 255 255 / 0.2); }
+.toolbar select { background: transparent; color: inherit; border: 0; }
+.toolbar input { background: var(--bg); color: var(--text); width: 240px; }
+.obj-editor .ProseMirror { padding: 0; min-height: 40px; font-size: 13.5px; }
+.pdf { display: grid; gap: 12px; justify-items: center; margin: 12px 0 24px; padding: 12px; background: var(--surface-2); border-radius: 10px; max-height: 80vh; overflow: auto; position: relative; }
+.pdf-page { position: relative; background: #fff; box-shadow: var(--shadow); flex: none; }
+.pdf-page canvas { display: block; }
+.textLayer { position: absolute; inset: 0; overflow: clip; opacity: 1; line-height: 1; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; }
+.textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.textLayer ::selection { background: rgb(62 99 221 / 0.35); }

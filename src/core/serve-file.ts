@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync } from 'node:fs';
+import { isFileId } from './fileid.js';
 import type { Files } from './files.js';
-import { isFileId } from './files.js';
 
 export interface FileResponse {
   status: number;

@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isFileId } from './fileid.js';
 import type { Store } from './store.js';
 
 export const MAX_FILE_BYTES = 512 * 1024 * 1024;
-const HASH = /^[0-9a-f]{64}$/;
 
 /** Types served with their own content type. Anything else is sent as an opaque download so a hostile file can't run as a page. */
 const SAFE_MIME = new Set([
@@ -21,9 +21,7 @@ export interface FileInfo {
   local: boolean;
 }
 
-export function isFileId(id: unknown): id is string {
-  return typeof id === 'string' && HASH.test(id);
-}
+export { isFileId };
 
 export function safeMime(mime: string): string {
   const m = mime.toLowerCase().split(';')[0]!.trim();

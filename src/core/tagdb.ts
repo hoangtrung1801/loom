@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeTag, type CardKind, type Store } from './store.js';
 
-export const PROP_TYPES = ['text', 'number', 'date', 'select', 'multiselect', 'checkbox', 'url'] as const;
-export type PropType = (typeof PROP_TYPES)[number];
+import { PROP_TYPES, type PropType } from './kinds.js';
+export { PROP_TYPES, type PropType };
 
 export interface PropDef {
   id: string;
