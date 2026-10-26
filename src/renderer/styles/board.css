@@ -52,7 +52,7 @@
 .tool:hover { background: var(--surface-2); color: var(--text); }
 .tool.on { background: var(--ink); color: var(--on-ink); }
 .board-toolbar .sep, .selection-bar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 4px 2px; }
-.selection-bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; box-shadow: var(--shadow); }
+.selection-bar { position: absolute; bottom: 82px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; box-shadow: var(--shadow); }
 .selection-bar input, .selection-bar select { padding: 2px 6px; font-size: 12.5px; }
 .zoom-controls { position: absolute; bottom: 16px; right: 16px; z-index: 10; display: flex; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 2px; box-shadow: var(--shadow); }
 .zoom-level { min-width: 46px; font-size: 12px; color: var(--muted); }
@@ -62,3 +62,7 @@
 .picker ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
 .picker li button { width: 100%; text-align: left; padding: 5px 8px; border-radius: 6px; } .picker li button:hover { background: var(--accent-soft); }
 .picker .none { padding: 10px; color: var(--muted); text-align: center; }
+.card-obj.kind-task > header > .icon:first-child { color: var(--k-task); }
+.card-obj.kind-link > header > .icon:first-child, .card-obj.kind-web > header > .icon:first-child { color: var(--k-link); }
+.card-obj.kind-memo > header > .icon:first-child { color: var(--k-memo); }
+.card-obj.kind-journal > header > .icon:first-child { color: var(--k-journal); }
