@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="88 106 336 300" width="336" height="300">
-  <title>Loom</title>
-  <!-- Mark without the tile, for light backgrounds. -->
-  <g fill="#17181a">
-    <rect x="128" y="112" width="64" height="288" rx="14"/>
-    <rect x="320" y="112" width="64" height="288" rx="14"/>
-  </g>
-  <rect x="88" y="226" width="336" height="60" rx="30" fill="#0e7c74" stroke="#f7f7f5" stroke-width="14" paint-order="stroke"/>
-  <rect x="224" y="112" width="64" height="288" rx="14" fill="#17181a" stroke="#f7f7f5" stroke-width="14" paint-order="stroke"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="70 122 372 268" width="372" height="268"><title>Loom</title><!-- Two linked rings: the "oo" in Loom, and two notes joined. The light ring passes over at the top, the teal one at the bottom. --><circle cx="204" cy="256" r="100" fill="none" stroke="#17181a" stroke-width="44"/><circle cx="308" cy="256" r="100" fill="none" stroke="#f7f7f5" stroke-width="68"/><circle cx="308" cy="256" r="100" fill="none" stroke="#0e7c74" stroke-width="44"/><path d="M193.5 156.5 A100 100 0 0 1 295.4 215.3" fill="none" stroke="#f7f7f5" stroke-width="68"/><path d="M186.6 157.5 A100 100 0 0 1 298.0 221.8" fill="none" stroke="#17181a" stroke-width="44"/></svg>

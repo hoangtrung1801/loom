@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <title>Loom</title>
-  <!-- Three cards (the warp) with one thread (the weft) woven over, under, over. -->
-  <rect width="512" height="512" rx="116" fill="#17181a"/>
-  <g fill="#f7f7f5">
-    <rect x="128" y="112" width="64" height="288" rx="14"/>
-    <rect x="320" y="112" width="64" height="288" rx="14"/>
-  </g>
-  <rect x="88" y="226" width="336" height="60" rx="30" fill="#14a397" stroke="#17181a" stroke-width="14" paint-order="stroke"/>
-  <rect x="224" y="112" width="64" height="288" rx="14" fill="#f7f7f5" stroke="#17181a" stroke-width="14" paint-order="stroke"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><title>Loom</title><!-- Two linked rings: the "oo" in Loom, and two notes joined. The light ring passes over at the top, the teal one at the bottom. --><rect width="512" height="512" rx="116" fill="#17181a"/><circle cx="204" cy="256" r="100" fill="none" stroke="#f7f7f5" stroke-width="44"/><circle cx="308" cy="256" r="100" fill="none" stroke="#17181a" stroke-width="68"/><circle cx="308" cy="256" r="100" fill="none" stroke="#14a397" stroke-width="44"/><path d="M193.5 156.5 A100 100 0 0 1 295.4 215.3" fill="none" stroke="#17181a" stroke-width="68"/><path d="M186.6 157.5 A100 100 0 0 1 298.0 221.8" fill="none" stroke="#f7f7f5" stroke-width="44"/></svg>
