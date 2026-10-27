@@ -61,7 +61,10 @@
     "package": "bun run build && electron-builder",
     "icons": "node scripts/make-icons.mjs"
   },
-  "author": "Loom contributors",
+  "author": {
+    "name": "Loom contributors",
+    "email": "hoangtrung1801.2003@gmail.com"
+  },
   "desktopName": "loom.desktop",
   "build": {
     "appId": "dev.loom.app",

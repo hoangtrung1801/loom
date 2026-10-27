@@ -29,7 +29,9 @@ function Floating({ rect, children, label }: { rect: SuggestState['rect']; child
 /** Shared arrow-key / enter handling for both menus. */
 function useListNav(count: number, pick: (index: number) => void): [number, (e: KeyboardEvent) => boolean, (i: number) => void] {
   const [index, setIndex] = useState(0);
-  useEffect(() => setIndex(0), [count]);
+  useEffect(() => {
+    setIndex(0);
+  }, [count]);
   const key = (e: KeyboardEvent): boolean => {
     if (!count) return false;
     if (e.key === 'ArrowDown') setIndex((i) => (i + 1) % count);
@@ -46,7 +48,9 @@ export const SlashMenu = forwardRef<MenuHandle, { state: SuggestState; items: Sl
   const [index, key, setIndex] = useListNav(items.length, (i) => onPick(items[i]!));
   useImperativeHandle(ref, () => ({ key }));
   const active = useRef<HTMLButtonElement>(null);
-  useEffect(() => active.current?.scrollIntoView({ block: 'nearest' }), [index]);
+  useEffect(() => {
+    active.current?.scrollIntoView({ block: 'nearest' });
+  }, [index]);
   if (!items.length) return null;
   return (
     <Floating rect={state.rect} label="Insert block">
