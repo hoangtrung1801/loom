@@ -4,7 +4,7 @@
 
 .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; padding: 10px 10px 0; }
 .brand { display: flex; align-items: center; gap: 9px; padding: 4px 4px 0 6px; font-weight: 600; font-size: 14px; }
-.logo { width: 26px; height: 26px; border-radius: 7px; background: var(--ink); color: var(--on-ink); display: grid; place-items: center; flex: none; }
+.logo { width: 26px; height: 26px; display: block; flex: none; }
 .side-actions { display: grid; gap: 6px; }
 .search-trigger { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--muted); font-size: 13px; text-align: left; box-shadow: var(--shadow-sm); }
 .search-trigger:hover { border-color: var(--border-strong); color: var(--text); }

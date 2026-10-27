@@ -1,4 +1,9 @@
-# Loom
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/loom-wordmark-dark.svg">
+    <img src="assets/brand/loom-wordmark.svg" alt="Loom" height="56">
+  </picture>
+</h1>
 
 A local-first visual note-taking app in the spirit of Heptabase: write **cards**, arrange them on infinite **whiteboards**, link them, tag them into **databases**, and ask an **AI** that reads your own notes and cites what it used. Everything lives on your machine as plain JSON files, one per card, whiteboard and object; syncing between devices through a small self-hosted server is optional.
 
@@ -53,6 +58,7 @@ bun run dev:electron                # hot-reloading renderer inside Electron
 bun run dev:electron --no-sandbox   # extra args go to Electron (needed when running as root, e.g. in a container)
 bun run dev                         # renderer only, in a normal browser (talks to a dev DB over HTTP)
 bun run package                     # installers via electron-builder (AppImage/deb, dmg, nsis)
+bun run icons                       # re-render build/icon*.png after changing assets/brand/loom-mark.svg
 ```
 
 > **What Bun does not run:** the Electron app itself. Electron's main process always uses the Node.js bundled inside Electron (Electron 45), so the shipped app is unaffected by which runtime you develop with.

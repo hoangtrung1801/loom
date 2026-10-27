@@ -6,6 +6,7 @@ import { SyncBadge } from './SyncBadge.js';
 import { Icon, KIND_ICON, type IconName } from './Icon.js';
 import { menuFor } from './ui/ContextMenu.js';
 import { PinnedTabs } from './Tabs.js';
+import logoUrl from '../../../assets/brand/loom-mark.svg';
 
 const APPS: { id: AppId; label: string; icon: IconName }[] = [
   { id: 'inbox', label: 'Inbox', icon: 'inbox' },
@@ -60,7 +61,7 @@ export function LeftSidebar() {
   return (
     <aside className="sidebar" aria-label="Sidebar">
       <header className="brand">
-        <span className="logo" aria-hidden><Icon name="loom" size={15} /></span>
+        <img className="logo" src={logoUrl} alt="" />
         <span className="grow">Loom</span>
         <button className="icon-btn" onClick={() => setPalette(true)} title={`Commands (${mod} K)`} aria-label="Commands"><Icon name="command" /></button>
       </header>

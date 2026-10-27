@@ -144,6 +144,7 @@ function createWindow(): void {
     minHeight: 520,
     backgroundColor: '#f7f7f5',
     title: 'Loom',
+    icon: process.platform === 'darwin' ? undefined : join(__dirname, 'icon.png'),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,

@@ -58,15 +58,19 @@
     "test": "bunx --bun vitest run",
     "test:e2e": "bunx --bun vitest run -c vitest.e2e.config.ts",
     "test:electron": "bun run build && bun scripts/ensure-electron.mjs && xvfb-run -a bunx --bun vitest run -c vitest.electron.config.ts",
-    "package": "bun run build && electron-builder"
+    "package": "bun run build && electron-builder",
+    "icons": "node scripts/make-icons.mjs"
   },
   "author": "Loom contributors",
+  "desktopName": "loom.desktop",
   "build": {
     "appId": "dev.loom.app",
     "productName": "Loom",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
+    "icon": "build/icon.png",
     "files": [
       "dist/electron/**",
       "dist/cli/**",
@@ -83,13 +87,15 @@
         "AppImage",
         "deb"
       ],
-      "category": "Office"
+      "category": "Office",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "icon": "build/icon-mac.png"
     },
     "win": {
       "target": [
