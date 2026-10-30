@@ -1,4 +1,7 @@
 import katex from 'katex';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { Icon, type IconName } from '../components/Icon.js';
 import 'katex/dist/katex.min.css';
 import type { Node as PmNode } from 'prosemirror-model';
 import type { EditorView, NodeView, NodeViewConstructor } from 'prosemirror-view';
@@ -211,6 +214,9 @@ function mediaView(tag: 'img' | 'audio' | 'video'): NodeViewConstructor {
   };
 }
 
+/** Vanilla-DOM node views can't mount React, so render the Lucide glyph to markup once. */
+const iconSvg = (name: IconName): string => renderToStaticMarkup(createElement(Icon, { name, size: 14 }));
+
 const fileView: NodeViewConstructor = (node) => {
   const dom = document.createElement('div');
   dom.className = 'file-block';
@@ -219,7 +225,7 @@ const fileView: NodeViewConstructor = (node) => {
     const id = n.attrs.fileId as string;
     const icon = document.createElement('span');
     icon.className = 'file-icon';
-    icon.textContent = '📎';
+    icon.innerHTML = iconSvg('paperclip');
     const name = document.createElement('span');
     name.className = 'file-name';
     name.textContent = (n.attrs.name as string) || 'File';
@@ -293,7 +299,7 @@ const toggleView: NodeViewConstructor = (node, view, getPos) => {
   const paint = (n: PmNode): void => {
     const open = n.attrs.open !== false;
     dom.dataset.open = String(open);
-    button.textContent = open ? '▾' : '▸';
+    button.innerHTML = iconSvg(open ? 'chevronDown' : 'chevronRight');
     button.setAttribute('aria-label', open ? 'Collapse' : 'Expand');
     button.setAttribute('aria-expanded', String(open));
   };
