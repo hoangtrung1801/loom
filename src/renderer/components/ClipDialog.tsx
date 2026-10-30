@@ -61,7 +61,7 @@ export function ClipDialog() {
   const label = link ? 'Save a link' : 'Clip a web page';
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <form className="dialog research" role="dialog" aria-label={label} onSubmit={(e) => { e.preventDefault(); void submit(); }} onKeyDown={(e) => e.key === 'Escape' && close()}>
+      <form className="dialog form-dialog" role="dialog" aria-label={label} onSubmit={(e) => { e.preventDefault(); void submit(); }} onKeyDown={(e) => e.key === 'Escape' && close()}>
         <h2><Icon name={link ? 'link' : 'globe'} /> {label}</h2>
         <div className="seg" role="group" aria-label="What to keep">
           <button type="button" className={`pill${link ? ' on' : ''}`} aria-pressed={link} onClick={() => setOpen(true, 'link')}>Save link</button>

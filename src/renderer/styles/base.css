@@ -127,9 +127,9 @@ a, .link { color: var(--accent-text); text-decoration: none; cursor: pointer; te
 .context-menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
 .overlay { position: fixed; inset: 0; background: rgb(23 24 26 / 0.28); display: grid; justify-items: center; align-items: start; padding-top: 12vh; z-index: 80; backdrop-filter: blur(2px); }
 .dialog { width: min(640px, 92vw); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
-.dialog.research { padding: 20px; display: grid; gap: 12px; }
-.dialog.research h2 { display: flex; gap: 8px; align-items: center; font-size: 17px; }
-.dialog.research .row { justify-content: flex-end; }
+.dialog.form-dialog { padding: 20px; display: grid; gap: 12px; }
+.dialog.form-dialog h2 { display: flex; gap: 8px; align-items: center; font-size: 17px; }
+.dialog.form-dialog .row { justify-content: flex-end; }
 .dialog-foot { padding: 8px 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; display: flex; gap: 8px; align-items: center; background: var(--bg); }
 .search-input { display: flex; gap: 10px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); color: var(--muted); }
 .search-input input { flex: 1; border: 0; background: transparent; font-size: 16px; padding: 0; color: var(--text); }
