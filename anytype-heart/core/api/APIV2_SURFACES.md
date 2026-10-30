@@ -703,7 +703,7 @@ ungeneratable under their own served grammar).
 |---|---|---|---|
 | Humans (developers, integrators) | OpenAPI document + a narrative guide | Swagger annotations on the v2 handlers (already present on all seven v2 handler files) | `make openapi` in CI; the conformance test of §10.1(6) |
 | Agents at runtime | `GET /v2/schemas/{kind}` — the nine discovery kinds, the filter grammar, per-kind examples | The Go types and the shipped validators | The Phase-5 pattern: every served example is asserted to be accepted by its own served schema/grammar |
-| Agents via the CLI | `anytype tools` manifest + `SKILL.md` | The one Go tool table (`wrapper.Tools()`) | `TestToolCount`, `TestOneDefinition`, the GBNF acceptance suite |
+| Agents via the CLI | `loom tools` manifest + `SKILL.md` | The one Go tool table (`wrapper.Tools()`) | `TestToolCount`, `TestOneDefinition`, the GBNF acceptance suite |
 
 Two rules follow, and they are the ones worth enforcing in review:
 

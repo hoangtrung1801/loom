@@ -1,6 +1,6 @@
 ---
 name: anytype-api
-description: Call Anytype's local HTTP API v2 directly — search, read, create and edit objects, queries, collections and chats over REST. Use when writing scripts, SDK code or curl against the API. For interactive note/task work prefer the `anytype` CLI and its skill (cmd/anytype/SKILL.md); this guide is the raw-HTTP layer beneath it.
+description: Call Anytype's local HTTP API v2 directly — search, read, create and edit objects, queries, collections and chats over REST. Use when writing scripts, SDK code or curl against the API. For interactive note/task work prefer the `loom` CLI and its skill (cmd/loom/SKILL.md); this guide is the raw-HTTP layer beneath it.
 ---
 
 # Anytype API v2 — HTTP guide for agents

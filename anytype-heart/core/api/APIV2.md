@@ -1542,7 +1542,7 @@ POST /v2/spaces/{space_id}/search/stream   # SSE; body = the space search reques
 ### Phase 5 — the task-tool wrapper (CLI + skill + on-device manifest)
 
 Built — `core/api/wrapper` (the tool table + manifest + runner) and
-`cmd/anytype` (the verb-set) + `cmd/anytype/SKILL.md`. The contract is §7.
+`cmd/loom` (the verb-set) + `cmd/loom/SKILL.md`. The contract is §7.
 
 The Phase-5 deliverable is the **task-tool wrapper**: the curated tool layer
 over `/v2`, delivered as (a) CLI verbs with AXI/Chow output conventions and
@@ -2047,7 +2047,7 @@ schemas follow C13.
    permanent delete.
 3. Benchmarks run once the harness + Phase 3a exist; gated items land in minor
    releases (additive to the closed op set).
-4. Phase 4, Phase 5 — shipped (`cmd/anytype` is the CLI). The v1 deprecation
+4. Phase 4, Phase 5 — shipped (`cmd/loom` is the CLI). The v1 deprecation
    clock starts when the CLI ships in a release build.
 
 Each phase's exit criterion: its endpoints pass the harness's task set at
@@ -2218,7 +2218,7 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   rate limit and the C8 idempotency store all live in server middleware that
   in-process calls would bypass. The tool table is Go data that the CLI
   imports, so the verb set equals the tool set by construction, and
-  `anytype tools` prints the machine-readable manifest (name, description,
+  `loom tools` prints the machine-readable manifest (name, description,
   strict parameter schema, example, GBNF per tool, plus the filter-string
   grammar artifact) (`core/api/wrapper/client.go:29`).
 - **Two model tiers over one tool table**; a tier is a field on the existing
@@ -2229,7 +2229,7 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   beats a misused surface. The LARGE tier serves the whole table. Arguments
   are not tiered, and the CLI verb set is not tiered — coding-agent harnesses
   drive large models (`core/api/wrapper/tier.go:45`).
-- **`anytype mcp --tier small|large`** (default large) serves the same tool
+- **`loom mcp --tier small|large`** (default large) serves the same tool
   table over MCP stdio: newline-delimited JSON-RPC 2.0 with `initialize`
   (version negotiation, answering with ours for an unknown version, plus
   tier-aware `instructions`), `tools/list` (the strict tool schemas as
@@ -2238,7 +2238,7 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   refused with steering. The MCP delivery holds handle state in memory for the
   life of the process and never shares the CLI's session file
   (`core/api/wrapper/mcp.go:180`).
-- **`anytype mcp --tier full`** and **`anytype api`** deliver the full table
+- **`loom mcp --tier full`** and **`loom api`** deliver the full table
   (one tool per /v2 operation, `core/api/wrapper/full`) from the CLI. The CLI
   does not link the service layer, so it derives the table from the running
   server's own inputs — `GET /v2/docs/openapi.json` plus each op schema from
@@ -2249,7 +2249,7 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   `key=value` pairs or a JSON object (`-` reads stdin). Running or describing
   one operation reads only the OpenAPI document (one request, bare op lists);
   the listing, `tools --tier full` and `mcp --tier full` also read the op
-  schemas. `anytype auth` pairs the CLI with the app through
+  schemas. `loom auth` pairs the CLI with the app through
   `POST /v2/auth/challenges` and `POST /v2/auth/api_keys` and saves the key
   to a 0600 config file that every verb falls back to when `ANYTYPE_API_KEY`
   is unset; `auth status` calls `GET /v2/auth/whoami`. A server test pins
@@ -2275,8 +2275,8 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   send `If-Match`; the CLI exposes it as an advanced flag for scripts
   (`core/api/wrapper/session.go:52`).
 - **Handle state.** CLI handle state lives in a session file at
-  `os.UserCacheDir()/anytype-cli/session.json`, overridden by
-  `ANYTYPE_CLI_SESSION`; saves are atomic through a temp-file rename and a
+  `os.UserCacheDir()/loom/session.json`, overridden by
+  `LOOM_SESSION`; saves are atomic through a temp-file rename and a
   corrupt file starts fresh rather than bricking the CLI. A long-lived host
   keeps the same table in memory behind the same store interface, hands out
   deep copies and serializes tool calls, so concurrent calls cannot race the

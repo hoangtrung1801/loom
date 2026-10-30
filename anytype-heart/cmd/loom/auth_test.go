@@ -24,7 +24,7 @@ func pairingStub(t *testing.T, other http.HandlerFunc) string {
 		switch r.Method + " " + r.URL.Path {
 		case "POST /v2/auth/challenges":
 			raw, _ := io.ReadAll(r.Body)
-			assert.JSONEq(t, `{"app_name":"anytype-cli"}`, string(raw))
+			assert.JSONEq(t, `{"app_name":"loom"}`, string(raw))
 			fmt.Fprint(w, `{"challenge_id":"chal1"}`)
 		case "POST /v2/auth/api_keys":
 			var req struct {
@@ -44,7 +44,7 @@ func pairingStub(t *testing.T, other http.HandlerFunc) string {
 				fmt.Fprint(w, `{"status":401,"code":"unauthorized","message":"invalid key","issues":[]}`)
 				return
 			}
-			fmt.Fprint(w, `{"key":{"id":"k","name":"anytype-cli"},"scope":"jsonApi","grant":{"scoped":false,"restricted":false,"all_spaces":false,"permission":null,"spaces":[]},"api":{"version":"2025-11-08"},"key_status":"legacy"}`)
+			fmt.Fprint(w, `{"key":{"id":"k","name":"loom"},"scope":"jsonApi","grant":{"scoped":false,"restricted":false,"all_spaces":false,"permission":null,"spaces":[]},"api":{"version":"2025-11-08"},"key_status":"legacy"}`)
 		default:
 			other(w, r)
 		}
@@ -52,9 +52,9 @@ func pairingStub(t *testing.T, other http.HandlerFunc) string {
 	t.Cleanup(server.Close)
 	t.Setenv("ANYTYPE_API_URL", server.URL)
 	t.Setenv("ANYTYPE_API_KEY", "")
-	t.Setenv("ANYTYPE_CLI_SESSION", t.TempDir()+"/session.json")
+	t.Setenv("LOOM_SESSION", t.TempDir()+"/session.json")
 	path := filepath.Join(t.TempDir(), "cfg", "config.json")
-	t.Setenv("ANYTYPE_CLI_CONFIG", path)
+	t.Setenv("LOOM_CONFIG", path)
 	return path
 }
 
@@ -196,7 +196,7 @@ func TestAuthStatusAndLogout(t *testing.T) {
 
 		// then
 		require.Equal(t, 0, code, stderr)
-		assert.Contains(t, stdout, "anytype-cli (from config file)")
+		assert.Contains(t, stdout, "loom (from config file)")
 		assert.Contains(t, stdout, "jsonApi")
 		assert.NotContains(t, stdout, "issued-key")
 	})

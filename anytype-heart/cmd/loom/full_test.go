@@ -223,7 +223,7 @@ func TestRunAPI(t *testing.T) {
 	t.Run("no server says what is needed", func(t *testing.T) {
 		// given
 		t.Setenv("ANYTYPE_API_URL", "http://127.0.0.1:1")
-		t.Setenv("ANYTYPE_CLI_CONFIG", t.TempDir()+"/config.json")
+		t.Setenv("LOOM_CONFIG", t.TempDir()+"/config.json")
 		t.Setenv("ANYTYPE_API_KEY", "test-key")
 
 		// when
@@ -300,7 +300,7 @@ func TestRunFullTier(t *testing.T) {
 	t.Run("mcp --tier full without a server exits 1 before serving", func(t *testing.T) {
 		// given
 		t.Setenv("ANYTYPE_API_URL", "http://127.0.0.1:1")
-		t.Setenv("ANYTYPE_CLI_CONFIG", t.TempDir()+"/config.json")
+		t.Setenv("LOOM_CONFIG", t.TempDir()+"/config.json")
 
 		// when
 		code, stdout, stderr := runCLIWithStdin("", "mcp", "--tier", "full")

@@ -3,12 +3,12 @@ package main
 // auth.go — the auth verb: pair the CLI with the running app and keep the
 // API key it issues, so no environment variable has to carry it.
 //
-//	anytype auth [login] [--code 1234] [--print]   pair (the app shows a 4-digit code)
-//	anytype auth status                            who the saved key is
-//	anytype auth logout                            forget the saved key
+//	loom auth [login] [--code 1234] [--print]   pair (the app shows a 4-digit code)
+//	loom auth status                            who the saved key is
+//	loom auth logout                            forget the saved key
 //
 // The key lives in a config file (config.json under the user config dir,
-// ANYTYPE_CLI_CONFIG overrides), 0600 in a 0700 directory. ANYTYPE_API_KEY
+// LOOM_CONFIG overrides), 0600 in a 0700 directory. ANYTYPE_API_KEY
 // still wins over it, so a script can override the saved key per process.
 
 import (
@@ -32,7 +32,7 @@ import (
 )
 
 // authAppName is how the app's pairing dialog names this client.
-const authAppName = "anytype-cli"
+const authAppName = "loom"
 
 // cliConfig is the saved configuration. Both fields are optional; the
 // environment variables take precedence over them.
@@ -42,14 +42,14 @@ type cliConfig struct {
 }
 
 func configPath() (string, error) {
-	if p := os.Getenv("ANYTYPE_CLI_CONFIG"); p != "" {
+	if p := os.Getenv("LOOM_CONFIG"); p != "" {
 		return p, nil
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve config dir: %w", err)
 	}
-	return filepath.Join(dir, "anytype-cli", "config.json"), nil
+	return filepath.Join(dir, "loom", "config.json"), nil
 }
 
 // loadConfig reads the config file; a missing or unreadable one is an empty
@@ -134,9 +134,9 @@ func resolveAPIURL() string {
 	return loadConfig().ApiUrl
 }
 
-const authUsage = `usage: anytype auth [login] [--code 1234] [--print]   pair with the running app and save an API key
-       anytype auth status                              show which key is in use
-       anytype auth logout                              remove the saved key`
+const authUsage = `usage: loom auth [login] [--code 1234] [--print]   pair with the running app and save an API key
+       loom auth status                              show which key is in use
+       loom auth logout                              remove the saved key`
 
 func runAuth(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	sub := "login"
@@ -220,7 +220,7 @@ func authLogin(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 func authStatus(stdout, stderr io.Writer) int {
 	key, source := resolveAPIKey()
 	if key == "" {
-		fmt.Fprintln(stderr, "error: no API key — run \"anytype auth\" or set ANYTYPE_API_KEY")
+		fmt.Fprintln(stderr, "error: no API key — run \"loom auth\" or set ANYTYPE_API_KEY")
 		return 1
 	}
 	baseURL := wrapper.NewClient(resolveAPIURL(), "").BaseURL

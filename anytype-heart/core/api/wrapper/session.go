@@ -241,14 +241,14 @@ type FileStore struct {
 
 // DefaultSessionPath is the CLI's session file location.
 func DefaultSessionPath() (string, error) {
-	if p := os.Getenv("ANYTYPE_CLI_SESSION"); p != "" {
+	if p := os.Getenv("LOOM_SESSION"); p != "" {
 		return p, nil
 	}
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve cache dir: %w", err)
 	}
-	return filepath.Join(dir, "anytype-cli", "session.json"), nil
+	return filepath.Join(dir, "loom", "session.json"), nil
 }
 
 func (f *FileStore) Load() (*Session, error) {

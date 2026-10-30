@@ -1,32 +1,32 @@
-// Command anytype is the task-tool CLI: the same
+// Command loom is the task-tool CLI: the same
 // ~11 task tools the on-device manifest serves, delivered as verbs for
 // coding-agent harnesses. The verb set is GENERATED from the wrapper
 // package's tool table — one definition, two deliveries; this file only
 // parses flags and prints results.
 //
-//	anytype find --space s1 --type task --filter 'done = false'
-//	anytype read --object 1 --mode outline
-//	anytype add-blocks --object 1 --markdown '- [ ] follow up'
-//	anytype tools            # the machine-readable manifest (JSON)
-//	anytype mcp --tier small # serve the tools over MCP stdio (§8.20)
+//	loom find --space s1 --type task --filter 'done = false'
+//	loom read --object 1 --mode outline
+//	loom add-blocks --object 1 --markdown '- [ ] follow up'
+//	loom tools            # the machine-readable manifest (JSON)
+//	loom mcp --tier small # serve the tools over MCP stdio (§8.20)
 //
 // Beyond the task tools, the full table — one tool per /v2 operation, so
 // every kind of object: types, properties and options, lists and views,
 // templates, chats, widgets, spaces, files, deletion — is derived from the
 // running server's OpenAPI document and served the same two ways:
 //
-//	anytype api                                  # every operation
-//	anytype api list_types space_id=bafy…        # run one, key=value or JSON
-//	anytype mcp --tier full                      # all of them over MCP stdio
+//	loom api                                  # every operation
+//	loom api list_types space_id=bafy…        # run one, key=value or JSON
+//	loom mcp --tier full                      # all of them over MCP stdio
 //
 // Configuration: ANYTYPE_API_URL (default http://127.0.0.1:31009) and
 // ANYTYPE_API_KEY (bearer key from the app's API settings). Instead of the
-// variables, `anytype auth` pairs with the running app and saves the key to
-// a config file (config.json under the user config dir, ANYTYPE_CLI_CONFIG
+// variables, `loom auth` pairs with the running app and saves the key to
+// a config file (config.json under the user config dir, LOOM_CONFIG
 // overrides; it may also hold an "api_url"); the variables win over the
 // file. Handle state
 // (find's numbered results, block labels) persists in a session file
-// (ANYTYPE_CLI_SESSION overrides the location) so verbs compose across
+// (LOOM_SESSION overrides the location) so verbs compose across
 // invocations.
 package main
 
@@ -286,8 +286,8 @@ func verbs() []string {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "anytype — task tools over the local Anytype API (v2)")
-	fmt.Fprintln(w, "\nusage: anytype <verb> [--flag value …]")
+	fmt.Fprintln(w, "loom — task tools over the local Anytype API (v2)")
+	fmt.Fprintln(w, "\nusage: loom <verb> [--flag value …]")
 	fmt.Fprintln(w, "\nverbs:")
 	for _, t := range wrapper.Tools() {
 		fmt.Fprintf(w, "  %-15s %s\n", t.Verb(), firstSentence(t.Description))
@@ -297,8 +297,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintf(w, "  %-15s %s\n", "tools", "print the machine-readable tool manifest (JSON); --tier small|large|full")
 	fmt.Fprintf(w, "  %-15s %s\n", "mcp", "serve the tools over MCP stdio for AI agents; --tier small|large|full")
 	fmt.Fprintln(w, "\ncross-verb flags: --json, --dry-run, --if-match <etag>, --create-missing")
-	fmt.Fprintln(w, "environment: ANYTYPE_API_URL (default "+wrapper.DefaultBaseURL+"), ANYTYPE_API_KEY (or anytype auth), ANYTYPE_CLI_CONFIG, ANYTYPE_CLI_SESSION")
-	fmt.Fprintln(w, "\nstart with: anytype spaces (lists space ids), then anytype find --space <spaceId> --query … ; find's results are numbered handles the other verbs take as --object")
+	fmt.Fprintln(w, "environment: ANYTYPE_API_URL (default "+wrapper.DefaultBaseURL+"), ANYTYPE_API_KEY (or loom auth), LOOM_CONFIG, LOOM_SESSION")
+	fmt.Fprintln(w, "\nstart with: loom spaces (lists space ids), then loom find --space <spaceId> --query … ; find's results are numbered handles the other verbs take as --object")
 }
 
 func firstSentence(s string) string {
