@@ -33,9 +33,10 @@ func FetchOpenAPIInputs(ctx context.Context, client *wrapper.Client) (Inputs, er
 }
 
 // FetchInputs reads Derive's inputs from the server the client points at:
-// the document plus every op schema (one request each). The op members are all or nothing: Derive refuses a partial map, so when
-// any op schema cannot be read the members are left nil and the edit tools'
-// op lists stay bare (get_op_schema still serves every op).
+// the document plus every op schema (one request each). The op members are
+// all or nothing: Derive refuses a partial map, so when any op schema cannot
+// be read the members are left nil and the edit tools' op lists stay bare
+// (get_op_schema still serves every op).
 func FetchInputs(ctx context.Context, client *wrapper.Client) (Inputs, error) {
 	in, err := FetchOpenAPIInputs(ctx, client)
 	if err != nil {
