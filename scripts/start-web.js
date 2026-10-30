@@ -13,21 +13,33 @@ const webPort = process.env.WEB_PORT || 3030;
 const grpcWebAddr = process.env.ANYTYPE_GRPCWEB_ADDR || '127.0.0.1:31008';
 const openBrowserAuto = process.env.WEB_OPEN_BROWSER === '1' || process.env.WEB_OPEN_BROWSER === 'true';
 
-// Use the same Application Support / AppData folder as Electron
-function getDefaultDataPath() {
+// Use the same Application Support / AppData folder as Electron (electron/ts/userData.ts)
+function appDataRoot() {
 	const platform = process.platform;
 
 	if (platform === 'darwin') {
-		// macOS: ~/Library/Application Support/anytype/data
-		return path.join(os.homedir(), 'Library', 'Application Support', 'anytype', 'data');
-	} else if (platform === 'win32') {
-		// Windows: %APPDATA%/anytype/data
-		return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'anytype', 'data');
+		return path.join(os.homedir(), 'Library', 'Application Support');
+	} else
+	if (platform === 'win32') {
+		return process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
 	} else {
-		// Linux: ~/.config/anytype/data
-		return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'anytype', 'data');
-	}
-}
+		return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+	};
+};
+
+// <app data>/loom/data (~/Library/Application Support/loom/data, %APPDATA%/loom/data, ~/.config/loom/data).
+// Until the desktop app's first launch has moved an older "anytype" folder over, keep using that one.
+function getDefaultDataPath() {
+	const root = appDataRoot();
+	const current = path.join(root, 'loom', 'data');
+
+	if (fs.existsSync(current)) {
+		return current;
+	};
+
+	const legacy = [ 'anytype', 'Anytype' ].map(name => path.join(root, name, 'data')).find(dir => fs.existsSync(dir));
+	return legacy || current;
+};
 
 const dataPath = process.env.WEB_DATA_PATH || getDefaultDataPath();
 
