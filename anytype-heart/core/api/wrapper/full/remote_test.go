@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,6 +24,13 @@ import (
 // sources package api embeds, so a fetched table can be compared with the
 // one the server derives. failOp makes that op's schema route answer 500.
 func discoveryServer(t *testing.T, failOp string) *httptest.Server {
+	t.Helper()
+	srv, _ := countingDiscoveryServer(t, failOp)
+	return srv
+}
+
+// countingDiscoveryServer also counts the requests it answers, by path.
+func countingDiscoveryServer(t *testing.T, failOp string) (*httptest.Server, func() []string) {
 	t.Helper()
 	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "v2", "openapi.json"))
 	require.NoError(t, err)
@@ -49,9 +57,20 @@ func discoveryServer(t *testing.T, failOp string) *httptest.Server {
 		}
 		_ = json.NewEncoder(w).Encode(v2model.SchemaEntry{Kind: name, Schema: served[name].Schema})
 	})
-	srv := httptest.NewServer(mux)
+	var mu sync.Mutex
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.URL.Path)
+		mu.Unlock()
+		mux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), seen...)
+	}
 }
 
 func TestFetchTable(t *testing.T) {
@@ -99,4 +118,43 @@ func TestFetchTable(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), OpenAPIPath)
 	})
+}
+
+func TestFetchBareTable(t *testing.T) {
+	t.Run("one request, and the same tools as the full fetch", func(t *testing.T) {
+		// given
+		srv, requests := countingDiscoveryServer(t, "")
+		client := wrapper.NewClient(srv.URL, "key")
+
+		// when
+		bare, err := FetchBareTable(context.Background(), client)
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, []string{OpenAPIPath}, requests())
+		fetched, err := FetchTable(context.Background(), client)
+		require.NoError(t, err)
+		assert.Equal(t, fetched.Names(), bare.Names())
+	})
+
+	t.Run("the full fetch also reads the schema index and every op schema", func(t *testing.T) {
+		// given
+		srv, requests := countingDiscoveryServer(t, "")
+
+		// when
+		_, err := FetchTable(context.Background(), wrapper.NewClient(srv.URL, "key"))
+
+		// then
+		require.NoError(t, err)
+		got := requests()
+		assert.Contains(t, got, "/v2/schemas")
+		assert.Greater(t, len(got), 2, "one request per op schema")
+	})
+}
+
+func TestRouteTemplates(t *testing.T) {
+	assert.NotEmpty(t, RouteTemplates())
+	for _, rt := range RouteTemplates() {
+		assert.True(t, strings.HasPrefix(rt.Path, "/v2/"), rt.Path)
+	}
 }

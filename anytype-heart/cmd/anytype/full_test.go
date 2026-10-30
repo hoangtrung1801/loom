@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,6 +33,78 @@ func fullStub(t *testing.T, handler http.HandlerFunc) {
 		default:
 			handler(w, r)
 		}
+	})
+}
+
+// recordingStub is fullStub that also records the path of every request.
+func recordingStub(t *testing.T, handler http.HandlerFunc) func() []string {
+	t.Helper()
+	var mu sync.Mutex
+	var paths []string
+	fullStub(t, func(w http.ResponseWriter, r *http.Request) {
+		handler(w, r)
+	})
+	// wrap the server fullStub started: record by re-pointing at a proxy
+	target := os.Getenv("ANYTYPE_API_URL")
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, target+r.URL.RequestURI(), r.Body)
+		require.NoError(t, err)
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	t.Cleanup(proxy.Close)
+	t.Setenv("ANYTYPE_API_URL", proxy.URL)
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), paths...)
+	}
+}
+
+func TestRunAPIRequestCount(t *testing.T) {
+	handler := func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"data":[],"has_more":false}`) }
+
+	t.Run("running one operation reads only the OpenAPI document and the call", func(t *testing.T) {
+		// given
+		requests := recordingStub(t, handler)
+
+		// when
+		code, _, stderr := runCLI("api", "list_types", "space_id=bafyspace1")
+
+		// then
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, []string{"GET /v2/docs/openapi.json", "GET /v2/spaces/bafyspace1/types"}, requests())
+	})
+
+	t.Run("describing one operation makes exactly one request", func(t *testing.T) {
+		// given
+		requests := recordingStub(t, handler)
+
+		// when
+		code, _, stderr := runCLI("api", "list_types", "--help")
+
+		// then
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, []string{"GET /v2/docs/openapi.json"}, requests())
+	})
+
+	t.Run("the listing also reads the op schemas", func(t *testing.T) {
+		// given
+		requests := recordingStub(t, handler)
+
+		// when
+		code, _, stderr := runCLI("api")
+
+		// then
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, []string{"GET /v2/docs/openapi.json", "GET /v2/schemas"}, requests())
 	})
 }
 
@@ -149,6 +223,7 @@ func TestRunAPI(t *testing.T) {
 	t.Run("no server says what is needed", func(t *testing.T) {
 		// given
 		t.Setenv("ANYTYPE_API_URL", "http://127.0.0.1:1")
+		t.Setenv("ANYTYPE_CLI_CONFIG", t.TempDir()+"/config.json")
 		t.Setenv("ANYTYPE_API_KEY", "test-key")
 
 		// when
@@ -225,6 +300,7 @@ func TestRunFullTier(t *testing.T) {
 	t.Run("mcp --tier full without a server exits 1 before serving", func(t *testing.T) {
 		// given
 		t.Setenv("ANYTYPE_API_URL", "http://127.0.0.1:1")
+		t.Setenv("ANYTYPE_CLI_CONFIG", t.TempDir()+"/config.json")
 
 		// when
 		code, stdout, stderr := runCLIWithStdin("", "mcp", "--tier", "full")

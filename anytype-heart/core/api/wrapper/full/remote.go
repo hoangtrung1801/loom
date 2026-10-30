@@ -21,28 +21,56 @@ import (
 // OpenAPIPath is where the server serves the v2 document.
 const OpenAPIPath = "/v2/docs/openapi.json"
 
-// FetchInputs reads Derive's inputs from the server the client points at.
-// The op members are all or nothing: Derive refuses a partial map, so when
-// any op schema cannot be read the members are left nil and the edit tools'
-// op lists stay bare (get_op_schema still serves every op).
-func FetchInputs(ctx context.Context, client *wrapper.Client) (Inputs, error) {
+// FetchOpenAPIInputs reads only the OpenAPI document: one request. The op
+// lists in the edit tools' descriptions stay bare, which a single call
+// (running or describing one operation) never needs.
+func FetchOpenAPIInputs(ctx context.Context, client *wrapper.Client) (Inputs, error) {
 	doc, err := get(ctx, client, OpenAPIPath)
 	if err != nil {
 		return Inputs{}, fmt.Errorf("read openapi document: %w", err)
+	}
+	return Inputs{OpenAPI: doc}, nil
+}
+
+// FetchInputs reads Derive's inputs from the server the client points at:
+// the document plus every op schema (one request each). The op members are all or nothing: Derive refuses a partial map, so when
+// any op schema cannot be read the members are left nil and the edit tools'
+// op lists stay bare (get_op_schema still serves every op).
+func FetchInputs(ctx context.Context, client *wrapper.Client) (Inputs, error) {
+	in, err := FetchOpenAPIInputs(ctx, client)
+	if err != nil {
+		return Inputs{}, err
 	}
 	members, err := fetchOpMembers(ctx, client)
 	if err != nil {
 		members = nil
 	}
-	return Inputs{OpenAPI: doc, OpMembers: members}, nil
+	in.OpMembers = members
+	return in, nil
 }
 
-// FetchTable derives the full table from the server the client points at.
+// FetchTable derives the full table, op lists included, from the server the
+// client points at.
 func FetchTable(ctx context.Context, client *wrapper.Client) (*Table, error) {
 	in, err := FetchInputs(ctx, client)
 	if err != nil {
 		return nil, err
 	}
+	return deriveFetched(in)
+}
+
+// FetchBareTable derives the table from the OpenAPI document alone — one
+// request. Every tool and its arguments are the same as FetchTable's; only
+// the op lists in the edit tools' descriptions are bare.
+func FetchBareTable(ctx context.Context, client *wrapper.Client) (*Table, error) {
+	in, err := FetchOpenAPIInputs(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	return deriveFetched(in)
+}
+
+func deriveFetched(in Inputs) (*Table, error) {
 	table, err := Derive(in)
 	if err != nil {
 		return nil, fmt.Errorf("derive full tool table: %w", err)
@@ -89,4 +117,14 @@ func get(ctx context.Context, client *wrapper.Client, path string) ([]byte, erro
 		return nil, fmt.Errorf("get %s: %w", path, refusal(status, body))
 	}
 	return body, nil
+}
+
+// RouteTemplates lists the discovery routes this file reads, for the
+// server-side guard that they stay registered.
+func RouteTemplates() []wrapper.RouteTemplate {
+	return []wrapper.RouteTemplate{
+		{Method: http.MethodGet, Path: OpenAPIPath},
+		{Method: http.MethodGet, Path: "/v2/schemas"},
+		{Method: http.MethodGet, Path: "/v2/schemas/ops/:op"},
+	}
 }

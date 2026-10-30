@@ -11,24 +11,32 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/anyproto/anytype-heart/core/api/wrapper"
 	"github.com/anyproto/anytype-heart/core/api/wrapper/full"
 )
 
+// newClient is the client every verb uses: URL and key from the environment,
+// else from the config file anytype auth writes.
 func newClient() *wrapper.Client {
-	return wrapper.NewClient(os.Getenv("ANYTYPE_API_URL"), os.Getenv("ANYTYPE_API_KEY"))
+	key, _ := resolveAPIKey()
+	return wrapper.NewClient(resolveAPIURL(), key)
 }
 
 // fullExecutor derives the full table from the server and runs tools over
-// the same client.
-func fullExecutor(ctx context.Context) (*full.Executor, *full.Table, error) {
+// the same client. withOpLists also reads every op schema (one request
+// each) so the edit tools' descriptions list the ops' members; a single
+// call does not need them and reads the OpenAPI document alone.
+func fullExecutor(ctx context.Context, withOpLists bool) (*full.Executor, *full.Table, error) {
 	client := newClient()
-	table, err := full.FetchTable(ctx, client)
+	fetch := full.FetchBareTable
+	if withOpLists {
+		fetch = full.FetchTable
+	}
+	table, err := fetch(ctx, client)
 	if err != nil {
-		return nil, nil, fmt.Errorf("the full tool table is read from the running app's API at %s (is Anytype running with the API on, and ANYTYPE_API_KEY set?): %w", client.BaseURL, err)
+		return nil, nil, fmt.Errorf("the full tool table is read from the running app's API at %s (is Anytype running with the API on, and are you paired — anytype auth?): %w", client.BaseURL, err)
 	}
 	return full.NewExecutor(client, table), table, nil
 }
@@ -38,7 +46,7 @@ func manifestJSON(tier wrapper.Tier) ([]byte, error) {
 	if tier != wrapper.TierFull {
 		return wrapper.ManifestJSONForTier(tier)
 	}
-	_, table, err := fullExecutor(context.Background())
+	_, table, err := fullExecutor(context.Background(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +62,7 @@ func mcpServer(tier wrapper.Tier) (*wrapper.MCPServer, error) {
 	if tier != wrapper.TierFull {
 		return wrapper.NewMCPServer(wrapper.NewRunner(newClient(), wrapper.NewMemoryStore()), tier), nil
 	}
-	exec, _, err := fullExecutor(context.Background())
+	exec, _, err := fullExecutor(context.Background(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +81,9 @@ func runAPI(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 	ctx := context.Background()
-	exec, table, err := fullExecutor(ctx)
+	// only the listing shows op lists; running or describing one operation
+	// takes the single-request table
+	exec, table, err := fullExecutor(ctx, len(argv) == 0)
 	if err != nil {
 		fmt.Fprintln(stderr, "error:", err)
 		return 1
