@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CardSummary } from '../../../core/store.js';
 import { api } from '../../api.js';
-import { newBoard, newCard, newTask, openApp, openJournal } from '../../actions.js';
+import { newBoard, newCard, openJournal } from '../../actions.js';
 import { useData } from '../../store/data.js';
 import { useUi } from '../../store/ui.js';
 import { Icon, type IconName } from '../Icon.js';
@@ -13,12 +13,8 @@ const START: { label: string; icon: IconName; run(): void }[] = [
   { label: "Today's journal", icon: 'journal', run: () => void openJournal() },
   { label: 'New whiteboard', icon: 'board', run: () => void newBoard() },
   { label: 'Search…', icon: 'search', run: () => useUi.getState().setSearch(true) },
-  { label: 'Research a topic', icon: 'sparkle', run: () => useUi.getState().setResearch(true) },
-  { label: 'New task', icon: 'task', run: () => void newTask() },
-  { label: 'Quick memo', icon: 'memo', run: () => openApp('memos') },
   { label: 'Save a link', icon: 'link', run: () => useUi.getState().setClip(true, 'link') },
   { label: 'Clip a web page', icon: 'globe', run: () => useUi.getState().setClip(true, 'page') },
-  { label: 'Card Library', icon: 'library', run: () => openApp('library') },
 ];
 
 /** The blank tab: quick starts plus what you touched last. */
@@ -33,13 +29,13 @@ export function NewTab() {
       live = false;
     };
   }, [version]);
-  const recentBoards = [...boards].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
+  const recentBoards = [...boards].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
   return (
     <div className="page newtab">
-      <h2>What do you want to work on?</h2>
+      <h2>Home</h2>
       <div className="quick-start">
         {START.map((s) => (
-          <button key={s.label} className="tile" onClick={s.run}><Icon name={s.icon} size={20} /><span>{s.label}</span></button>
+          <button key={s.label} className="tile" onClick={s.run}><Icon name={s.icon} size={15} /><span>{s.label}</span></button>
         ))}
       </div>
       <div className="columns">
