@@ -18,7 +18,7 @@ import (
 )
 
 // newClient is the client every verb uses: URL and key from the environment,
-// else from the config file anytype auth writes.
+// else from the config file loom auth writes.
 func newClient() *wrapper.Client {
 	key, _ := resolveAPIKey()
 	return wrapper.NewClient(resolveAPIURL(), key)
@@ -36,7 +36,7 @@ func fullExecutor(ctx context.Context, withOpLists bool) (*full.Executor, *full.
 	}
 	table, err := fetch(ctx, client)
 	if err != nil {
-		return nil, nil, fmt.Errorf("the full tool table is read from the running app's API at %s (is Anytype running with the API on, and are you paired — anytype auth?): %w", client.BaseURL, err)
+		return nil, nil, fmt.Errorf("the full tool table is read from the running app's API at %s (is Anytype running with the API on, and are you paired — loom auth?): %w", client.BaseURL, err)
 	}
 	return full.NewExecutor(client, table), table, nil
 }
@@ -69,10 +69,10 @@ func mcpServer(tier wrapper.Tier) (*wrapper.MCPServer, error) {
 	return wrapper.NewMCPServerOver(exec, tier, newClient().BaseURL), nil
 }
 
-const apiUsage = `usage: anytype api                              list every operation
-       anytype api <operation> --help           its arguments (JSON Schema)
-       anytype api <operation> [key=value …]    run it; values are JSON when they parse
-       anytype api <operation> '{"key": …}'     run it with a JSON object ("-" reads stdin)`
+const apiUsage = `usage: loom api                              list every operation
+       loom api <operation> --help           its arguments (JSON Schema)
+       loom api <operation> [key=value …]    run it; values are JSON when they parse
+       loom api <operation> '{"key": …}'     run it with a JSON object ("-" reads stdin)`
 
 // runAPI is the api verb: the full table on the command line.
 func runAPI(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -99,7 +99,7 @@ func runAPI(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	name := argv[0]
 	tool, ok := toolListing(exec, name)
 	if !ok {
-		fmt.Fprintf(stderr, "error: unknown operation %q — run \"anytype api\" for the list (%d operations)\n", name, len(table.Names()))
+		fmt.Fprintf(stderr, "error: unknown operation %q — run \"loom api\" for the list (%d operations)\n", name, len(table.Names()))
 		return 2
 	}
 	rest := argv[1:]

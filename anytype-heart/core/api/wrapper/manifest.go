@@ -1,6 +1,6 @@
 // Package wrapper is the task-tool layer over the /v2 REST surface: one
 // curated tool table, exposed
-// as CLI verbs (cmd/anytype), as a machine-readable function-calling
+// as CLI verbs (cmd/loom), as a machine-readable function-calling
 // manifest, and as an MCP stdio server for local models (mcp.go,
 // tier-filtered per tier.go/§8.20) — ONE definition, three deliveries.
 //

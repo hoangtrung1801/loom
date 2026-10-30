@@ -1,7 +1,7 @@
 package wrapper
 
 // cli.go — small helpers the CLI delivery shares with tests, kept here so
-// cmd/anytype stays a flag-parsing shell over the one tool table.
+// cmd/loom stays a flag-parsing shell over the one tool table.
 
 import (
 	"encoding/json"

@@ -1,6 +1,6 @@
 ---
-name: anytype
-description: Read, search, create and edit Anytype objects through the anytype CLI. Use when the user asks to find notes/tasks/pages in Anytype, create objects, tick checkboxes, edit document text, fill tables, or reorganize content. Task-shaped verbs over the local API; results are numbered handles you pass back — never copy long ids.
+name: loom
+description: Read, search, create and edit Anytype objects through the loom CLI. Use when the user asks to find notes/tasks/pages in Anytype, create objects, tick checkboxes, edit document text, fill tables, or reorganize content. Task-shaped verbs over the local API; results are numbered handles you pass back — never copy long ids.
 ---
 
 # Anytype task tools
@@ -10,38 +10,38 @@ session: `find` numbers its results (1, 2, …) and sets the working space;
 every other verb takes `--object <number>`.
 
 Setup: the local Anytype app must be running; `ANYTYPE_API_KEY` holds an
-API key from the app's settings, or run `anytype auth` to pair and save one
+API key from the app's settings, or run `loom auth` to pair and save one
 (`ANYTYPE_API_URL` defaults to `http://127.0.0.1:31009`).
 
 ## Setup
 
-1. Run `anytype auth`. The app shows a 4-digit code; enter it when asked (or
+1. Run `loom auth`. The app shows a 4-digit code; enter it when asked (or
    pass `--code 1234`). The key is saved to `config.json` under the user
-   config dir (`ANYTYPE_CLI_CONFIG` overrides) and every verb uses it;
-   `ANYTYPE_API_KEY`, when set, takes precedence. `anytype auth status`
-   shows which key is in use, `anytype auth logout` removes it.
+   config dir (`LOOM_CONFIG` overrides) and every verb uses it;
+   `ANYTYPE_API_KEY`, when set, takes precedence. `loom auth status`
+   shows which key is in use, `loom auth logout` removes it.
 2. Add the MCP server to your client:
 
 ```
-claude mcp add anytype -- anytype mcp --tier full
+claude mcp add loom -- loom mcp --tier full
 ```
 
 ```json
-{"command": "anytype", "args": ["mcp", "--tier", "full"]}
+{"command": "loom", "args": ["mcp", "--tier", "full"]}
 ```
 
 ## The loop
 
 ```sh
-anytype spaces                             # space ids, when none is known
+loom spaces                             # space ids, when none is known
 # Work — bafyspace1
-anytype find --space bafyspace1 --type Task --filter 'done = false'
+loom find --space bafyspace1 --type Task --filter 'done = false'
 # 1. Prepare the Q3 report (Task)
 # 2. Ship the beta (Task)
-anytype edit-text --object 1 --find "Q3" --replace "Q4"
+loom edit-text --object 1 --find "Q3" --replace "Q4"
 # --block is optional: the snippet locates the block when it matches
 # exactly one; an ambiguous snippet refuses and lists the candidates
-anytype read --object 1 --mode outline     # block ids + structure
+loom read --object 1 --mode outline     # block ids + structure
 ```
 
 1. **spaces** when no space id is known — it lists `name — id`.
@@ -107,16 +107,16 @@ underscores (`Due_date` for "Due date"); a name no identifier can spell
 
 ## References
 
-- `anytype tools` — the machine-readable manifest: per-tool JSON schema,
+- `loom tools` — the machine-readable manifest: per-tool JSON schema,
   worked example, GBNF grammar (constrained decoding), and the filter
   grammar (EBNF + GBNF). `--tier small` narrows it to the 8-tool set for
   ~8B models (`large`, the default, is all twelve).
-- `anytype mcp --tier small|large|full` — serve the same tools over MCP stdio
+- `loom mcp --tier small|large|full` — serve the same tools over MCP stdio
   for LOCAL models (Ollama/LM Studio-class hosts). Coding agents reading
   this skill should keep using the verbs directly — the CLI is the
   intended delivery for them; `mcp` exists for hosts that cannot run
   commands. Session state is in-memory for the server's lifetime.
-- `anytype help` — the verb list; `anytype <verb> --help` — its flags.
+- `loom help` — the verb list; `loom <verb> --help` — its flags.
 
 ## Beyond the task verbs: every operation
 
@@ -129,20 +129,20 @@ API v2 endpoint, derived from the running app's own OpenAPI document, so it
 always matches the app you talk to.
 
 ```sh
-anytype api                                   # every operation, [read-only] / [destructive] marked
-anytype api create_type --help                # one operation's argument schema
-anytype api list_types space_id=bafyspace1    # key=value; values are JSON when they parse
-anytype api delete_object space_id=bafyspace1 object_id=bafyobj1
-echo '{"space_id":"bafyspace1","name":"Projects","type":"page"}' | anytype api create_object -
+loom api                                   # every operation, [read-only] / [destructive] marked
+loom api create_type --help                # one operation's argument schema
+loom api list_types space_id=bafyspace1    # key=value; values are JSON when they parse
+loom api delete_object space_id=bafyspace1 object_id=bafyobj1
+echo '{"space_id":"bafyspace1","name":"Projects","type":"page"}' | loom api create_object -
 ```
 
 - Arguments are flat: path, query and body members side by side, named as
   the schema names them (`space_id`, `object_id`, …). Ids are full ids,
   not the task verbs' numbered handles.
 - `patch_object` and `update_type` take `ops`, a list of `{op, …}` entries;
-  `anytype api get_op_schema op=<name>` serves each op's shape and example.
+  `loom api get_op_schema op=<name>` serves each op's shape and example.
 - Any write accepts `dry_run=true` to preview what it would change.
-- `anytype mcp --tier full` serves the same table over MCP stdio, and
-  `anytype tools --tier full` prints its tools/list.
+- `loom mcp --tier full` serves the same table over MCP stdio, and
+  `loom tools --tier full` prints its tools/list.
 - Spec: `core/api/APIV2.md` §7 (the wrapper contract), `github.com/anyproto/any-block/format/v2/SPEC.md`
   (the document format the full-read mode returns).

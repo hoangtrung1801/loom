@@ -287,7 +287,7 @@ served EBNF (underscore-joined Unicode identifiers must be emittable);
   happen); record D1–D6 with a pointer to this file.
 - `core/api/v2/SKILL.md`: the "so do documents" paragraph rewritten for
   the two modes; fold examples updated.
-- `cmd/anytype/SKILL.md`: fold/forgiveness section updated (names now
+- `cmd/loom/SKILL.md`: fold/forgiveness section updated (names now
   resolve; multi-word rules; underscore-join for filter strings).
 - `core/api/v2/doc.go` + `make openapi`: state the two vocabularies and
   the parameter explicitly.

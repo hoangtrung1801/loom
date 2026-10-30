@@ -138,14 +138,14 @@ func TestRunExitCodes(t *testing.T) {
 	t.Run("no arguments prints usage and exits 2", func(t *testing.T) {
 		code, stdout, _ := runCLI()
 		assert.Equal(t, 2, code)
-		assert.Contains(t, stdout, "usage: anytype <verb>")
+		assert.Contains(t, stdout, "usage: loom <verb>")
 	})
 
 	t.Run("help exits 0", func(t *testing.T) {
 		for _, h := range []string{"help", "--help", "-h"} {
 			code, stdout, stderr := runCLI(h)
 			assert.Equal(t, 0, code, h)
-			assert.Contains(t, stdout, "usage: anytype <verb>")
+			assert.Contains(t, stdout, "usage: loom <verb>")
 			assert.NotContains(t, stderr, "error:")
 		}
 	})
@@ -262,8 +262,8 @@ func stubServer(t *testing.T, handler http.HandlerFunc) {
 	t.Cleanup(server.Close)
 	t.Setenv("ANYTYPE_API_URL", server.URL)
 	t.Setenv("ANYTYPE_API_KEY", "test-key")
-	t.Setenv("ANYTYPE_CLI_SESSION", t.TempDir()+"/session.json")
-	t.Setenv("ANYTYPE_CLI_CONFIG", t.TempDir()+"/config.json")
+	t.Setenv("LOOM_SESSION", t.TempDir()+"/session.json")
+	t.Setenv("LOOM_CONFIG", t.TempDir()+"/config.json")
 }
 
 func TestRunEndToEnd(t *testing.T) {

@@ -4,7 +4,7 @@ package wrapper
 // (APIV2.md §8.20): one protocol loop — initialize, tools/list, tools/call,
 // ping — over an Executor, which is either the curated table for a tier
 // (the Runner) or the full table (core/api/wrapper/full). Two framings
-// share it: newline-delimited JSON over stdio (cmd/anytype's mcp verb) and
+// share it: newline-delimited JSON over stdio (cmd/loom's mcp verb) and
 // one message per POST on the API server's /mcp/{tier} route
 // (core/api/server/mcp.go). Both call HandleMessage, which classifies a
 // message before anything runs: a request is dispatched, a notification or

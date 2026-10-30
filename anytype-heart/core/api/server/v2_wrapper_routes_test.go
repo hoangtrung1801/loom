@@ -30,7 +30,7 @@ func TestWrapperRoutesRegistered(t *testing.T) {
 }
 
 // TestCLIRoutesRegistered guards the anytype CLI's own dependencies: the
-// full tool table is derived from the discovery routes, and `anytype auth`
+// full tool table is derived from the discovery routes, and `loom auth`
 // pairs through the auth routes. A rename would leave the CLI suites green
 // (they stub the server) and break both against a real app.
 func TestCLIRoutesRegistered(t *testing.T) {
@@ -42,7 +42,7 @@ func TestCLIRoutesRegistered(t *testing.T) {
 		registered[route.Method+" "+route.Path] = true
 	}
 
-	// the auth routes are called by cmd/anytype (package main, so not
+	// the auth routes are called by cmd/loom (package main, so not
 	// importable); keep this list in step with auth.go
 	routes := append(full.RouteTemplates(),
 		wrapper.RouteTemplate{Method: "POST", Path: "/v2/auth/challenges"},
