@@ -28,7 +28,7 @@ export function ResearchDialog() {
   };
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <form className="dialog research" role="dialog" aria-label="Research a topic" onSubmit={(e) => { e.preventDefault(); start(); }} onKeyDown={(e) => e.key === 'Escape' && close()}>
+      <form className="dialog form-dialog" role="dialog" aria-label="Research a topic" onSubmit={(e) => { e.preventDefault(); start(); }} onKeyDown={(e) => e.key === 'Escape' && close()}>
         <h2><Icon name="sparkle" /> Research a topic</h2>
         <p className="hint">Loom searches your notes for the topic and asks the AI to summarize what you know, what is missing, and what to do next.</p>
         <input ref={input} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. spaced repetition" aria-label="Topic" />
