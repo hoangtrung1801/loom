@@ -6,7 +6,6 @@ import { mutate, useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { CardRow, Empty } from '../ui/bits.js';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 /** New cards land here. Archiving a card removes it from the inbox without deleting it. */
 export function Inbox() {
@@ -53,8 +52,9 @@ export function Inbox() {
 export function TaskRow({ task }: { task: TaskView }) {
   return (
     <li className="task">
-      <Input
+      <input
         type="checkbox"
+        className="task-check"
         checked={task.checked}
         aria-label={task.text}
         onChange={(e) => void mutate(() => api.setTaskChecked(task.cardId, task.blockId, e.target.checked))}
