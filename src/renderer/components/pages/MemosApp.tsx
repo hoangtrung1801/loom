@@ -6,6 +6,9 @@ import { newMemo, openCard, trashCard } from '../../actions.js';
 import { mutate, useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { Empty, timeAgo, useDebounced } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 /** Quick capture: type, press Enter, and it is saved. Memos stay light until you turn one into a note or a task. */
 export function MemosApp() {
@@ -38,7 +41,7 @@ export function MemosApp() {
     <div className="page memos-app">
       <div className="page-head memos-head"><h2>Memos</h2><p className="hint">Catch the thought now. Sort it into a note or a task later.</p></div>
       <form className="memo-composer" onSubmit={(e) => { e.preventDefault(); void capture(); }}>
-        <textarea
+        <Textarea
           ref={box}
           value={draft}
           rows={3}
@@ -54,10 +57,10 @@ export function MemosApp() {
         />
         <div className="memo-composer-foot">
           <span className="hint"><kbd>Enter</kbd> to save · <kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line</span>
-          <button className="btn primary" type="submit" disabled={!draft.trim()}>Save memo</button>
+          <Button type="submit" disabled={!draft.trim()}>Save memo</Button>
         </div>
       </form>
-      <div className="filters"><input value={text} onChange={(e) => setText(e.target.value)} placeholder="Search memos…" aria-label="Search memos" /></div>
+      <div className="filters"><Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Search memos…" aria-label="Search memos" /></div>
       {shown.length === 0 ? (
         <Empty title={q.trim() ? 'No memos match' : 'No memos yet'}>{q.trim() ? 'Try different words.' : 'Memos are for things you want to get down before they slip away.'}</Empty>
       ) : (
@@ -109,7 +112,7 @@ function MemoItem({ memo }: { memo: CardSummary }) {
         <span className="grow" />
         <button className="act" onClick={() => void mutate(() => api.convertCard(memo.id, 'note')).then(() => openCard(memo.id))}>To note</button>
         <button className="act" onClick={() => void mutate(() => api.convertCard(memo.id, 'task')).then(() => openCard(memo.id))}>To task</button>
-        <button className="icon-btn" title="Delete memo" aria-label="Delete memo" onClick={() => void trashCard(memo.id)}><Icon name="trash" size={14} /></button>
+        <Button variant="ghost" size="icon" title="Delete memo" aria-label="Delete memo" onClick={() => void trashCard(memo.id)}><Icon name="trash" size={14} /></Button>
       </div>
     </li>
   );

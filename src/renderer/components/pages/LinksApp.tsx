@@ -7,6 +7,8 @@ import { refresh, toast, useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { menuFor } from '../ui/ContextMenu.js';
 import { Empty, useDebounced } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 /** Saves a link from the app, the palette or the menu: fetches the title, description and image, then tags it. */
 export async function saveLinkFrom(url: string, note = ''): Promise<{ id: string; existed: boolean } | undefined> {
@@ -70,9 +72,9 @@ export function LinksApp() {
     <div className="page wide links-app">
       <div className="page-head"><h2>Links</h2><span className="count grow">{allCount} saved</span></div>
       <form className="link-add" onSubmit={(e) => { e.preventDefault(); void add(); }}>
-        <label className="link-add-url"><Icon name="link" /><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link — Loom reads the title and preview" aria-label="Link address" /></label>
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why save it? (optional)" aria-label="Note about the link" />
-        <button className="btn primary" type="submit" disabled={!url.trim() || busy}>{busy ? 'Saving…' : 'Save link'}</button>
+        <label className="link-add-url"><Icon name="link" /><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link — Loom reads the title and preview" aria-label="Link address" /></label>
+        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why save it? (optional)" aria-label="Note about the link" />
+        <Button type="submit" disabled={!url.trim() || busy}>{busy ? 'Saving…' : 'Save link'}</Button>
       </form>
       <div className="filters">
         <div className="tag-pills" role="group" aria-label="Filter links by tag">

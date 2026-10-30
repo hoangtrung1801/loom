@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PlacementView } from '../../../core/store.js';
 import { Icon } from '../Icon.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export function matchText(p: PlacementView): string {
   return `${p.title} ${p.text} ${p.kind === 'card' ? p.content.replace(/"text":"([^"]*)"/g, ' $1 ') : ''}`.toLowerCase();
@@ -33,7 +35,7 @@ export function BoardSearch({ placements, onMatches, onJump, onClose }: { placem
   return (
     <div className="board-search" role="search" onPointerDown={(e) => e.stopPropagation()}>
       <Icon name="search" size={14} />
-      <input
+      <Input
         ref={input}
         value={query}
         placeholder="Search this whiteboard"
@@ -46,9 +48,9 @@ export function BoardSearch({ placements, onMatches, onJump, onClose }: { placem
         }}
       />
       <span className="count">{query.trim() ? `${found.length ? at + 1 : 0}/${found.length}` : ''}</span>
-      <button className="icon-btn" aria-label="Previous match" onClick={() => step(-1)}><Icon name="chevronDown" className="up" size={14} /></button>
-      <button className="icon-btn" aria-label="Next match" onClick={() => step(1)}><Icon name="chevronDown" size={14} /></button>
-      <button className="icon-btn" aria-label="Close search" onClick={onClose}><Icon name="close" size={14} /></button>
+      <Button variant="ghost" size="icon" aria-label="Previous match" onClick={() => step(-1)}><Icon name="chevronDown" className="up" size={14} /></Button>
+      <Button variant="ghost" size="icon" aria-label="Next match" onClick={() => step(1)}><Icon name="chevronDown" size={14} /></Button>
+      <Button variant="ghost" size="icon" aria-label="Close search" onClick={onClose}><Icon name="close" size={14} /></Button>
     </div>
   );
 }

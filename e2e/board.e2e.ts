@@ -232,7 +232,7 @@ describe('whiteboards', () => {
   it('creates sub-whiteboards and moves cards into them by dropping on the tile', async () => {
     await openSeedBoard();
     await page().mouse.click(1000, 120, { button: 'right' });
-    await page().click('.context-menu button:has-text("New sub-whiteboard here")');
+    await page().click('[role^="menuitem"]:has-text("New sub-whiteboard here")');
     await pw(page().locator('.board-obj')).toHaveCount(1);
     const tile = await centerOf(page().locator('.board-obj'));
     const head = (await cardObjs().nth(1).locator('header').boundingBox())!;

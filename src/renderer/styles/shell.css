@@ -231,7 +231,7 @@ dt { color: var(--muted); } dd { margin: 0; }
 .link-add > input { flex: 1 1 200px; border-left: 1px solid var(--border); border-radius: 0; }
 .link-add-url { flex: 2 1 300px; display: flex; align-items: center; gap: 8px; padding-left: 10px; color: var(--muted); }
 .link-add-url input { flex: 1; padding-left: 0; }
-.link-add .btn { height: 40px; padding: 0 18px; border-radius: 10px; }
+.link-add button[type=submit] { height: 40px; padding: 0 18px; border-radius: 10px; }
 .tag-pills { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
 .link-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .link-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; box-shadow: var(--shadow-sm); }

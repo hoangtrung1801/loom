@@ -4,6 +4,9 @@ import { api } from '../../api.js';
 import { errorMessage } from '../../api.js';
 import { mutate, toast, useData } from '../../store/data.js';
 import { Empty } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 const COLORS = ['', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'gray'];
 
@@ -36,7 +39,7 @@ export function TagDatabase() {
     <div className="page">
       <div className="page-head">
         <h2 className="grow">Tag Database</h2>
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter tags…" aria-label="Filter tags" />
+        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter tags…" aria-label="Filter tags" />
       </div>
       <form
         className="add-prop"
@@ -47,9 +50,9 @@ export function TagDatabase() {
           void run(() => api.setTagDef(name, { collection })).then((ok) => ok && setDraft({ name: '', collection: '' }));
         }}
       >
-        <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="New tag" aria-label="New tag name" />
-        <input value={draft.collection} onChange={(e) => setDraft({ ...draft, collection: e.target.value })} placeholder="Collection (optional)" aria-label="New tag collection" />
-        <button className="btn" type="submit">Create tag</button>
+        <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="New tag" aria-label="New tag name" />
+        <Input value={draft.collection} onChange={(e) => setDraft({ ...draft, collection: e.target.value })} placeholder="Collection (optional)" aria-label="New tag collection" />
+        <Button variant="outline" type="submit">Create tag</Button>
       </form>
       {groups.length === 0 ? (
         <Empty title={filter.trim() ? 'No matching tags' : 'No tags yet'}>{filter.trim() ? 'Try a different filter.' : 'Create a tag above, or add a #tag to any card.'}</Empty>
@@ -85,16 +88,16 @@ export function TagDatabase() {
                     onBlur={(e) => e.target.value.trim() !== t.collection && void run(() => api.setTagDef(t.tag, { collection: e.target.value }))}
                   />
                   <div className="tag-actions">
-                    <select value={t.color} onChange={(e) => void run(() => api.setTagDef(t.tag, { color: e.target.value }))} aria-label={`Color of ${t.tag}`}>
-                      {COLORS.map((c) => <option key={c} value={c}>{c || 'no color'}</option>)}
-                    </select>
-                    <button
-                      className="btn"
+                    <NativeSelect value={t.color} onChange={(e) => void run(() => api.setTagDef(t.tag, { color: e.target.value }))} aria-label={`Color of ${t.tag}`}>
+                      {COLORS.map((c) => <NativeSelectOption key={c} value={c}>{c || 'no color'}</NativeSelectOption>)}
+                    </NativeSelect>
+                    <Button
+                      variant="outline"
                       aria-label={`Delete ${t.tag}`}
                       onClick={() => window.confirm(`Delete #${t.tag}? It is removed from ${t.count} ${t.count === 1 ? 'card' : 'cards'}; the cards stay.`) && void run(() => api.deleteTag(t.tag))}
                     >
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </li>
               ))}

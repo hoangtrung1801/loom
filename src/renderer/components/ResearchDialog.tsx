@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useUi } from '../store/ui.js';
 import { Icon } from './Icon.js';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 
 const RESEARCH_PROMPT = (topic: string): string =>
   `Research the topic "${topic}" using my notes. First search my cards and whiteboards for what I already know, then give me: ` +
@@ -13,11 +16,6 @@ export function ResearchDialog() {
   const setOpen = useUi((s) => s.setResearch);
   const openChat = useUi((s) => s.openChat);
   const [topic, setTopic] = useState('');
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (open) input.current?.focus();
-  }, [open]);
-  if (!open) return null;
   const close = (): void => setOpen(false);
   const start = (): void => {
     const t = topic.trim();
@@ -27,13 +25,20 @@ export function ResearchDialog() {
     openChat([{ type: 'search', id: t, label: t }], null, RESEARCH_PROMPT(t));
   };
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <form className="dialog form-dialog" role="dialog" aria-label="Research a topic" onSubmit={(e) => { e.preventDefault(); start(); }} onKeyDown={(e) => e.key === 'Escape' && close()}>
-        <h2><Icon name="sparkle" /> Research a topic</h2>
-        <p className="hint">Loom searches your notes for the topic and asks the AI to summarize what you know, what is missing, and what to do next.</p>
-        <input ref={input} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. spaced repetition" aria-label="Topic" />
-        <div className="row"><button className="btn" type="button" onClick={close}>Cancel</button><button className="btn primary" type="submit" disabled={!topic.trim()}>Start research</button></div>
-      </form>
-    </div>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent aria-label="Research a topic" className="top-[12vh] translate-y-0">
+        <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); start(); }}>
+          <DialogHeader>
+            <DialogTitle><Icon name="sparkle" /> Research a topic</DialogTitle>
+            <DialogDescription>Loom searches your notes for the topic and asks the AI to summarize what you know, what is missing, and what to do next.</DialogDescription>
+          </DialogHeader>
+          <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. spaced repetition" aria-label="Topic" autoFocus />
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={close}>Cancel</Button>
+            <Button type="submit" disabled={!topic.trim()}>Start research</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

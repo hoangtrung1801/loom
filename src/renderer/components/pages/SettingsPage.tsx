@@ -5,6 +5,9 @@ import { toast } from '../../store/data.js';
 import { useSync } from '../../store/sync.js';
 import { timeAgo } from '../ui/bits.js';
 import type { BackupInfo } from '../../../core/backup.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 export function SettingsPage() {
   return (
@@ -33,11 +36,11 @@ function SyncSection() {
       <h3>Sync</h3>
       <p className="hint">Point Loom at a sync server (<code>bun run sync-server</code>) to share notes across devices. Changes merge field by field, so editing offline is safe.</p>
       <form onSubmit={(e) => { e.preventDefault(); void save(url.trim(), token).then(() => setToken('')); }}>
-        <label className="field"><span>Server URL</span><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://localhost:8787" /></label>
-        <label className="field"><span>Token</span><input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={state?.hasToken ? '•••••• (saved)' : 'optional'} autoComplete="off" /></label>
+        <label className="field"><span>Server URL</span><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://localhost:8787" /></label>
+        <label className="field"><span>Token</span><Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder={state?.hasToken ? '•••••• (saved)' : 'optional'} autoComplete="off" /></label>
         <div className="row">
-          <button className="btn primary" type="submit">Save</button>
-          <button className="btn" type="button" disabled={busy || !state?.url} onClick={() => void sync()}>{busy ? 'Syncing…' : 'Sync now'}</button>
+          <Button type="submit">Save</Button>
+          <Button variant="outline" type="button" disabled={busy || !state?.url} onClick={() => void sync()}>{busy ? 'Syncing…' : 'Sync now'}</Button>
           <span className="hint">{message || (state?.lastSyncedAt ? `Last synced ${timeAgo(state.lastSyncedAt)}` : '')}{state?.pending ? ` · ${state.pending} changes waiting` : ''}</span>
         </div>
       </form>
@@ -69,15 +72,15 @@ function AiSection() {
       <form onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <label className="field">
           <span>Provider</span>
-          <select value={cfg.provider} onChange={(e) => setCfg({ ...cfg, provider: e.target.value as AiConfig['provider'], baseUrl: '' })}>
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI-compatible</option>
-          </select>
+          <NativeSelect value={cfg.provider} onChange={(e) => setCfg({ ...cfg, provider: e.target.value as AiConfig['provider'], baseUrl: '' })}>
+            <NativeSelectOption value="anthropic">Anthropic</NativeSelectOption>
+            <NativeSelectOption value="openai">OpenAI-compatible</NativeSelectOption>
+          </NativeSelect>
         </label>
-        <label className="field"><span>Model</span><input value={cfg.model} onChange={(e) => setCfg({ ...cfg, model: e.target.value })} placeholder={cfg.provider === 'anthropic' ? 'claude-sonnet-5-5' : 'gpt-4.1'} /></label>
-        <label className="field"><span>Base URL</span><input value={cfg.baseUrl} onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })} placeholder={cfg.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'} /></label>
-        <label className="field"><span>API key</span><input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={cfg.hasKey ? '•••••• (saved)' : 'sk-…'} autoComplete="off" /></label>
-        <div className="row"><button className="btn primary" type="submit">Save</button><span className="hint">{note}</span></div>
+        <label className="field"><span>Model</span><Input value={cfg.model} onChange={(e) => setCfg({ ...cfg, model: e.target.value })} placeholder={cfg.provider === 'anthropic' ? 'claude-sonnet-5-5' : 'gpt-4.1'} /></label>
+        <label className="field"><span>Base URL</span><Input value={cfg.baseUrl} onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })} placeholder={cfg.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'} /></label>
+        <label className="field"><span>API key</span><Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={cfg.hasKey ? '•••••• (saved)' : 'sk-…'} autoComplete="off" /></label>
+        <div className="row"><Button type="submit">Save</Button><span className="hint">{note}</span></div>
       </form>
     </section>
   );
@@ -104,8 +107,8 @@ function ExportSection() {
       <h3>Export</h3>
       <p className="hint">Take your notes with you. Markdown keeps cards as readable text with [[links]]; JSON is a lossless dump.</p>
       <div className="row">
-        <button className="btn" disabled={busy} onClick={() => void run('markdown')}>Export Markdown</button>
-        <button className="btn" disabled={busy} onClick={() => void run('json')}>Export JSON</button>
+        <Button variant="outline" disabled={busy} onClick={() => void run('markdown')}>Export Markdown</Button>
+        <Button variant="outline" disabled={busy} onClick={() => void run('json')}>Export JSON</Button>
       </div>
     </section>
   );
@@ -136,7 +139,7 @@ function BackupSection() {
       <h3>Backups</h3>
       <p className="hint">Once a day Loom saves a copy of your database on this device and keeps the last seven. Attachments are stored once and never rewritten, so they need no copies.</p>
       <div className="row">
-        <button className="btn" disabled={busy} onClick={() => void run()}>{busy ? 'Backing up…' : 'Back up now'}</button>
+        <Button variant="outline" disabled={busy} onClick={() => void run()}>{busy ? 'Backing up…' : 'Back up now'}</Button>
         <span className="hint">{latest ? `Last backup ${timeAgo(latest.createdAt)} · ${formatSize(latest.size)} · ${info.backups.length} kept` : 'No backups yet'}</span>
       </div>
       <p className="hint mono backup-dir">{info.dir}</p>

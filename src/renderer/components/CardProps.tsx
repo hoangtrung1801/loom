@@ -3,6 +3,8 @@ import type { CardPropGroup } from '../../core/tagdb.js';
 import { api, errorMessage } from '../api.js';
 import { openTag } from '../actions.js';
 import { toast, useData } from '../store/data.js';
+import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 /** Values of the properties defined by a card's tags (the "properties" of Heptabase's tag databases). */
 export function CardProps({ cardId }: { cardId: string }) {
@@ -53,10 +55,10 @@ export function PropInput({ type, options, value, onCommit }: { type: string; op
       return <input type="checkbox" checked={value === '1'} onChange={(e) => onCommit(e.target.checked ? '1' : '')} />;
     case 'select':
       return (
-        <select value={value} onChange={(e) => onCommit(e.target.value)}>
-          <option value="">—</option>
-          {options.map((o) => <option key={o}>{o}</option>)}
-        </select>
+        <NativeSelect value={value} onChange={(e) => onCommit(e.target.value)}>
+          <NativeSelectOption value="">—</NativeSelectOption>
+          {options.map((o) => <NativeSelectOption key={o}>{o}</NativeSelectOption>)}
+        </NativeSelect>
       );
     case 'multiselect': {
       const picked: string[] = value ? (JSON.parse(value) as string[]) : [];
@@ -78,7 +80,7 @@ export function PropInput({ type, options, value, onCommit }: { type: string; op
     }
     default:
       return (
-        <input
+        <Input
           type={type === 'number' ? 'number' : type === 'date' ? 'date' : 'text'}
           value={draft}
           placeholder={type === 'url' ? 'https://' : ''}

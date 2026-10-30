@@ -3,6 +3,7 @@ import type { CardSummary, SearchHit } from '../../../core/store.js';
 import { api } from '../../api.js';
 import { useData } from '../../store/data.js';
 import { CardRow, Empty, useDebounced } from '../ui/bits.js';
+import { Input } from '@/components/ui/input';
 
 /** Search-as-you-type card list. Rows are draggable onto whiteboards. */
 export function LibraryPanel() {
@@ -24,7 +25,7 @@ export function LibraryPanel() {
   const kindOf = useData((s) => s.index);
   return (
     <div className="panel">
-      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cards…" aria-label="Search the card library" />
+      <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cards…" aria-label="Search the card library" />
       {q.trim() ? (
         hits.length ? (
           <ul className="card-list">

@@ -7,6 +7,8 @@ import type { Tab } from '../../store/tabs.js';
 import { useUi } from '../../store/ui.js';
 import { ChatView } from '../chat/ChatView.js';
 import { Icon } from '../Icon.js';
+import { Button } from '@/components/ui/button';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 /** The context a new chat starts with: whatever the active tab is about. */
 function defaultContext(tab: Tab, boardName: (id: string) => string): ContextRef[] {
@@ -43,12 +45,12 @@ export function ChatPanel({ tab }: { tab: Tab }) {
   return (
     <div className="chat-panel">
       <div className="chat-bar">
-        <select value={chatId ?? ''} onChange={(e) => { setChatId(e.target.value || null); setFresh((n) => n + 1); }} aria-label="Conversation">
-          <option value="">New chat</option>
-          {chats.map((c) => <option key={c.id} value={c.id}>{c.title || 'Untitled chat'}</option>)}
-        </select>
-        <button className="icon-btn" aria-label="New chat" title="New chat" onClick={() => { setChatId(null); setFresh((n) => n + 1); }}><Icon name="plus" /></button>
-        {chatId && <button className="icon-btn" aria-label="Open in a tab" title="Open in a tab" onClick={() => openChatTab(chatId)}><Icon name="export" /></button>}
+        <NativeSelect value={chatId ?? ''} onChange={(e) => { setChatId(e.target.value || null); setFresh((n) => n + 1); }} aria-label="Conversation">
+          <NativeSelectOption value="">New chat</NativeSelectOption>
+          {chats.map((c) => <NativeSelectOption key={c.id} value={c.id}>{c.title || 'Untitled chat'}</NativeSelectOption>)}
+        </NativeSelect>
+        <Button variant="ghost" size="icon" aria-label="New chat" title="New chat" onClick={() => { setChatId(null); setFresh((n) => n + 1); }}><Icon name="plus" /></Button>
+        {chatId && <Button variant="ghost" size="icon" aria-label="Open in a tab" title="Open in a tab" onClick={() => openChatTab(chatId)}><Icon name="export" /></Button>}
       </div>
       <ChatView
         key={`${fresh}:${chatId ?? 'new'}`}

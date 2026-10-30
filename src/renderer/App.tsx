@@ -17,6 +17,8 @@ import { flushAll } from './store/edits.js';
 import { useSync } from './store/sync.js';
 import { activeGroup, useTabs } from './store/tabs.js';
 import { useUi } from './store/ui.js';
+import { toast as sonner } from 'sonner';
+import { Toaster } from '@/components/ui/sonner';
 
 export function App() {
   const ready = useData((s) => s.ready);
@@ -102,27 +104,24 @@ export function App() {
 
   useEffect(() => {
     if (!error) return;
-    const t = window.setTimeout(() => dismiss(null), 7000);
-    return () => window.clearTimeout(t);
+    sonner(error, { duration: 7000 });
+    dismiss(null);
   }, [error, dismiss]);
 
   return (
-    <div className={`app${panel ? ' with-panel' : ''}`}>
-      <LeftSidebar />
-      <main className="main"><TabStrip />{ready ? <TabView /> : <div className="loading">Loading…</div>}</main>
-      <RightSidebar />
-      <GlobalSearch />
-      <CommandPalette />
-      <ResearchDialog />
-      <ClipDialog />
-      <ContextMenu />
-      {error && (
-        <div className="toast" role="alert">
-          {error}
-          <button className="icon-btn" aria-label="Dismiss" onClick={() => dismiss(null)}>×</button>
-        </div>
-      )}
-    </div>
+    <>
+      <div className={`app${panel ? ' with-panel' : ''}`}>
+        <LeftSidebar />
+        <main className="main"><TabStrip />{ready ? <TabView /> : <div className="loading">Loading…</div>}</main>
+        <RightSidebar />
+        <GlobalSearch />
+        <CommandPalette />
+        <ResearchDialog />
+        <ClipDialog />
+        <ContextMenu />
+      </div>
+      <Toaster />
+    </>
   );
 }
 

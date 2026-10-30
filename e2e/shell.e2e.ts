@@ -9,12 +9,12 @@ describe('search, commands and tabs', () => {
   it('searches everything with Ctrl+O, filters by type and opens results', async () => {
     await page().keyboard.press('Control+o');
     await page().fill('input[aria-label="Search everything"]', 'backlinks');
-    await pw(page().locator('.result').first()).toContainText('Linking ideas');
-    await page().click('.search-filters .pill:text-is("pdf")');
-    await pw(page().locator('.results .none')).toBeVisible();
-    await page().click('.search-filters .pill:text-is("pdf")');
+    await pw(page().locator('[cmdk-item]').first()).toContainText('Linking ideas');
+    await page().click('.search-filters button:text-is("pdf")');
+    await pw(page().locator('.none')).toBeVisible();
+    await page().click('.search-filters button:text-is("pdf")');
     await page().fill('input[aria-label="Search everything"]', 'getting');
-    await pw(page().locator('.result').first()).toContainText('Getting started'); // whiteboard title
+    await pw(page().locator('[cmdk-item]').first()).toContainText('Getting started'); // whiteboard title
     await page().keyboard.press('Enter');
     await pw(page().locator('.board-title')).toHaveValue('Getting started');
     expect(h.errors).toEqual([]);
@@ -33,7 +33,7 @@ describe('search, commands and tabs', () => {
     await page().waitForTimeout(300);
     await page().keyboard.press('Control+o');
     await page().fill('input[aria-label="Search everything"]', 'zebra');
-    await pw(page().locator('.result').first()).toContainText('zebra');
+    await pw(page().locator('[cmdk-item]').first()).toContainText('zebra');
     await page().keyboard.press('Enter');
     await pw(page().locator('.obj.selected')).toContainText('zebra crossing');
   });
@@ -56,16 +56,16 @@ describe('search, commands and tabs', () => {
     await pw(page().locator('.card-title')).toHaveAttribute('placeholder', /\d{4}-\d{2}-\d{2}/);
     // pin the journal tab through its context menu
     await page().locator('.tab.active').click({ button: 'right' });
-    await page().click('.context-menu button:has-text("Pin tab")');
+    await page().click('[role^="menuitem"]:has-text("Pin tab")');
     await page().locator('.tab.active').click({ button: 'right' });
-    await pw(page().locator('.context-menu button:has-text("Unpin tab")')).toBeVisible();
+    await pw(page().locator('[role^="menuitem"]:has-text("Unpin tab")')).toBeVisible();
     await page().keyboard.press('Escape');
     // folder for pinned tabs
     await page().click('button[aria-label="New folder"]');
     await page().keyboard.press('Enter');
     await pw(page().locator('.folder')).toHaveCount(1);
     await page().locator('.tab.active').click({ button: 'right' });
-    await page().click('.context-menu button:has-text("Move to folder")');
+    await page().click('[role^="menuitem"]:has-text("Move to folder")');
     await pw(page().locator('.folder .tab')).toHaveCount(1);
     // a second group keeps its own tabs
     await page().click('button[aria-label="New tab group"]');

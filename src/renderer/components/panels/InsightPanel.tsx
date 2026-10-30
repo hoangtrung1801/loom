@@ -5,6 +5,7 @@ import { openCard } from '../../actions.js';
 import { mutate, toast } from '../../store/data.js';
 import type { Tab } from '../../store/tabs.js';
 import { Empty } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
 
 /** AI-extracted key ideas for the open card. Each insight points back at the blocks it came from. */
 export function InsightPanel({ tab }: { tab: Tab }) {
@@ -29,7 +30,7 @@ export function InsightPanel({ tab }: { tab: Tab }) {
 
   return (
     <div className="panel insights">
-      <button className="btn primary" disabled={busy} onClick={() => void generate()}>{busy ? 'Reading…' : insights ? 'Regenerate' : 'Find insights'}</button>
+      <Button disabled={busy} onClick={() => void generate()}>{busy ? 'Reading…' : insights ? 'Regenerate' : 'Find insights'}</Button>
       {insights && insights.length === 0 && <Empty title="No insights found">The card may be too short.</Empty>}
       <ul>
         {(insights ?? []).map((i, n) => (

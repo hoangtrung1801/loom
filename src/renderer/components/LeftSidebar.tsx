@@ -7,6 +7,7 @@ import { Icon, KIND_ICON, type IconName } from './Icon.js';
 import { menuFor } from './ui/ContextMenu.js';
 import { PinnedTabs } from './Tabs.js';
 import logoUrl from '../../../assets/brand/loom-mark.svg';
+import { Button } from '@/components/ui/button';
 
 const APPS: { id: AppId; label: string; icon: IconName }[] = [
   { id: 'inbox', label: 'Inbox', icon: 'inbox' },
@@ -93,8 +94,8 @@ export function LeftSidebar() {
 
       <footer className="side-foot">
         <SyncBadge />
-        <button className="icon-btn" title="Trash" aria-label="Trash" onClick={() => openApp('trash')}><Icon name="trash" /></button>
-        <button className="icon-btn" title="Settings" aria-label="Settings" onClick={() => openApp('settings')}><Icon name="settings" /></button>
+        <Button variant="ghost" size="icon" title="Trash" aria-label="Trash" onClick={() => openApp('trash')}><Icon name="trash" /></Button>
+        <Button variant="ghost" size="icon" title="Settings" aria-label="Settings" onClick={() => openApp('settings')}><Icon name="settings" /></Button>
       </footer>
     </aside>
   );

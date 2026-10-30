@@ -7,6 +7,7 @@ import { Icon } from './Icon.js';
 import { useTabMeta } from './LeftSidebar.js';
 import { PANELS, panelsFor } from './panels/registry.js';
 import { menuFor } from './ui/ContextMenu.js';
+import { Button } from '@/components/ui/button';
 
 const TAB_MIME = 'application/x-loom-tab';
 
@@ -67,7 +68,7 @@ function TabItem({ tab, drag }: { tab: Tab; drag: Drag }) {
         <Icon name={m.icon} size={15} />
         <span className="ellipsis">{m.title}</span>
       </button>
-      <button className="icon-btn tab-close" aria-label={`Close ${m.title}`} onClick={() => state.close(tab.id)}><Icon name="close" size={12} /></button>
+      <Button variant="ghost" size="icon" className="tab-close size-[22px]" aria-label={`Close ${m.title}`} onClick={() => state.close(tab.id)}><Icon name="close" size={12} /></Button>
     </li>
   );
 }
@@ -112,22 +113,24 @@ export function TabStrip() {
       <ul className="tab-list" aria-label="Open tabs">
         {normal.map((t) => <TabItem key={t.id} tab={t} drag={drag} />)}
         <li className="tab-add">
-          <button className="icon-btn" title="New tab" aria-label="New tab" onClick={openNewTab}><Icon name="plus" /></button>
+          <Button variant="ghost" size="icon" title="New tab" aria-label="New tab" onClick={openNewTab}><Icon name="plus" /></Button>
         </li>
       </ul>
-      <button className="icon-btn" title="New tab group" aria-label="New tab group" onClick={() => state.createGroup()}><Icon name="layers" /></button>
+      <Button variant="ghost" size="icon" title="New tab group" aria-label="New tab group" onClick={() => state.createGroup()}><Icon name="layers" /></Button>
       <div className="panel-buttons" role="toolbar" aria-label="Side panels">
         {panelsFor(tab).map((id) => (
-          <button
+          <Button
             key={id}
-            className={`icon-btn${panel === id ? ' on' : ''}`}
+            variant="ghost"
+            size="icon"
+            className={panel === id ? 'bg-brand-soft text-brand-text hover:bg-brand-soft hover:text-brand-text' : ''}
             aria-pressed={panel === id}
             title={PANELS[id].label}
             aria-label={PANELS[id].label}
             onClick={() => toggle(id)}
           >
             <Icon name={PANELS[id].icon} />
-          </button>
+          </Button>
         ))}
       </div>
     </header>
@@ -147,7 +150,7 @@ export function PinnedTabs() {
     <section className="pinned" aria-label="Pinned tabs">
       <div className="side-h">
         <span className="grow">Pinned</span>
-        <button className="icon-btn" title="New folder for pinned tabs" aria-label="New folder" onClick={() => { const id = state.createFolder(); setRenaming(id); }}><Icon name="folder" size={14} /></button>
+        <Button variant="ghost" size="icon" title="New folder for pinned tabs" aria-label="New folder" onClick={() => { const id = state.createFolder(); setRenaming(id); }}><Icon name="folder" size={14} /></Button>
       </div>
       <ul className="tab-list" aria-label="Pinned tabs">
         {loose.map((t) => <TabItem key={t.id} tab={t} drag={drag} />)}

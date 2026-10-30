@@ -104,13 +104,13 @@ describe('saved links', () => {
     await pw(page().locator('.link-card')).toHaveCount(1);
     await pw(page().locator('.link-card')).toContainText('news.example.invalid');
     await pw(page().locator('.link-card')).toContainText('for the roundup');
-    await pw(page().locator('.toast, [role="status"]').first()).toContainText('could not be read');
+    await pw(page().locator('[data-sonner-toast]').first()).toContainText('could not be read');
 
     // the same page again, with tracking noise, is the same link
     await page().fill('input[aria-label="Link address"]', 'https://news.example.invalid/story#top');
     await page().fill('input[aria-label="Note about the link"]', 'second note');
     await page().click('button:text-is("Save link")');
-    await pw(page().locator('.toast, [role="status"]').first()).toContainText('Already saved');
+    await pw(page().locator('[data-sonner-toast]').first()).toContainText('Already saved');
     await pw(page().locator('.link-card')).toHaveCount(1);
     await pw(page().locator('.link-card')).toContainText('second note');
 

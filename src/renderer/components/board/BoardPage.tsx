@@ -14,6 +14,7 @@ import { ColorPicker, EdgeBar, SelectionBar, ToolBar } from './BoardToolbar.js';
 import { ExistingCardPicker } from './ExistingCardPicker.js';
 import { BoardObjectView, type ObjectHandlers } from './Objects.js';
 import { useBoard, withDependents } from './useBoard.js';
+import { Button } from '@/components/ui/button';
 
 interface View {
   x: number;
@@ -704,12 +705,12 @@ export default function BoardPage({ id, tabId }: { id: string; tabId: string }) 
       )}
 
       <div className="zoom-controls" onPointerDown={(e) => e.stopPropagation()}>
-        <button className="icon-btn" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}><Icon name="minus" /></button>
+        <Button variant="ghost" size="icon" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}><Icon name="minus" /></Button>
         <button className="zoom-level" aria-label="Reset zoom" onClick={() => setView((v) => ({ ...v, zoom: 1 }))}>{Math.round(view.zoom * 100)}%</button>
-        <button className="icon-btn" aria-label="Zoom in" onClick={() => zoomBy(1.2)}><Icon name="plus" /></button>
-        <button className="icon-btn" aria-label="Fit to content" onClick={() => fit()}><Icon name="fit" /></button>
-        <button className="icon-btn" aria-label="Undo" disabled={!useBoard.getState().undoStack.length} onClick={() => void act().undo()}><Icon name="undo" /></button>
-        <button className="icon-btn" aria-label="Redo" disabled={!useBoard.getState().redoStack.length} onClick={() => void act().redo()}><Icon name="redo" /></button>
+        <Button variant="ghost" size="icon" aria-label="Zoom in" onClick={() => zoomBy(1.2)}><Icon name="plus" /></Button>
+        <Button variant="ghost" size="icon" aria-label="Fit to content" onClick={() => fit()}><Icon name="fit" /></Button>
+        <Button variant="ghost" size="icon" aria-label="Undo" disabled={!useBoard.getState().undoStack.length} onClick={() => void act().undo()}><Icon name="undo" /></Button>
+        <Button variant="ghost" size="icon" aria-label="Redo" disabled={!useBoard.getState().redoStack.length} onClick={() => void act().redo()}><Icon name="redo" /></Button>
       </div>
 
       {picker && (

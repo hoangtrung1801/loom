@@ -12,6 +12,7 @@ import { PANELS, panelsFor } from './panels/registry.js';
 import { SuggestionsPanel } from './panels/SuggestionsPanel.js';
 import { TasksPanel } from './panels/TasksPanel.js';
 import { TocPanel } from './panels/TocPanel.js';
+import { Button } from '@/components/ui/button';
 
 function Body({ id }: { id: PanelId }) {
   const tab = useTabs((s) => activeTab(s));
@@ -39,7 +40,7 @@ export function RightSidebar() {
       <header className="rightbar-head">
         <Icon name={PANELS[panel].icon} />
         <h2 className="grow">{PANELS[panel].label}</h2>
-        <button className="icon-btn" aria-label="Close panel" onClick={() => setPanel(null)}><Icon name="close" /></button>
+        <Button variant="ghost" size="icon" aria-label="Close panel" onClick={() => setPanel(null)}><Icon name="close" /></Button>
       </header>
       <div className="rightbar-body">
         <Body id={panel} />
