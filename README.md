@@ -92,6 +92,17 @@ loom ops                             # every operation, with its input schema
 
 Browsers can't use it: requests with an `Origin` header or a non-local `Host` are refused. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the protocol.
 
+### Import from Know-Me (optional)
+
+Quit Loom, then point the importer at a Know-Me workspace (the repository, or its `.knowns` folder):
+
+```bash
+bun scripts/import-knowme.ts ../my-known-me --dry-run   # count what would be imported
+bun scripts/import-knowme.ts ../my-known-me             # write into Loom's data folder (or --data-dir DIR)
+```
+
+Tasks (status, priority, labels, subtasks, acceptance criteria, plan, notes), saved links, memos and docs become Loom cards, keeping their original dates; each Know-Me project name becomes a tag. Running it again skips what is already imported. Chats, time tracking, task history and link preview images are not carried over.
+
 ## Troubleshooting
 
 - **`Electron failed to install correctly`**: the Electron binary wasn't downloaded. Bun doesn't run dependency install scripts unless they're trusted, and even when it does it runs them with your system `node`; on Node 26 Electron's downloader silently does nothing and exits 0. `bun run start` (and `dev:electron`) detect a missing binary and fetch it with Bun instead, falling back to Node, and only trust the result if the binary exists afterwards. By hand: `rm -rf node_modules/electron && bun install`.
