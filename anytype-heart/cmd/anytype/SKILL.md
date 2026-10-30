@@ -10,8 +10,25 @@ session: `find` numbers its results (1, 2, …) and sets the working space;
 every other verb takes `--object <number>`.
 
 Setup: the local Anytype app must be running; `ANYTYPE_API_KEY` holds an
-API key from the app's settings (`ANYTYPE_API_URL` defaults to
-`http://127.0.0.1:31009`).
+API key from the app's settings, or run `anytype auth` to pair and save one
+(`ANYTYPE_API_URL` defaults to `http://127.0.0.1:31009`).
+
+## Setup
+
+1. Run `anytype auth`. The app shows a 4-digit code; enter it when asked (or
+   pass `--code 1234`). The key is saved to `config.json` under the user
+   config dir (`ANYTYPE_CLI_CONFIG` overrides) and every verb uses it;
+   `ANYTYPE_API_KEY`, when set, takes precedence. `anytype auth status`
+   shows which key is in use, `anytype auth logout` removes it.
+2. Add the MCP server to your client:
+
+```
+claude mcp add anytype -- anytype mcp --tier full
+```
+
+```json
+{"command": "anytype", "args": ["mcp", "--tier", "full"]}
+```
 
 ## The loop
 

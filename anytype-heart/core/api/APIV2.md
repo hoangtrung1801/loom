@@ -2246,7 +2246,14 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   serves (`core/api/wrapper/full/remote.go`). An op schema that cannot be read
   leaves the edit tools' op lists bare rather than failing. `api` lists the
   operations, prints one's argument schema (`--help`), or runs one from
-  `key=value` pairs or a JSON object (`-` reads stdin).
+  `key=value` pairs or a JSON object (`-` reads stdin). Running or describing
+  one operation reads only the OpenAPI document (one request, bare op lists);
+  the listing, `tools --tier full` and `mcp --tier full` also read the op
+  schemas. `anytype auth` pairs the CLI with the app through
+  `POST /v2/auth/challenges` and `POST /v2/auth/api_keys` and saves the key
+  to a 0600 config file that every verb falls back to when `ANYTYPE_API_KEY`
+  is unset; `auth status` calls `GET /v2/auth/whoami`. A server test pins
+  every route the CLI depends on.
 - **Tool failures are returned IN BAND** (`isError: true` plus text) so the
   model reads the repair tip; only malformed JSON-RPC and a tool name outside
   the served tier are protocol errors, and the unknown-tool message still

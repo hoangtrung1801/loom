@@ -20,7 +20,11 @@
 //	anytype mcp --tier full                      # all of them over MCP stdio
 //
 // Configuration: ANYTYPE_API_URL (default http://127.0.0.1:31009) and
-// ANYTYPE_API_KEY (bearer key from the app's API settings). Handle state
+// ANYTYPE_API_KEY (bearer key from the app's API settings). Instead of the
+// variables, `anytype auth` pairs with the running app and saves the key to
+// a config file (config.json under the user config dir, ANYTYPE_CLI_CONFIG
+// overrides; it may also hold an "api_url"); the variables win over the
+// file. Handle state
 // (find's numbered results, block labels) persists in a session file
 // (ANYTYPE_CLI_SESSION overrides the location) so verbs compose across
 // invocations.
@@ -87,13 +91,17 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	if verb == "auth" {
+		return runAuth(argv[1:], stdin, stdout, stderr)
+	}
+
 	if verb == "api" {
 		return runAPI(argv[1:], stdin, stdout, stderr)
 	}
 
 	tool, ok := wrapper.ToolByVerb(verb)
 	if !ok {
-		fmt.Fprintf(stderr, "unknown verb %q — verbs: %s, api, tools, mcp\n", verb, strings.Join(verbs(), ", "))
+		fmt.Fprintf(stderr, "unknown verb %q — verbs: %s, api, auth, tools, mcp\n", verb, strings.Join(verbs(), ", "))
 		return 2
 	}
 
@@ -285,10 +293,11 @@ func printUsage(w io.Writer) {
 		fmt.Fprintf(w, "  %-15s %s\n", t.Verb(), firstSentence(t.Description))
 	}
 	fmt.Fprintf(w, "  %-15s %s\n", "api", "every API operation (all object kinds): list them, or run one — api <operation> [key=value … | JSON]")
+	fmt.Fprintf(w, "  %-15s %s\n", "auth", "pair with the running app and save an API key: auth [login] [--code 1234] | status | logout")
 	fmt.Fprintf(w, "  %-15s %s\n", "tools", "print the machine-readable tool manifest (JSON); --tier small|large|full")
 	fmt.Fprintf(w, "  %-15s %s\n", "mcp", "serve the tools over MCP stdio for AI agents; --tier small|large|full")
 	fmt.Fprintln(w, "\ncross-verb flags: --json, --dry-run, --if-match <etag>, --create-missing")
-	fmt.Fprintln(w, "environment: ANYTYPE_API_URL (default "+wrapper.DefaultBaseURL+"), ANYTYPE_API_KEY, ANYTYPE_CLI_SESSION")
+	fmt.Fprintln(w, "environment: ANYTYPE_API_URL (default "+wrapper.DefaultBaseURL+"), ANYTYPE_API_KEY (or anytype auth), ANYTYPE_CLI_CONFIG, ANYTYPE_CLI_SESSION")
 	fmt.Fprintln(w, "\nstart with: anytype spaces (lists space ids), then anytype find --space <spaceId> --query … ; find's results are numbered handles the other verbs take as --object")
 }
 

@@ -162,6 +162,7 @@ func TestRunExitCodes(t *testing.T) {
 		assert.Equal(t, 2, code)
 		assert.Contains(t, stderr, `unknown verb "archive"`)
 		assert.Contains(t, stderr, "tools")
+		assert.Contains(t, stderr, "auth")
 	})
 
 	t.Run("bad flags exit 2", func(t *testing.T) {
@@ -262,6 +263,7 @@ func stubServer(t *testing.T, handler http.HandlerFunc) {
 	t.Setenv("ANYTYPE_API_URL", server.URL)
 	t.Setenv("ANYTYPE_API_KEY", "test-key")
 	t.Setenv("ANYTYPE_CLI_SESSION", t.TempDir()+"/session.json")
+	t.Setenv("ANYTYPE_CLI_CONFIG", t.TempDir()+"/config.json")
 }
 
 func TestRunEndToEnd(t *testing.T) {
