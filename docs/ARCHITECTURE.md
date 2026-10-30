@@ -81,6 +81,8 @@ The server knows nothing about data. Each request becomes a named operation in `
 - Writes are queued one at a time.
 - Operations call the same store and work APIs the UI uses.
 - Cards are read and written as markdown.
+- They cover every object type: cards of each text kind (create, update any field, append, trash, restore), whiteboards (create, rename, recolor, nest, trash, restore), objects on them (cards, text, sections, sub-whiteboard shortcuts, mind maps), connections, tags as databases (settings, typed properties, values, rename, delete) and chats. `searchAll` finds any type and `getObject` reads any id.
+- Each operation says whether it writes and whether it is destructive; the core's own refusals come back as 404 (missing) or 422 (rejected) with a message meant for people and agents alike.
 
 `src/cli/loom.ts` (built to `dist/cli/loom.cjs`, exposed as the `loom` bin) reads the connection file and calls the operations:
 
@@ -93,6 +95,17 @@ loom task add "Draft the outline" --priority high --due 2026-11-02
 loom journal add "Shipped the JSON library"
 loom op listTasks '{"overdue": true}'     # any operation, raw JSON in and out
 ```
+
+`src/cli/backend.ts` decides where operations go: the running app (default) or, with `--data-dir`, the library folder opened in the CLI's own process (`src/cli/headless.ts`, the same core and operations). The direct mode refuses a folder whose Electron `SingletonLock` points at a live process, so the app and a script never both write one library. `loom serve --data-dir` puts the direct mode behind the same loopback server.
+
+### MCP server
+
+`loom mcp` (`src/cli/mcp.ts`) is a Model Context Protocol server on stdio (newline-delimited JSON-RPC 2.0) for AI agents. It has no data logic of its own:
+
+- `tools/list` turns `GET /operations` into tools: same names, the zod-derived JSON Schemas as `inputSchema`, and annotations (`readOnlyHint` for operations that don't write, `destructiveHint` for trash/delete/remove).
+- `tools/call` runs the operation; Loom's refusals become tool results with `isError: true` and the message, so the model can correct itself.
+- `initialize` returns instructions that describe the data model and which tool to reach for.
+- `--read-only` drops every writing tool.
 
 ## Deep links and window state
 

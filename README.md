@@ -27,7 +27,7 @@ Loom is an original implementation. It follows the *concepts* described in Hepta
 | **AI** | Chat panel/app with citations that open the cited block, built-in actions (translate, summarize, mind map) and custom ones, **Research a topic**, per-card Insight suggestions. Anthropic and any OpenAI-compatible endpoint. |
 | **Sync** (optional) | Op-log replication with per-field last-write-wins; attachments sync as hashed blobs. |
 | **Your data** | A folder of JSON files (`<data dir>/library/`), written atomically on every change; daily JSON snapshots in `backups/` (last 7 kept, *Back up now* in Settings). |
-| **Automation** | An opt-in local API (127.0.0.1, bearer token) and a `loom` CLI: search, read cards as markdown, capture notes, memos, tasks, links and journal entries from scripts or agents. `loom://card/<id>` links open a card in the app. |
+| **Automation & agents** | An opt-in local API (127.0.0.1, bearer token), a `loom` CLI and an **MCP server** (`loom mcp`): search, read, create, edit and delete every type of object (cards of each kind, whiteboards, board objects, connections, mind maps, tags with their database properties and values, chats) from scripts or AI agents, through the running app or directly on a library folder. `loom://card/<id>` links open a card in the app. |
 
 ### How the AI gets context
 
@@ -77,20 +77,37 @@ LOOM_SYNC_TOKEN=choose-a-secret bun run sync-server      # listens on 127.0.0.1:
 
 Then **Settings → Sync**, enter the URL and token. Put it behind HTTPS (e.g. a reverse proxy) before exposing it beyond localhost. Attachments (images, PDFs, …) upload to the server by SHA-256 and every download is hash-verified before it is stored; a file that fails is retried on the next sync without blocking notes.
 
-### Local API and CLI (optional)
+### Local API, CLI and MCP server (optional)
 
 Turn it on in **Settings → Local API**. The app then listens on `127.0.0.1` and writes its port and a fresh token to `~/.loom/local-server.json` (only you can read it). The CLI picks that up:
 
 ```bash
 bun run build && bun link            # or run it in place: bun run loom <command>
-loom search "spaced repetition"
-loom read <card-id>                  # a card as markdown
+loom find "spaced repetition"        # cards, whiteboards, board text, chats and tags
+loom get <id>                        # any object by id; a card prints as markdown
+loom create task "Draft the outline" --priority high --due 2026-11-02 --tag writing
+loom update <card-id> --title "New title" --add-tag draft --prop book.Rating=5
 echo "## Notes" | loom append <card-id>
-loom task add "Draft the outline" --priority high --due 2026-11-02
+loom board new "Plan" && loom board place <board-id> <card-id>
+loom connect <board-id> <object-id> <object-id> --label "leads to"
+loom prop add book Rating --type number   # tags are databases: typed properties
+loom trash <id> && loom restore <id>
 loom ops                             # every operation, with its input schema
+loom op updateWhiteboardObject '{"id":"…","x":100,"y":40}'   # run any of them
 ```
 
-Browsers can't use it: requests with an `Origin` header or a non-local `Host` are refused. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the protocol.
+Every command accepts `--json`. Without the app, point the CLI at a library folder with `--data-dir <dir>` (the app's data directory, e.g. `~/.config/Loom`; `--init` creates a new one). Loom refuses to open a library the running app has open, since two writers would overwrite each other's files. `loom serve --data-dir <dir>` runs the local API without the app.
+
+**AI agents (MCP).** `loom mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io) on stdio and offers each operation as a tool (50 of them), with read-only and destructive hints and instructions that explain Loom's data model. Add `--read-only` to offer only the 16 reading tools. For Claude Code:
+
+```bash
+claude mcp add loom -- loom mcp                          # through the running app
+claude mcp add loom -- loom mcp --data-dir ~/.config/Loom   # straight to the library, app closed
+```
+
+Other clients (Claude Desktop, Cursor, …) take the same command in their MCP config: `{"command": "loom", "args": ["mcp"]}`.
+
+Browsers can't use the local API: requests with an `Origin` header or a non-local `Host` are refused. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the protocol.
 
 ## Troubleshooting
 
@@ -118,7 +135,7 @@ src/core      pure TypeScript, no Electron: the whole data model, fully unit-tes
   rpc.ts        the only surface the UI can call (named, whitelisted methods)
 src/main      Electron main + sandboxed preload + menu; core-worker.ts runs the core in a worker thread;
               local-server.ts is the loopback HTTP server for the local API
-src/cli       the `loom` command-line client
+src/cli       the `loom` command-line client; mcp.ts is the MCP server, backend.ts picks the app or a library folder
 src/renderer  React + Zustand + ProseMirror; whiteboard is DOM + SVG; pdf.js viewer
 server        reference sync server (append-only op log + blob store); `bun server/main.ts`
 ```
@@ -133,7 +150,7 @@ server        reference sync server (append-only op log + blob store); `bun serv
 
 ```bash
 bun run typecheck
-bun run test            # 127 unit tests: store, search, merge/convergence, sync + attachments, AI engine against a mock LLM (Anthropic and OpenAI protocols), clipper, docx, tasks/links/memos, RPC, JSON library (reopen, rollback, corrupt files, SQLite import), backups, local API + server
+bun run test            # 136 unit tests: store, search, merge/convergence, sync + attachments, AI engine against a mock LLM (Anthropic and OpenAI protocols), clipper, docx, tasks/links/memos, RPC, JSON library (reopen, rollback, corrupt files, SQLite import), backups, local API + server, MCP
 bun run test:e2e        # 42 browser tests (Playwright + Chromium): cards/editor, whiteboards, tabs/search/commands/export, AI chat, tasks/links/memos; fails on any console error
 bun run test:electron   # 11 tests in real Electron under xvfb: isolation, JSON files on disk, CSP + loom-file:// + PDF rendering through the worker, local API driven by the CLI, deep links, menu, restart persistence with window size, two devices syncing
 ```
