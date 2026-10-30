@@ -6,7 +6,7 @@ import { openBoard, openCard, openChatTab, openTag } from '../actions.js';
 import { useUi } from '../store/ui.js';
 import { Icon, KIND_ICON, type IconName } from './Icon.js';
 import { Highlight, useDebounced } from './ui/bits.js';
-import { Button } from '@/components/ui/button';
+import { FilterPill } from '@/components/ui/filter-pill';
 import { Command, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -83,35 +83,35 @@ function SearchBox({ close }: { close(): void }) {
 
   return (
     <Dialog open onOpenChange={(o) => !o && close()}>
-      <DialogContent aria-label="Search" showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0">
+      <DialogContent aria-label="Search" showCloseButton={false} className="top-[14vh] translate-y-0 gap-0 overflow-hidden rounded-xl p-0">
         <DialogTitle className="sr-only">Search</DialogTitle>
         <DialogDescription className="sr-only">Search cards, whiteboards, board text, chats and tags.</DialogDescription>
         <Command shouldFilter={false} value={active} onValueChange={setActive} onKeyDown={onKey} onClickCapture={(e) => { newTab.current = e.metaKey || e.ctrlKey; }}>
           <CommandInput value={query} onValueChange={setQuery} placeholder="Search everything…" aria-label="Search everything" />
-          <div className="search-filters flex flex-wrap items-center gap-1.5 border-b px-4 py-2">
-            {CARD_KINDS.map((k) => <Button key={k} size="xs" variant={kinds.includes(k) ? 'default' : 'outline'} className="rounded-full" aria-pressed={kinds.includes(k)} onClick={() => setKinds(toggle(kinds, k))}>{k}</Button>)}
+          <div className="search-filters flex flex-wrap items-center gap-1 border-b px-3 py-2">
+            {CARD_KINDS.map((k) => <FilterPill key={k} pressed={kinds.includes(k)} onClick={() => setKinds(toggle(kinds, k))}>{k}</FilterPill>)}
             <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
-            {SCOPES.map((s) => <Button key={s.id} size="xs" variant={scopes.includes(s.id) ? 'default' : 'outline'} className="rounded-full" aria-pressed={scopes.includes(s.id)} onClick={() => setScopes(toggle(scopes, s.id))}>{s.label}</Button>)}
+            {SCOPES.map((s) => <FilterPill key={s.id} pressed={scopes.includes(s.id)} onClick={() => setScopes(toggle(scopes, s.id))}>{s.label}</FilterPill>)}
             <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
             <Select value={sort} onValueChange={(v) => setSort(v as typeof sort)}>
-              <SelectTrigger size="sm" className="h-6 gap-1 px-2 text-xs" aria-label="Sort results"><SelectValue /></SelectTrigger>
+              <SelectTrigger size="sm" className="gap-1 rounded-full px-2.5 text-xs data-[size=sm]:h-6" aria-label="Sort results"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="relevance">Relevance</SelectItem><SelectItem value="time">Last edited</SelectItem></SelectContent>
             </Select>
           </div>
           <CommandList id="search-results" className="results max-h-[50vh] p-1.5">
             {hits.length === 0 && <div className="none py-6 text-center text-muted-foreground">No results</div>}
             {hits.map((h) => (
-              <CommandItem key={`${h.type}:${h.id}`} value={`${h.type}:${h.id}`} className="result flex-col items-start gap-0.5" onSelect={() => { go(h, newTab.current); newTab.current = false; }}>
-                <span className="flex min-w-0 max-w-full items-center gap-2 font-medium">
+              <CommandItem key={`${h.type}:${h.id}`} value={`${h.type}:${h.id}`} className="result flex-col items-start gap-1" onSelect={() => { go(h, newTab.current); newTab.current = false; }}>
+                <span className="flex min-w-0 max-w-full items-center gap-2.5 font-medium">
                   <Icon name={h.type === 'card' ? KIND_ICON[h.kind] ?? 'card' : TYPE_ICON[h.type]} size={14} />
                   <span className="truncate"><Highlight text={h.titleMarked || h.title || 'Untitled'} /></span>
                 </span>
-                {h.snippet && <span className="snippet max-w-full truncate"><Highlight text={h.snippet} /></span>}
+                {h.snippet && <span className="snippet max-w-full truncate pl-6"><Highlight text={h.snippet} /></span>}
               </CommandItem>
             ))}
           </CommandList>
         </Command>
-        <footer className="dialog-foot"><kbd>↑↓</kbd> move <kbd>Enter</kbd> open <kbd>⌘Enter</kbd> new tab <kbd>Esc</kbd> close</footer>
+        <footer className="dialog-foot"><kbd>↑↓</kbd> move <kbd>Enter</kbd> open <kbd>{/Mac/.test(navigator.platform) ? '⌘' : 'Ctrl '}Enter</kbd> new tab <span className="grow" /><kbd>Esc</kbd> close</footer>
       </DialogContent>
     </Dialog>
   );

@@ -5,8 +5,12 @@ import { useTabs, activeTab } from '../store/tabs.js';
 import { useUi, type PanelId } from '../store/ui.js';
 import { PANELS, panelsFor } from './panels/registry.js';
 import { Icon, type IconName } from './Icon.js';
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+
+type Group = 'Create' | 'Go to' | 'Actions' | 'Panels';
+const GROUPS: Group[] = ['Create', 'Go to', 'Actions', 'Panels'];
+const CREATE = new Set(['new-card', 'new-board', 'new-tab', 'new-task', 'new-memo', 'save-link', 'clip', 'research']);
 
 interface Command {
   id: string;
@@ -44,6 +48,8 @@ function commands(): Command[] {
   return list;
 }
 
+const groupOf = (c: Command): Group => (CREATE.has(c.id) ? 'Create' : c.id.startsWith('app-') || ['journal', 'settings', 'trash'].includes(c.id) ? 'Go to' : c.id.startsWith('panel-') ? 'Panels' : 'Actions');
+
 /** Cmd+K: every action by name. */
 export function CommandPalette() {
   const open = useUi((s) => s.paletteOpen);
@@ -54,24 +60,29 @@ export function CommandPalette() {
 
 function Palette({ close }: { close(): void }) {
   const all = useMemo(commands, []);
+  const mod = /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl ';
   const run = (c: Command): void => {
     close();
     c.run();
   };
   return (
     <Dialog open onOpenChange={(o) => !o && close()}>
-      <DialogContent aria-label="Command palette" showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0">
+      <DialogContent aria-label="Command palette" showCloseButton={false} className="top-[14vh] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[560px]">
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <DialogDescription className="sr-only">Run any action by name.</DialogDescription>
         <Command>
           <CommandInput placeholder="Type a command…" aria-label="Command" />
-          <CommandList className="max-h-[50vh] p-1.5">
-            <CommandEmpty className="results none py-6 text-muted-foreground">No commands</CommandEmpty>
-            {all.map((c) => (
-              <CommandItem key={c.id} value={c.label} className="result justify-between" onSelect={() => run(c)}>
-                <span className="flex min-w-0 items-center gap-2 font-medium"><Icon name={c.icon} size={14} />{c.label}</span>
-                {c.hint && <kbd>{c.hint}</kbd>}
-              </CommandItem>
+          <CommandList className="max-h-[min(60vh,420px)] p-1.5">
+            <CommandEmpty className="results none py-8 text-center text-muted-foreground">No commands</CommandEmpty>
+            {GROUPS.map((g) => (
+              <CommandGroup key={g} heading={g}>
+                {all.filter((c) => groupOf(c) === g).map((c) => (
+                  <CommandItem key={c.id} value={c.label} className="result justify-between" onSelect={() => run(c)}>
+                    <span className="flex min-w-0 items-center gap-2.5"><Icon name={c.icon} size={15} />{c.label}</span>
+                    {c.hint && <kbd>{c.hint.replace('⌘', mod)}</kbd>}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
             ))}
           </CommandList>
         </Command>

@@ -16,8 +16,12 @@ import { TagDatabase } from './pages/TagDatabase.js';
 import { TagPage } from './pages/TagPage.js';
 import { TrashPage } from './pages/TrashPage.js';
 import { WhiteboardsApp } from './pages/WhiteboardsApp.js';
+import { BlurFade } from '@/components/ui/blur-fade';
 
 const BoardPage = lazy(() => import('./board/BoardPage.js'));
+
+/** Full-height tools (canvas, chat, calendar) fill the tab body directly; document-like pages fade in. */
+const fills = (tab: Tab): boolean => tab.type === 'whiteboard' || tab.type === 'chat' || (tab.type === 'app' && (tab.ref === 'journal' || tab.ref === 'chats'));
 
 function Page({ tab }: { tab: Tab }) {
   switch (tab.type) {
@@ -52,7 +56,7 @@ export function TabView() {
   return (
     <section className="tabview" aria-label={meta.title}>
       <div className="tabbody" key={tab.id}>
-        <Page tab={tab} />
+        {fills(tab) ? <Page tab={tab} /> : <BlurFade className="flex min-h-full flex-col *:flex-1" duration={0.22} offset={4} blur="4px"><Page tab={tab} /></BlurFade>}
       </div>
     </section>
   );

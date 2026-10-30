@@ -8,6 +8,7 @@ import { Icon } from '../Icon.js';
 import { menuFor } from '../ui/ContextMenu.js';
 import { Empty, useDebounced } from '../ui/bits.js';
 import { Button } from '@/components/ui/button';
+import { FilterPill } from '@/components/ui/filter-pill';
 import { Input } from '@/components/ui/input';
 
 /** Saves a link from the app, the palette or the menu: fetches the title, description and image, then tags it. */
@@ -72,14 +73,14 @@ export function LinksApp() {
     <div className="page wide links-app">
       <div className="page-head"><h2>Links</h2><span className="count grow">{allCount} saved</span></div>
       <form className="link-add" onSubmit={(e) => { e.preventDefault(); void add(); }}>
-        <label className="link-add-url"><Icon name="link" /><Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link — Loom reads the title and preview" aria-label="Link address" /></label>
-        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why save it? (optional)" aria-label="Note about the link" />
+        <label className="link-add-url"><Icon name="link" /><Input className="h-10 rounded-none border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Paste a link — Loom reads the title and preview" aria-label="Link address" /></label>
+        <Input className="h-10 rounded-none border-0 border-l bg-transparent shadow-none focus-visible:border-border focus-visible:ring-0" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why save it? (optional)" aria-label="Note about the link" />
         <Button type="submit" disabled={!url.trim() || busy}>{busy ? 'Saving…' : 'Save link'}</Button>
       </form>
       <div className="filters">
         <div className="tag-pills" role="group" aria-label="Filter links by tag">
-          <Button size="xs" variant={tag === '' ? 'default' : 'outline'} className="rounded-full" aria-pressed={tag === ''} onClick={() => setTag('')}>All</Button>
-          {allTags.map((t) => <Button key={t} size="xs" variant={tag === t ? 'default' : 'outline'} className="rounded-full" aria-pressed={tag === t} onClick={() => setTag(tag === t ? '' : t)}>#{t}</Button>)}
+          <FilterPill pressed={tag === ''} onClick={() => setTag('')}>All</FilterPill>
+          {allTags.map((t) => <FilterPill key={t} pressed={tag === t} onClick={() => setTag(tag === t ? '' : t)}>#{t}</FilterPill>)}
         </div>
         <input className="filter-search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Search links" aria-label="Search links" />
       </div>

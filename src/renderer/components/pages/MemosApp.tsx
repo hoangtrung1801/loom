@@ -43,6 +43,7 @@ export function MemosApp() {
       <form className="memo-composer" onSubmit={(e) => { e.preventDefault(); void capture(); }}>
         <Textarea
           ref={box}
+          className="min-h-0 resize-none rounded-none border-0 bg-transparent p-0 text-[15px] leading-relaxed shadow-none focus-visible:ring-0"
           value={draft}
           rows={3}
           placeholder="What's on your mind?"

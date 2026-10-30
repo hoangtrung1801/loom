@@ -70,8 +70,8 @@ export function LeftSidebar() {
           <Icon name="search" /> <span className="grow">Search</span> <kbd>{mod} O</kbd>
         </button>
         <div className="side-row">
-          <button className="new-card" onClick={() => void newCard()} title={`New card (${mod} N)`} aria-label="New card"><Icon name="plus" /> New card</button>
-          <button className="research" onClick={() => setResearch(true)} title="Research a topic" aria-label="Research a topic"><Icon name="sparkle" /></button>
+          <Button className="new-card" onClick={() => void newCard()} title={`New card (${mod} N)`} aria-label="New card"><Icon name="plus" /> New card</Button>
+          <Button variant="outline" size="icon-sm" className="research" onClick={() => setResearch(true)} title="Research a topic" aria-label="Research a topic"><Icon name="sparkle" /></Button>
         </div>
       </div>
 

@@ -38,12 +38,12 @@ export function ToolBar({
   return (
     <div className="board-toolbar" role="toolbar" aria-label="Whiteboard tools" onPointerDown={(e) => e.stopPropagation()}>
       {TOOLS.slice(0, 1).map((t) => <ToolButton {...t} key={t.id} on={tool === t.id} onClick={() => setTool(t.id)} />)}
-      <button className="tool" aria-label="New card" title="New card (N)" onClick={onNewCard}><Icon name="card" /><span>Card</span></button>
-      <button className="tool" aria-label="Add existing card" title="Add an existing card" onClick={onAddExisting}><Icon name="library" /><span>Existing</span></button>
-      <button className="tool" aria-label="Upload" title="Upload files" onClick={onUpload}><Icon name="upload" /><span>Upload</span></button>
+      <button className="tool" aria-label="New card" title="New card (N)" onClick={onNewCard}><Icon name="card" /></button>
+      <button className="tool" aria-label="Add existing card" title="Add an existing card" onClick={onAddExisting}><Icon name="library" /></button>
+      <button className="tool" aria-label="Upload" title="Upload files" onClick={onUpload}><Icon name="upload" /></button>
       {TOOLS.slice(1).map((t) => <ToolButton {...t} key={t.id} on={tool === t.id} onClick={() => setTool(tool === t.id ? 'select' : t.id)} />)}
       <span className="sep" />
-      <button className={`tool${searching ? ' on' : ''}`} aria-label="Search whiteboard" title="Search this whiteboard (⌘F)" onClick={onSearch}><Icon name="search" /><span>Search</span></button>
+      <button className={`tool${searching ? ' on' : ''}`} aria-label="Search whiteboard" title="Search this whiteboard (⌘F)" onClick={onSearch}><Icon name="search" /></button>
       <button className="tool" aria-label="More" title="More" onClick={more}><Icon name="more" /></button>
     </div>
   );
@@ -52,7 +52,7 @@ export function ToolBar({
 function ToolButton({ label, icon, hotkey, on, onClick }: (typeof TOOLS)[number] & { on: boolean; onClick(): void }) {
   return (
     <button className={`tool${on ? ' on' : ''}`} aria-label={label} aria-pressed={on} title={`${label} (${hotkey})`} onClick={onClick}>
-      <Icon name={icon} /><span>{label}</span>
+      <Icon name={icon} />
     </button>
   );
 }

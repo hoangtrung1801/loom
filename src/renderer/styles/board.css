@@ -8,14 +8,16 @@
 .edge.selected .edge-line { stroke-width: 3.5; filter: drop-shadow(0 0 3px var(--accent)); }
 .edge-label { fill: var(--text); font-size: 13px; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
 .mind-edge { fill: none; stroke: var(--edge); stroke-width: 1.8; }
-.board-head { position: absolute; top: 12px; left: 14px; z-index: 5; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 3px 8px; box-shadow: var(--shadow); font-size: 13px; }
+.board-head { position: absolute; top: 12px; left: 12px; z-index: 5; display: flex; gap: 8px; align-items: center; background: color-mix(in srgb, var(--surface) 85%, transparent); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--r-card); padding: 3px 8px; box-shadow: var(--shadow-sm); font-size: 13px; }
+.board-head .swatches { display: none; }
+.board-head:hover .swatches, .board-head:focus-within .swatches { display: inline-flex; }
 .board-title { border: 0; background: transparent; font-weight: 600; font-size: 14px; width: 220px; padding: 3px 4px; }
 .board-empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; color: var(--muted); pointer-events: none; }
 .board-empty strong { color: var(--text); }
 
 .obj { position: absolute; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: visible; cursor: grab; }
 .obj:active { cursor: grabbing; }
-.obj.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.obj.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow); }
 .obj.dim { opacity: 0.25; }
 .obj.match { box-shadow: 0 0 0 3px var(--c-yellow), var(--shadow); }
 .obj[class*='c-']:not(.mind):not(.text-obj) { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
@@ -47,18 +49,18 @@
 .marquee { position: absolute; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; }
 .marquee.section { border-style: dashed; }
 
-.board-toolbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 2px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 13px; padding: 5px; box-shadow: var(--shadow-lg); }
-.tool { display: grid; justify-items: center; gap: 1px; padding: 4px 9px; border-radius: 8px; color: var(--muted); font-size: 11px; min-width: 48px; }
+.board-toolbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 2px; align-items: center; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 14px; padding: 4px; box-shadow: var(--shadow-lg); }
+.tool { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; color: var(--muted); transition: background 0.12s, color 0.12s; }
 .tool:hover { background: var(--surface-2); color: var(--text); }
 .tool.on { background: var(--ink); color: var(--on-ink); }
 .board-toolbar .sep, .selection-bar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 4px 2px; }
-.selection-bar { position: absolute; bottom: 82px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px; box-shadow: var(--shadow); }
+.selection-bar { position: absolute; bottom: 82px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 4px 8px; box-shadow: var(--shadow); }
 .selection-bar input, .selection-bar select { padding: 2px 6px; font-size: 12.5px; }
-.zoom-controls { position: absolute; bottom: 16px; right: 16px; z-index: 10; display: flex; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 2px; box-shadow: var(--shadow); }
+.zoom-controls { position: absolute; bottom: 20px; right: 16px; z-index: 10; display: flex; align-items: center; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--r-card); padding: 2px; box-shadow: var(--shadow-sm); }
 .zoom-level { min-width: 46px; font-size: 12px; color: var(--muted); }
-.board-search { position: absolute; top: 10px; right: 14px; z-index: 11; display: flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 3px 6px; box-shadow: var(--shadow); }
+.board-search { position: absolute; top: 12px; right: 12px; z-index: 11; display: flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 3px 6px; box-shadow: var(--shadow); }
 .board-search input { border: 0; background: transparent; width: 200px; }
-.picker { bottom: 78px; left: 50%; transform: translateX(-50%); width: 320px; display: grid; gap: 6px; }
+.picker { bottom: 72px; left: 50%; transform: translateX(-50%); width: 320px; display: grid; gap: 6px; }
 .picker ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
 .picker li button { width: 100%; text-align: left; padding: 5px 8px; border-radius: 6px; } .picker li button:hover { background: var(--accent-soft); }
 .picker .none { padding: 10px; color: var(--muted); text-align: center; }
