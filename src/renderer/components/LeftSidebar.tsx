@@ -54,7 +54,6 @@ export function LeftSidebar() {
   const hasHighlights = useData((s) => s.index.some((c) => c.kind === 'highlight'));
   const current = useTabs((s) => activeTab(s));
   const setSearch = useUi((s) => s.setSearch);
-  const setPalette = useUi((s) => s.setPalette);
   const setResearch = useUi((s) => s.setResearch);
   const mod = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl';
 
@@ -63,7 +62,6 @@ export function LeftSidebar() {
       <header className="brand">
         <img className="logo" src={logoUrl} alt="" />
         <span className="grow">Loom</span>
-        <button className="icon-btn" onClick={() => setPalette(true)} title={`Commands (${mod} K)`} aria-label="Commands"><Icon name="command" /></button>
       </header>
 
       <div className="side-actions">
