@@ -4,6 +4,7 @@ import type { WorkTask } from '../../../core/work.js';
 import { api } from '../../api.js';
 import { newTask, openCard } from '../../actions.js';
 import { mutate, useData } from '../../store/data.js';
+import { Circle, CircleCheck, CircleDashed, CircleEllipsis, CirclePause, CircleSlash, type LucideIcon } from 'lucide-react';
 import { Icon } from '../Icon.js';
 import { menuFor } from '../ui/ContextMenu.js';
 import { Empty, useDebounced } from '../ui/bits.js';
@@ -178,21 +179,18 @@ function Column({ status, items, onDrop }: { status: string; items: WorkTask[]; 
 
 const initials = (name: string): string => name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
 
-/** Ring icons tell statuses apart by shape as well as color. */
-const STATUS_MARK: Record<string, string> = {
-  todo: '',
-  'in-progress': 'M12 7v5l3 2',
-  'in-review': 'M8 12h8',
-  blocked: 'M7 17L17 7',
-  'on-hold': 'M10 9v6M14 9v6',
-  done: 'M8 12l3 3 5-6',
+/** Each status gets its own Lucide glyph, so statuses differ by shape as well as color. */
+const STATUS_ICON: Record<string, LucideIcon> = {
+  todo: Circle,
+  'in-progress': CircleDashed,
+  'in-review': CircleEllipsis,
+  blocked: CircleSlash,
+  'on-hold': CirclePause,
+  done: CircleCheck,
 };
 function StatusIcon({ status }: { status: string }) {
-  return (
-    <svg className={`icon status-icon s-${status}`} width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={`M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z${STATUS_MARK[status] ?? ''}`} />
-    </svg>
-  );
+  const Glyph = STATUS_ICON[status] ?? Circle;
+  return <Glyph className={`icon status-icon s-${status}`} size={15} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 function Progress({ task }: { task: WorkTask }) {

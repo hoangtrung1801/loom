@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import { applyLink, currentBlock, currentLink, markActive, toggle, turnInto, type BlockChoice } from './commands.js';
+import { Icon, type IconName } from '../components/Icon.js';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
@@ -38,9 +39,9 @@ export function Toolbar({ view }: { view: EditorView }) {
   }, [selection.empty]);
 
   if (!visible) return null;
-  const btn = (label: string, title: string, name: string, attrs?: Record<string, unknown>) => (
+  const btn = (label: IconName, title: string, name: string, attrs?: Record<string, unknown>) => (
     <button key={name} className={markActive(view, name) ? 'on' : ''} title={title} aria-label={title} aria-pressed={markActive(view, name)} onClick={() => toggle(view, name, attrs)}>
-      {label}
+      <Icon name={label} size={15} />
     </button>
   );
   return (
@@ -50,13 +51,13 @@ export function Toolbar({ view }: { view: EditorView }) {
           <NativeSelect aria-label="Turn into" value={currentBlock(view)} onChange={(e) => turnInto(view, e.target.value as BlockChoice)} onMouseDown={(e) => e.stopPropagation()}>
             {BLOCKS.map(([value, label]) => <NativeSelectOption key={value} value={value}>{label}</NativeSelectOption>)}
           </NativeSelect>
-          {btn('B', 'Bold (Ctrl/⌘ B)', 'strong')}
-          {btn('I', 'Italic (Ctrl/⌘ I)', 'em')}
-          {btn('U', 'Underline (Ctrl/⌘ U)', 'underline')}
-          {btn('S', 'Strikethrough', 'strike')}
-          {btn('</>', 'Code (Ctrl/⌘ E)', 'code')}
-          {btn('▍', 'Highlight', 'highlight', { color: 'yellow' })}
-          <button className={markActive(view, 'link') ? 'on' : ''} title="Link" aria-label="Link" onClick={() => setLinking(currentLink(view))}>🔗</button>
+          {btn('bold', 'Bold (Ctrl/⌘ B)', 'strong')}
+          {btn('italic', 'Italic (Ctrl/⌘ I)', 'em')}
+          {btn('underline', 'Underline (Ctrl/⌘ U)', 'underline')}
+          {btn('strike', 'Strikethrough', 'strike')}
+          {btn('code', 'Code (Ctrl/⌘ E)', 'code')}
+          {btn('highlight', 'Highlight', 'highlight', { color: 'yellow' })}
+          <button className={markActive(view, 'link') ? 'on' : ''} title="Link" aria-label="Link" onClick={() => setLinking(currentLink(view))}><Icon name="link" size={15} /></button>
         </>
       ) : (
         <form

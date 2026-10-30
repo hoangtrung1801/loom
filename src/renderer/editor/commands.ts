@@ -5,6 +5,7 @@ import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { insertFiles } from './plugins.js';
 import { safeHref, schema } from './schema.js';
+import type { IconName } from '../components/Icon.js';
 
 const n = schema.nodes;
 
@@ -62,36 +63,36 @@ export interface SlashItem {
   title: string;
   hint: string;
   keywords: string;
-  icon: string;
+  icon: IconName;
   run(view: EditorView): void;
 }
 
-const block = (id: string, title: string, hint: string, icon: string, keywords: string, run: SlashItem['run']): SlashItem => ({ id, title, hint, icon, keywords, run });
+const block = (id: string, title: string, hint: string, icon: IconName, keywords: string, run: SlashItem['run']): SlashItem => ({ id, title, hint, icon, keywords, run });
 
 export const SLASH_ITEMS: SlashItem[] = [
-  block('text', 'Text', 'Plain paragraph', 'T', 'paragraph plain', (v) => setBlockType(n.paragraph!)(v.state, v.dispatch)),
-  block('h1', 'Heading 1', 'Big section title', 'H1', 'title header', (v) => setBlockType(n.heading!, { level: 1 })(v.state, v.dispatch)),
-  block('h2', 'Heading 2', 'Medium section title', 'H2', 'subtitle header', (v) => setBlockType(n.heading!, { level: 2 })(v.state, v.dispatch)),
-  block('h3', 'Heading 3', 'Small section title', 'H3', 'header', (v) => setBlockType(n.heading!, { level: 3 })(v.state, v.dispatch)),
-  block('bullet', 'Bulleted list', 'Simple list', '•', 'ul unordered', (v) => wrapInList(n.bullet_list!)(v.state, v.dispatch)),
-  block('ordered', 'Numbered list', 'List with numbers', '1.', 'ol ordered', (v) => wrapInList(n.ordered_list!)(v.state, v.dispatch)),
-  block('todo', 'To-do list', 'Track tasks', '☐', 'todo task checkbox check', (v) => wrapInList(n.todo_list!)(v.state, v.dispatch)),
-  block('toggle', 'Toggle list', 'Collapsible section', '▸', 'collapse fold details', (v) => {
+  block('text', 'Text', 'Plain paragraph', 'paragraph', 'paragraph plain', (v) => setBlockType(n.paragraph!)(v.state, v.dispatch)),
+  block('h1', 'Heading 1', 'Big section title', 'h1', 'title header', (v) => setBlockType(n.heading!, { level: 1 })(v.state, v.dispatch)),
+  block('h2', 'Heading 2', 'Medium section title', 'h2', 'subtitle header', (v) => setBlockType(n.heading!, { level: 2 })(v.state, v.dispatch)),
+  block('h3', 'Heading 3', 'Small section title', 'h3', 'header', (v) => setBlockType(n.heading!, { level: 3 })(v.state, v.dispatch)),
+  block('bullet', 'Bulleted list', 'Simple list', 'bullet', 'ul unordered', (v) => wrapInList(n.bullet_list!)(v.state, v.dispatch)),
+  block('ordered', 'Numbered list', 'List with numbers', 'ordered', 'ol ordered', (v) => wrapInList(n.ordered_list!)(v.state, v.dispatch)),
+  block('todo', 'To-do list', 'Track tasks', 'todo', 'todo task checkbox check', (v) => wrapInList(n.todo_list!)(v.state, v.dispatch)),
+  block('toggle', 'Toggle list', 'Collapsible section', 'chevronRight', 'collapse fold details', (v) => {
     const { $from } = v.state.selection;
     if ($from.parent.type === n.paragraph) wrapIn(n.toggle!)(v.state, v.dispatch);
   }),
-  block('quote', 'Quote', 'Call out a passage', '“', 'blockquote', (v) => wrapIn(n.blockquote!)(v.state, v.dispatch)),
-  block('callout', 'Callout', 'Highlighted note', '💡', 'tip note info', (v) => wrapIn(n.callout!)(v.state, v.dispatch)),
-  block('code', 'Code', 'Code snippet', '</>', 'snippet pre', (v) => setBlockType(n.code_block!)(v.state, v.dispatch)),
-  block('table', 'Table', '3 × 3 table', '▦', 'grid', (v) => insertTable(v)),
-  block('divider', 'Divider', 'Horizontal line', '—', 'hr rule line', (v) => insertBlock(v, n.horizontal_rule!.create())),
-  block('math', 'Math equation', 'LaTeX block', '∑', 'latex katex formula', (v) => insertBlock(v, n.math_block!.create({ latex: '' }))),
-  block('date', 'Date', 'Insert today', '📅', 'today calendar', (v) => v.dispatch(v.state.tr.replaceSelectionWith(n.date!.create({ value: todayIso() })).scrollIntoView())),
-  block('mention', 'Mention card', 'Link to another card', '@', 'link backlink reference', (v) => v.dispatch(v.state.tr.insertText('@'))),
-  block('image', 'Image', 'Upload a picture', '🖼', 'photo picture', (v) => void pickFiles('image/*').then((f) => insertFiles(v, f))),
-  block('audio', 'Audio', 'Upload a recording', '🎧', 'sound music', (v) => void pickFiles('audio/*').then((f) => insertFiles(v, f))),
-  block('video', 'Video', 'Upload a video', '🎬', 'movie', (v) => void pickFiles('video/*').then((f) => insertFiles(v, f))),
-  block('file', 'File', 'Attach any file', '📎', 'attachment upload', (v) => void pickFiles('*/*').then((f) => insertFiles(v, f))),
+  block('quote', 'Quote', 'Call out a passage', 'quote', 'blockquote', (v) => wrapIn(n.blockquote!)(v.state, v.dispatch)),
+  block('callout', 'Callout', 'Highlighted note', 'lightbulb', 'tip note info', (v) => wrapIn(n.callout!)(v.state, v.dispatch)),
+  block('code', 'Code', 'Code snippet', 'code', 'snippet pre', (v) => setBlockType(n.code_block!)(v.state, v.dispatch)),
+  block('table', 'Table', '3 × 3 table', 'table', 'grid', (v) => insertTable(v)),
+  block('divider', 'Divider', 'Horizontal line', 'minus', 'hr rule line', (v) => insertBlock(v, n.horizontal_rule!.create())),
+  block('math', 'Math equation', 'LaTeX block', 'sigma', 'latex katex formula', (v) => insertBlock(v, n.math_block!.create({ latex: '' }))),
+  block('date', 'Date', 'Insert today', 'calendar', 'today calendar', (v) => v.dispatch(v.state.tr.replaceSelectionWith(n.date!.create({ value: todayIso() })).scrollIntoView())),
+  block('mention', 'Mention card', 'Link to another card', 'atSign', 'link backlink reference', (v) => v.dispatch(v.state.tr.insertText('@'))),
+  block('image', 'Image', 'Upload a picture', 'image', 'photo picture', (v) => void pickFiles('image/*').then((f) => insertFiles(v, f))),
+  block('audio', 'Audio', 'Upload a recording', 'audio', 'sound music', (v) => void pickFiles('audio/*').then((f) => insertFiles(v, f))),
+  block('video', 'Video', 'Upload a video', 'video', 'movie', (v) => void pickFiles('video/*').then((f) => insertFiles(v, f))),
+  block('file', 'File', 'Attach any file', 'paperclip', 'attachment upload', (v) => void pickFiles('*/*').then((f) => insertFiles(v, f))),
 ];
 
 /** Slash-menu filtering: every query word must prefix-match the title or a keyword. */

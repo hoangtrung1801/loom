@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Icon } from '../components/Icon.js';
 import type { SlashItem } from './commands.js';
 import { editorEnv } from './env.js';
 import type { SuggestState } from './plugins.js';
@@ -56,7 +57,7 @@ export const SlashMenu = forwardRef<MenuHandle, { state: SuggestState; items: Sl
     <Floating rect={state.rect} label="Insert block">
       {items.map((item, i) => (
         <button key={item.id} ref={i === index ? active : undefined} role="option" aria-selected={i === index} className={`menu-item${i === index ? ' active' : ''}`} onMouseEnter={() => setIndex(i)} onClick={() => onPick(item)}>
-          <span className="menu-icon">{item.icon}</span>
+          <span className="menu-icon"><Icon name={item.icon} size={16} /></span>
           <span className="menu-text">
             <strong>{item.title}</strong>
             <small>{item.hint}</small>
@@ -97,7 +98,7 @@ export const MentionMenu = forwardRef<MenuHandle, { state: SuggestState; onPick(
     <Floating rect={state.rect} label="Link a card">
       {rows.map((row, i) => (
         <button key={row.create ? '__create' : row.id} role="option" aria-selected={i === index} className={`menu-item${i === index ? ' active' : ''}`} onMouseEnter={() => setIndex(i)} onClick={() => choose(i)}>
-          <span className="menu-icon">{row.create ? '＋' : '@'}</span>
+          <span className="menu-icon"><Icon name={row.create ? 'plus' : 'atSign'} size={16} /></span>
           <span className="menu-text">
             <strong>{row.create ? `Create “${row.title}”` : row.title || 'Untitled'}</strong>
             {row.create && <small>New card, linked here</small>}
