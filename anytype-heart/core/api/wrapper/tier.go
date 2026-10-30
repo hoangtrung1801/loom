@@ -30,10 +30,12 @@ const (
 	TierSmall Tier = "small"
 	// TierLarge is the ~20B tier: the full task-tool set.
 	TierLarge Tier = "large"
-	// TierFull names the second table (core/api/wrapper/full), served by
-	// the API server's /mcp/full route to capable models. It is not a
-	// subset of the curated table: ToolsForTier never takes it, and
-	// ParseTier (the CLI's flag) does not accept it.
+	// TierFull names the second table (core/api/wrapper/full), served to
+	// capable models by the API server's /mcp/full route and by the CLI's
+	// `mcp --tier full` and `api` verbs, which derive it from the running
+	// server (full.FetchTable). It is not a subset of the curated table:
+	// ToolsForTier never takes it, and ParseTier does not accept it — the
+	// CLI checks for it before calling ParseTier.
 	TierFull Tier = "full"
 )
 

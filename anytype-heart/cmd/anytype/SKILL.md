@@ -94,11 +94,38 @@ underscores (`Due_date` for "Due date"); a name no identifier can spell
   worked example, GBNF grammar (constrained decoding), and the filter
   grammar (EBNF + GBNF). `--tier small` narrows it to the 8-tool set for
   ~8B models (`large`, the default, is all twelve).
-- `anytype mcp --tier small|large` — serve the same tools over MCP stdio
+- `anytype mcp --tier small|large|full` — serve the same tools over MCP stdio
   for LOCAL models (Ollama/LM Studio-class hosts). Coding agents reading
   this skill should keep using the verbs directly — the CLI is the
   intended delivery for them; `mcp` exists for hosts that cannot run
   commands. Session state is in-memory for the server's lifetime.
 - `anytype help` — the verb list; `anytype <verb> --help` — its flags.
+
+## Beyond the task verbs: every operation
+
+The verbs above cover finding, reading and editing objects. For anything
+else — creating or changing **types**, **properties** and their **options**,
+**queries/collections** and their views, **templates**, **chats**,
+**widgets**, **spaces**, **files**, members, and **deleting or restoring**
+objects — use `api`. It serves the full tool table: one operation per local
+API v2 endpoint, derived from the running app's own OpenAPI document, so it
+always matches the app you talk to.
+
+```sh
+anytype api                                   # every operation, [read-only] / [destructive] marked
+anytype api create_type --help                # one operation's argument schema
+anytype api list_types space_id=bafyspace1    # key=value; values are JSON when they parse
+anytype api delete_object space_id=bafyspace1 object_id=bafyobj1
+echo '{"space_id":"bafyspace1","name":"Projects","type":"page"}' | anytype api create_object -
+```
+
+- Arguments are flat: path, query and body members side by side, named as
+  the schema names them (`space_id`, `object_id`, …). Ids are full ids,
+  not the task verbs' numbered handles.
+- `patch_object` and `update_type` take `ops`, a list of `{op, …}` entries;
+  `anytype api get_op_schema op=<name>` serves each op's shape and example.
+- Any write accepts `dry_run=true` to preview what it would change.
+- `anytype mcp --tier full` serves the same table over MCP stdio, and
+  `anytype tools --tier full` prints its tools/list.
 - Spec: `core/api/APIV2.md` §7 (the wrapper contract), `github.com/anyproto/any-block/format/v2/SPEC.md`
   (the document format the full-read mode returns).
