@@ -1,4 +1,6 @@
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { resolve } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import { devBridge } from './scripts/dev-bridge.js';
 
@@ -13,7 +15,8 @@ const relaxCspInDev = (): Plugin => ({
 export default defineConfig({
   root: 'src/renderer',
   base: './',
-  plugins: [react(), devBridge(), relaxCspInDev()],
+  resolve: { alias: { '@': resolve(import.meta.dirname, 'src/renderer') } },
+  plugins: [react(), tailwindcss(), devBridge(), relaxCspInDev()],
   build: { outDir: '../../dist/renderer', emptyOutDir: true, target: 'chrome156' },
   server: { host: '127.0.0.1', port: 5173, strictPort: true },
 });
