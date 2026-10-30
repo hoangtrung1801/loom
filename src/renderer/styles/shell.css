@@ -116,6 +116,8 @@ dt { color: var(--muted); } dd { margin: 0; }
 .tag-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
 .tag-card span { margin-left: auto; color: var(--muted); font-size: 11px; }
 .collection-input { width: 100%; margin-top: 4px; font-size: 12px; padding: 2px 6px; }
+.tag-actions { display: flex; gap: 6px; margin-top: 4px; }
+.tag-actions select { flex: 1; min-width: 0; font-size: 12px; }
 .tag-desc { width: 100%; min-height: 54px; margin-bottom: 12px; }
 .db-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; }
 .db-table th, .db-table td { border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: middle; }
