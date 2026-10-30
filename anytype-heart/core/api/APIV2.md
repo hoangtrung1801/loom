@@ -2238,6 +2238,15 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   refused with steering. The MCP delivery holds handle state in memory for the
   life of the process and never shares the CLI's session file
   (`core/api/wrapper/mcp.go:180`).
+- **`anytype mcp --tier full`** and **`anytype api`** deliver the full table
+  (one tool per /v2 operation, `core/api/wrapper/full`) from the CLI. The CLI
+  does not link the service layer, so it derives the table from the running
+  server's own inputs — `GET /v2/docs/openapi.json` plus each op schema from
+  `GET /v2/schemas` — and gets the table that server's `/mcp/full` route
+  serves (`core/api/wrapper/full/remote.go`). An op schema that cannot be read
+  leaves the edit tools' op lists bare rather than failing. `api` lists the
+  operations, prints one's argument schema (`--help`), or runs one from
+  `key=value` pairs or a JSON object (`-` reads stdin).
 - **Tool failures are returned IN BAND** (`isError: true` plus text) so the
   model reads the repair tip; only malformed JSON-RPC and a tool name outside
   the served tier are protocol errors, and the unknown-tool message still

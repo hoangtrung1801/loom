@@ -10,6 +10,15 @@
 //	anytype tools            # the machine-readable manifest (JSON)
 //	anytype mcp --tier small # serve the tools over MCP stdio (§8.20)
 //
+// Beyond the task tools, the full table — one tool per /v2 operation, so
+// every kind of object: types, properties and options, lists and views,
+// templates, chats, widgets, spaces, files, deletion — is derived from the
+// running server's OpenAPI document and served the same two ways:
+//
+//	anytype api                                  # every operation
+//	anytype api list_types space_id=bafy…        # run one, key=value or JSON
+//	anytype mcp --tier full                      # all of them over MCP stdio
+//
 // Configuration: ANYTYPE_API_URL (default http://127.0.0.1:31009) and
 // ANYTYPE_API_KEY (bearer key from the app's API settings). Handle state
 // (find's numbered results, block labels) persists in a session file
@@ -51,7 +60,7 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if code >= 0 {
 			return code
 		}
-		manifest, err := wrapper.ManifestJSONForTier(tier)
+		manifest, err := manifestJSON(tier)
 		if err != nil {
 			fmt.Fprintln(stderr, "error:", err)
 			return 1
@@ -65,13 +74,12 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if code >= 0 {
 			return code
 		}
-		// the long-lived delivery (§7.4): handle state lives in memory for
-		// the process lifetime, not in the CLI session file — concurrent MCP
-		// servers must not fight over one file, and a host restart starting
-		// from a clean session is the predictable behavior
-		client := wrapper.NewClient(os.Getenv("ANYTYPE_API_URL"), os.Getenv("ANYTYPE_API_KEY"))
-		runner := wrapper.NewRunner(client, wrapper.NewMemoryStore())
-		server := wrapper.NewMCPServer(runner, tier)
+		// the long-lived delivery (§7.4); mcpServer says where state lives
+		server, err := mcpServer(tier)
+		if err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return 1
+		}
 		if err := server.Serve(context.Background(), stdin, stdout); err != nil {
 			fmt.Fprintln(stderr, "error:", err)
 			return 1
@@ -79,9 +87,13 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	if verb == "api" {
+		return runAPI(argv[1:], stdin, stdout, stderr)
+	}
+
 	tool, ok := wrapper.ToolByVerb(verb)
 	if !ok {
-		fmt.Fprintf(stderr, "unknown verb %q — verbs: %s, tools, mcp\n", verb, strings.Join(verbs(), ", "))
+		fmt.Fprintf(stderr, "unknown verb %q — verbs: %s, api, tools, mcp\n", verb, strings.Join(verbs(), ", "))
 		return 2
 	}
 
@@ -201,7 +213,7 @@ func parseTierFlag(verb string, argv []string, errW io.Writer) (wrapper.Tier, in
 	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
 	fs.SetOutput(errW)
 	tierFlag := fs.String("tier", string(wrapper.TierLarge),
-		"tool tier served: small (~8B models, minimal set) or large (default, the full set)")
+		"tool tier served: small (~8B models, minimal set), large (default, the task tools) or full (one tool per API operation, read from the running server)")
 	if err := fs.Parse(argv); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return "", 0
@@ -209,12 +221,17 @@ func parseTierFlag(verb string, argv []string, errW io.Writer) (wrapper.Tier, in
 		return "", 2
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(errW, "error: unexpected argument %q — %s takes flags only (--tier small|large)\n", fs.Arg(0), verb)
+		fmt.Fprintf(errW, "error: unexpected argument %q — %s takes flags only (--tier small|large|full)\n", fs.Arg(0), verb)
 		return "", 2
+	}
+	// full is not a subset of the curated table, so wrapper.ParseTier does
+	// not take it; the CLI can serve it because it derives the table itself
+	if wrapper.Tier(*tierFlag) == wrapper.TierFull {
+		return wrapper.TierFull, -1
 	}
 	tier, err := wrapper.ParseTier(*tierFlag)
 	if err != nil {
-		fmt.Fprintln(errW, "error:", err)
+		fmt.Fprintf(errW, "error: %v, %s\n", err, wrapper.TierFull)
 		return "", 2
 	}
 	return tier, -1
@@ -244,8 +261,7 @@ func buildRunner(opts *cliOptions) (*wrapper.Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := wrapper.NewClient(os.Getenv("ANYTYPE_API_URL"), os.Getenv("ANYTYPE_API_KEY"))
-	runner := wrapper.NewRunner(client, &wrapper.FileStore{Path: sessionPath})
+	runner := wrapper.NewRunner(newClient(), &wrapper.FileStore{Path: sessionPath})
 	runner.DryRun = opts.dryRun
 	runner.IfMatch = opts.ifMatch
 	runner.AllowNewOptions = opts.createMissing
@@ -268,8 +284,9 @@ func printUsage(w io.Writer) {
 	for _, t := range wrapper.Tools() {
 		fmt.Fprintf(w, "  %-15s %s\n", t.Verb(), firstSentence(t.Description))
 	}
-	fmt.Fprintf(w, "  %-15s %s\n", "tools", "print the machine-readable tool manifest (JSON); --tier small|large")
-	fmt.Fprintf(w, "  %-15s %s\n", "mcp", "serve the tools over MCP stdio for local models; --tier small|large")
+	fmt.Fprintf(w, "  %-15s %s\n", "api", "every API operation (all object kinds): list them, or run one — api <operation> [key=value … | JSON]")
+	fmt.Fprintf(w, "  %-15s %s\n", "tools", "print the machine-readable tool manifest (JSON); --tier small|large|full")
+	fmt.Fprintf(w, "  %-15s %s\n", "mcp", "serve the tools over MCP stdio for AI agents; --tier small|large|full")
 	fmt.Fprintln(w, "\ncross-verb flags: --json, --dry-run, --if-match <etag>, --create-missing")
 	fmt.Fprintln(w, "environment: ANYTYPE_API_URL (default "+wrapper.DefaultBaseURL+"), ANYTYPE_API_KEY, ANYTYPE_CLI_SESSION")
 	fmt.Fprintln(w, "\nstart with: anytype spaces (lists space ids), then anytype find --space <spaceId> --query … ; find's results are numbered handles the other verbs take as --object")
