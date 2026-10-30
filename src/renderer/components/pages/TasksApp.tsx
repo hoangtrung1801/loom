@@ -170,7 +170,7 @@ function Column({ status, items, onDrop }: { status: string; items: WorkTask[]; 
         {items.map((t) => <TaskCardView key={t.id} task={t} onMove={onDrop} />)}
       </ul>
       <form onSubmit={(e) => { e.preventDefault(); add(); }}>
-        <Icon name="plus" size={14} /><Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task" aria-label={`Add a task to ${label}`} />
+        <Icon name="plus" size={14} /><Input className="h-[34px] border-0 bg-transparent px-0 shadow-none focus-visible:ring-0" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task" aria-label={`Add a task to ${label}`} />
       </form>
     </section>
   );

@@ -8,6 +8,7 @@ import { useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { CardRow, Empty, useDebounced } from '../ui/bits.js';
 import { Button } from '@/components/ui/button';
+import { FilterPill } from '@/components/ui/filter-pill';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
@@ -62,7 +63,7 @@ export function CardLibrary() {
       </div>
       <div className="kind-filter" role="group" aria-label="Card types">
         {CARD_KINDS.map((k) => (
-          <Button key={k} size="xs" variant={kinds.includes(k) ? 'default' : 'outline'} className="rounded-full" aria-pressed={kinds.includes(k)} onClick={() => toggleKind(k)}>{k}</Button>
+          <FilterPill key={k} pressed={kinds.includes(k)} onClick={() => toggleKind(k)}>{k}</FilterPill>
         ))}
       </div>
       {shown.length === 0 ? (

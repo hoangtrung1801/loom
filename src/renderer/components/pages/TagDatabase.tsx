@@ -88,11 +88,13 @@ export function TagDatabase() {
                     onBlur={(e) => e.target.value.trim() !== t.collection && void run(() => api.setTagDef(t.tag, { collection: e.target.value }))}
                   />
                   <div className="tag-actions">
-                    <NativeSelect value={t.color} onChange={(e) => void run(() => api.setTagDef(t.tag, { color: e.target.value }))} aria-label={`Color of ${t.tag}`}>
+                    <NativeSelect size="sm" className="w-full" value={t.color} onChange={(e) => void run(() => api.setTagDef(t.tag, { color: e.target.value }))} aria-label={`Color of ${t.tag}`}>
                       {COLORS.map((c) => <NativeSelectOption key={c} value={c}>{c || 'no color'}</NativeSelectOption>)}
                     </NativeSelect>
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       aria-label={`Delete ${t.tag}`}
                       onClick={() => window.confirm(`Delete #${t.tag}? It is removed from ${t.count} ${t.count === 1 ? 'card' : 'cards'}; the cards stay.`) && void run(() => api.deleteTag(t.tag))}
                     >

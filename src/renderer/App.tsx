@@ -18,6 +18,7 @@ import { useSync } from './store/sync.js';
 import { activeGroup, useTabs } from './store/tabs.js';
 import { useUi } from './store/ui.js';
 import { toast as sonner } from 'sonner';
+import { MotionConfig } from 'motion/react';
 import { Toaster } from '@/components/ui/sonner';
 
 export function App() {
@@ -109,7 +110,7 @@ export function App() {
   }, [error, dismiss]);
 
   return (
-    <>
+    <MotionConfig reducedMotion="user">
       <div className={`app${panel ? ' with-panel' : ''}`}>
         <LeftSidebar />
         <main className="main"><TabStrip />{ready ? <TabView /> : <div className="loading">Loading…</div>}</main>
@@ -121,7 +122,7 @@ export function App() {
         <ContextMenu />
       </div>
       <Toaster />
-    </>
+    </MotionConfig>
   );
 }
 
