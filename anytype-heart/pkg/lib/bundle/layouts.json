@@ -1,0 +1,92 @@
+[
+  {
+    "id": "basic",
+    "name": "Basic"
+  },
+  {
+    "id": "set",
+    "name": "Set",
+    "requiredRelations": [
+      "setOf"
+    ]
+  },
+  {
+    "id": "note",
+    "name": "Note"
+  },
+  {
+    "id": "relation",
+    "name": "Relation"
+  },
+  {
+    "id": "file",
+    "name": "File"
+  },
+  {
+    "id": "dashboard",
+    "name": "Dashboard"
+  },
+  {
+    "id": "todo",
+    "name": "to-do",
+    "requiredRelations": [
+      "done"
+    ]
+  },
+  {
+    "id": "bookmark",
+    "name": "Bookmark"
+  },
+  {
+    "id": "space",
+    "name": "Space"
+  },
+  {
+    "id": "spaceView",
+    "name": "Space View"
+  },
+  {
+    "id": "participant",
+    "name": "Participant"
+  },
+  {
+    "id": "image",
+    "name": "Image",
+    "requiredRelations": [
+      "iconImage"
+    ]
+  },
+  {
+    "id": "profile",
+    "name": "Profile"
+  },
+  {
+    "id": "objectType",
+    "name": "Object Type",
+    "requiredRelations": [
+      "recommendedRelations"
+    ]
+  },
+  {
+    "id": "relationOption",
+    "name": "Relation Option",
+    "requiredRelations": [
+      "relationOptionColor"
+    ]
+  },
+  {
+    "id": "collection",
+    "name": "Collection"
+  },
+  {
+    "id": "tag",
+    "name": "Tag",
+    "requiredRelations": [
+      "relationOptionColor"
+    ]
+  },
+  {
+    "id": "discussion",
+    "name": "Discussion"
+  }
+]

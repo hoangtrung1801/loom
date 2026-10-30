@@ -1,0 +1,649 @@
+package objectcreator
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/anyproto/any-sync/commonspace/object/tree/treestorage"
+	"github.com/samber/lo"
+	"go.uber.org/zap"
+
+	"github.com/anyproto/anytype-heart/core/block/cache"
+	"github.com/anyproto/anytype-heart/core/block/detailservice"
+	"github.com/anyproto/anytype-heart/core/block/editor/basic"
+	"github.com/anyproto/anytype-heart/core/block/editor/smartblock"
+	"github.com/anyproto/anytype-heart/core/block/editor/state"
+	"github.com/anyproto/anytype-heart/core/block/editor/template"
+	widgetObject "github.com/anyproto/anytype-heart/core/block/editor/widget"
+	"github.com/anyproto/anytype-heart/core/block/history"
+	"github.com/anyproto/anytype-heart/core/block/import/common"
+	"github.com/anyproto/anytype-heart/core/block/import/common/syncer"
+	"github.com/anyproto/anytype-heart/core/block/import/markdown/anymark"
+	"github.com/anyproto/anytype-heart/core/block/object/objectcreator"
+	"github.com/anyproto/anytype-heart/core/block/simple"
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/core/domain/objectorigin"
+	"github.com/anyproto/anytype-heart/core/relationutils"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	coresb "github.com/anyproto/anytype-heart/pkg/lib/core/smartblock"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/addr"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/objectstore"
+	"github.com/anyproto/anytype-heart/pkg/lib/logging"
+	"github.com/anyproto/anytype-heart/pkg/lib/pb/model"
+	"github.com/anyproto/anytype-heart/space"
+	"github.com/anyproto/anytype-heart/util/anyerror"
+)
+
+var log = logging.Logger("import")
+
+// Service encapsulate logic with creation of given smartblocks
+type Service interface {
+	//nolint:lll
+	Create(dataObject *DataObject, sn *common.Snapshot) (*domain.Details, string, error)
+}
+
+type ObjectGetterDeleter interface {
+	cache.ObjectGetterComponent
+	DeleteObject(objectId string) (err error)
+}
+
+type ObjectCreator struct {
+	detailsService      detailservice.Service
+	spaceService        space.Service
+	objectStore         objectstore.ObjectStore
+	relationSyncer      *syncer.FileRelationSyncer
+	syncFactory         *syncer.Factory
+	objectCreator       objectcreator.Service
+	objectGetterDeleter ObjectGetterDeleter
+	formatFetcher       relationutils.RelationFormatFetcher
+}
+
+func New(detailsService detailservice.Service,
+	syncFactory *syncer.Factory,
+	objectStore objectstore.ObjectStore,
+	relationSyncer *syncer.FileRelationSyncer,
+	spaceService space.Service,
+	objectCreator objectcreator.Service,
+	objectGetterDeleter ObjectGetterDeleter,
+	formatFetcher relationutils.RelationFormatFetcher,
+) Service {
+	return &ObjectCreator{
+		detailsService:      detailsService,
+		syncFactory:         syncFactory,
+		objectStore:         objectStore,
+		relationSyncer:      relationSyncer,
+		spaceService:        spaceService,
+		objectCreator:       objectCreator,
+		objectGetterDeleter: objectGetterDeleter,
+		formatFetcher:       formatFetcher,
+	}
+}
+
+// Create creates smart blocks from given snapshots
+func (oc *ObjectCreator) Create(dataObject *DataObject, sn *common.Snapshot) (*domain.Details, string, error) {
+	snapshot := sn.Snapshot.Data
+	oldIDtoNew := dataObject.oldIDtoNew
+	ctx := dataObject.ctx
+	origin := dataObject.origin
+	spaceID := dataObject.spaceID
+
+	newID := oldIDtoNew[sn.Id]
+
+	if sn.Snapshot.SbType == coresb.SmartBlockTypeFile {
+		return nil, newID, nil
+	}
+
+	oc.setRootBlock(snapshot, newID)
+
+	oc.injectImportDetails(sn, origin)
+	st, err := state.NewDocFromSnapshot(newID, sn.Snapshot.ToProto())
+	if err != nil {
+		return nil, "", fmt.Errorf("doc from snapshot: %w", err)
+	}
+	st.SetLocalDetail(bundle.RelationKeyLastModifiedDate, snapshot.Details.Get(bundle.RelationKeyLastModifiedDate))
+
+	var (
+		filesToDelete []string
+	)
+	defer func() {
+		// delete file in ipfs if there is error after creation
+		oc.onFinish(err, spaceID, st, filesToDelete)
+	}()
+
+	// File object details (createdInContext/createdInContextRef) are pre-mapped by the processor
+	// before GetIDAndPayload is called, so they arrive as final system IDs. Skip remapping here
+	// to prevent UpdateObjectIDsInRelations from treating them as unknown CIDs → _missing_object.
+	if sn.Snapshot.SbType != coresb.SmartBlockTypeFileObject {
+		common.UpdateObjectIDsInRelations(st, oldIDtoNew, dataObject.relationKeysToFormat)
+	}
+
+	if err = common.UpdateLinksToObjects(st, oldIDtoNew); err != nil {
+		log.With("objectID", newID).Errorf("failed to update objects ids: %s", err)
+	}
+
+	oc.updateKeys(st, oldIDtoNew, dataObject.relationKeysToFormat)
+	if sn.Snapshot.SbType == coresb.SmartBlockTypeWorkspace {
+		oc.setWorkspaceDetails(spaceID, st)
+		return nil, newID, nil
+	}
+
+	if sn.Snapshot.SbType == coresb.SmartBlockTypeWidget {
+		return oc.updateWidgetObject(st)
+	}
+
+	st.ModifyLinkedFilesInDetails(oc.formatFetcher, func(fileId string) string {
+		// File objects skip the general remap because their context references were
+		// already mapped before upload. Their own icon can still name the source ID.
+		if mapped, ok := oldIDtoNew[fileId]; ok {
+			fileId = mapped
+		}
+
+		newFileId := oc.relationSyncer.Sync(spaceID, fileId, dataObject.newIdsSet, origin, newID)
+		if newFileId != fileId {
+			filesToDelete = append(filesToDelete, fileId)
+		}
+		return newFileId
+	})
+
+	typeKeys := st.ObjectTypeKeys()
+	if sn.Snapshot.SbType == coresb.SmartBlockTypeObjectType {
+		// we widen typeKeys here to install bundled templates for imported object type
+		typeKeys = append(typeKeys, domain.TypeKey(st.UniqueKeyInternal()))
+	}
+	err = oc.installBundledRelationsAndTypes(ctx, spaceID, st.AllRelationKeys(), typeKeys)
+	if err != nil {
+		log.With("objectID", newID).Errorf("failed to install bundled relations and types: %s", err)
+	}
+	var respDetails *domain.Details
+	if payload := dataObject.createPayloads[newID]; payload.RootRawChange != nil {
+		respDetails, err = oc.createNewObject(ctx, spaceID, payload, st, newID, oldIDtoNew)
+		if err != nil {
+			log.With("objectID", newID).Errorf("failed to create %s: %s", newID, err)
+			return nil, "", err
+		}
+	} else {
+		if canUpdateObject(sn.Snapshot.SbType) {
+			respDetails = oc.updateExistingObject(st, oldIDtoNew, newID)
+		}
+	}
+	oc.setFavorite(snapshot, newID)
+
+	oc.setArchived(ctx, snapshot, newID)
+
+	syncErr := oc.syncFilesAndLinks(dataObject.newIdsSet, domain.FullID{SpaceID: spaceID, ObjectID: newID}, origin)
+	if syncErr != nil {
+		if errors.Is(syncErr, common.ErrFileLoad) {
+			return respDetails, newID, syncErr
+		}
+	}
+	return respDetails, newID, nil
+}
+
+func canUpdateObject(sbType coresb.SmartBlockType) bool {
+	return sbType != coresb.SmartBlockTypeRelation &&
+		sbType != coresb.SmartBlockTypeRelationOption &&
+		sbType != coresb.SmartBlockTypeFileObject &&
+		sbType != coresb.SmartBlockTypeParticipant
+}
+
+func (oc *ObjectCreator) injectImportDetails(sn *common.Snapshot, origin objectorigin.ObjectOrigin) {
+	lastModifiedDate := sn.Snapshot.Data.Details.GetInt64(bundle.RelationKeyLastModifiedDate)
+	createdDate := sn.Snapshot.Data.Details.GetInt64(bundle.RelationKeyCreatedDate)
+	if lastModifiedDate == 0 {
+		if createdDate != 0 {
+			sn.Snapshot.Data.Details.SetInt64(bundle.RelationKeyLastModifiedDate, createdDate)
+		} else {
+			// we can't fallback to time.Now() because it will be inconsistent with the time used in object tree header.
+			// So instead we should EXPLICITLY set creation date to the snapshot in all importers
+			log.With("objectID", sn.Id).Warnf("both lastModifiedDate and createdDate are not set in the imported snapshot")
+		}
+	}
+
+	if createdDate > 0 {
+		// pass it explicitly to the snapshot
+		sn.Snapshot.Data.OriginalCreatedTimestamp = createdDate
+	}
+
+	sn.Snapshot.Data.Details.SetInt64(bundle.RelationKeyOrigin, int64(origin.Origin))
+	sn.Snapshot.Data.Details.SetInt64(bundle.RelationKeyImportType, int64(origin.ImportType))
+	// we don't need to inject relatonLinks, they will be automatically injected for bundled relations
+}
+
+func (oc *ObjectCreator) updateExistingObject(st *state.State, oldIDtoNew map[string]string, newID string) *domain.Details {
+	if st.Store() != nil {
+		oc.updateLinksInCollections(st, oldIDtoNew, false)
+	}
+	return oc.resetState(newID, st)
+}
+
+func (oc *ObjectCreator) installBundledRelationsAndTypes(
+	ctx context.Context,
+	spaceID string,
+	relationKeys []domain.RelationKey,
+	objectTypeKeys []domain.TypeKey,
+) error {
+
+	idsToCheck := make([]string, 0, len(relationKeys)+len(objectTypeKeys))
+	for _, key := range relationKeys {
+		// TODO: check if we have them in oldIDtoNew
+		if !bundle.HasRelation(key) {
+			continue
+		}
+
+		idsToCheck = append(idsToCheck, key.BundledURL())
+	}
+
+	for _, typeKey := range objectTypeKeys {
+		if !bundle.HasObjectTypeByKey(typeKey) {
+			continue
+		}
+		// TODO: check if we have them in oldIDtoNew
+		idsToCheck = append(idsToCheck, addr.BundledObjectTypeURLPrefix+string(typeKey))
+	}
+
+	spc, err := oc.spaceService.Get(ctx, spaceID)
+	if err != nil {
+		return fmt.Errorf("get space %s: %w", spaceID, err)
+	}
+	_, _, err = oc.objectCreator.InstallBundledObjects(ctx, spc, idsToCheck)
+	return err
+}
+
+func (oc *ObjectCreator) createNewObject(
+	ctx context.Context,
+	spaceID string,
+	payload treestorage.TreeStorageCreatePayload,
+	st *state.State,
+	newID string,
+	oldIDtoNew map[string]string) (*domain.Details, error) {
+	var respDetails *domain.Details
+	spc, err := oc.spaceService.Get(ctx, spaceID)
+	if err != nil {
+		return nil, fmt.Errorf("get space %s: %w", spaceID, err)
+	}
+	sb, err := spc.CreateTreeObjectWithPayload(ctx, payload, func(id string) *smartblock.InitContext {
+		// at this point, collection contains uuids, we need to replace them with new ids
+		// it should happen before first index, otherwise uuids can be indexed as real objects
+		if st.Store() != nil {
+			oc.replaceInCollection(st, oldIDtoNew)
+		}
+		return &smartblock.InitContext{
+			Ctx:         ctx,
+			IsNewObject: true,
+			State:       st,
+			SpaceID:     spaceID,
+		}
+	})
+	if err == nil {
+		sb.Lock()
+		respDetails = sb.Details()
+		sb.Unlock()
+	} else if errors.Is(err, treestorage.ErrTreeExists) {
+		err = spc.Do(newID, func(sb smartblock.SmartBlock) error {
+			respDetails = sb.Details()
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("get existing object %s: %w", newID, err)
+		}
+	} else {
+		log.With("objectID", newID).Errorf("failed to create %s: %s", newID, err)
+		return nil, err
+	}
+	return respDetails, nil
+}
+
+func (oc *ObjectCreator) setRootBlock(snapshot *common.StateSnapshot, newID string) {
+	var found bool
+	for _, b := range snapshot.Blocks {
+		if b.Id == newID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		snapshot.Blocks = anymark.AddRootBlock(snapshot.Blocks, newID)
+	}
+}
+
+func (oc *ObjectCreator) onFinish(err error, spaceId string, st *state.State, filesToDelete []string) {
+	if err != nil {
+		for _, bl := range st.Blocks() {
+			if f := bl.GetFile(); f != nil {
+				oc.deleteFile(spaceId, f.Hash)
+			}
+			for _, hash := range filesToDelete {
+				oc.deleteFile(spaceId, hash)
+			}
+		}
+	}
+}
+
+func (oc *ObjectCreator) deleteFile(spaceId string, hash string) {
+	inboundLinks, err := oc.objectStore.SpaceIndex(spaceId).GetOutboundLinksById(hash)
+	if err != nil {
+		log.With("file", hash).Errorf("failed to get inbound links for file: %s", err)
+	}
+	if len(inboundLinks) == 0 {
+		err = oc.objectGetterDeleter.DeleteObject(hash)
+		if err != nil {
+			log.With("file", hash).Errorf("failed to delete file: %s", anyerror.CleanupError(err))
+		}
+	}
+}
+
+func (oc *ObjectCreator) setWorkspaceDetails(spaceID string, st *state.State) {
+	// hand-pick relation because space is a special case
+	var details []domain.Detail
+	combinedDetails := st.CombinedDetails()
+
+	// Prefer homepage over spaceDashboardId for new exports
+	homepage := combinedDetails.GetString(bundle.RelationKeyHomepage)
+	if homepage != "" {
+		details = append(details, domain.Detail{
+			Key:   bundle.RelationKeyHomepage,
+			Value: domain.String(homepage),
+		})
+	} else {
+		// Fallback to spaceDashboardId for old exports
+		ids := combinedDetails.GetStringList(bundle.RelationKeySpaceDashboardId)
+		if len(ids) > 0 {
+			details = append(details, domain.Detail{
+				Key:   bundle.RelationKeySpaceDashboardId,
+				Value: domain.StringList(ids),
+			})
+		}
+	}
+
+	spaceName := combinedDetails.GetString(bundle.RelationKeyName)
+	if spaceName != "" {
+		details = append(details, domain.Detail{
+			Key:   bundle.RelationKeyName,
+			Value: domain.String(spaceName),
+		})
+	}
+
+	// Restore descriptive space metadata carried by full exports.
+	for _, key := range []domain.RelationKey{bundle.RelationKeyDescription, bundle.RelationKeyIconEmoji, bundle.RelationKeyIconImage, bundle.RelationKeyIconName} {
+		if combinedDetails.Has(key) {
+			details = append(details, domain.Detail{Key: key, Value: combinedDetails.Get(key)})
+		}
+	}
+	iconOption := combinedDetails.GetInt64(bundle.RelationKeyIconOption)
+	if iconOption != 0 {
+		details = append(details, domain.Detail{
+			Key:   bundle.RelationKeyIconOption,
+			Value: domain.Int64(iconOption),
+		})
+	}
+	if len(details) > 0 {
+		spc, err := oc.spaceService.Get(context.Background(), spaceID)
+		if err != nil {
+			log.Errorf("failed to get space: %v", err)
+			return
+		}
+		err = cache.Do(oc.objectGetterDeleter, spc.DerivedIDs().Workspace, func(ws basic.CommonOperations) error {
+			if err := ws.SetDetails(nil, details, false); err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			log.Errorf("failed to set spaceDashBoardID, %s", err)
+		}
+	}
+}
+
+// isDerivedFromBundledObject reports whether the incoming snapshot claims to be a copy of a
+// bundled object. Revision numbers version bundled definitions, so comparing them is only
+// meaningful between two copies of the same bundled object. A user's own object carries no
+// revision, and comparing its implicit 0 against a bundled object's revision would silently
+// drop the whole imported state.
+func isDerivedFromBundledObject(st *state.State) bool {
+	return st.Details().GetInt64(bundle.RelationKeyRevision) > 0 ||
+		st.Details().GetString(bundle.RelationKeySourceObject) != ""
+}
+
+// preserveBundledIdentity keeps sourceObject and revision of the object we are resetting when the
+// incoming snapshot carries neither. Resetting to a version drops details the new state omits, and
+// these two tie an installed object back to its bundled definition: sourceObject is what
+// InstallBundledObjects matches on to see an object is already installed, and revision is what
+// SystemObjectReviser compares against the bundle. A user's snapshot landing on such an object
+// should replace its content, not sever that link.
+func preserveBundledIdentity(b smartblock.SmartBlock, st *state.State) {
+	if isDerivedFromBundledObject(st) {
+		return
+	}
+	for _, key := range []domain.RelationKey{bundle.RelationKeySourceObject, bundle.RelationKeyRevision} {
+		if value := b.Details().Get(key); value.Ok() {
+			st.SetDetail(key, value)
+		}
+	}
+}
+
+func (oc *ObjectCreator) resetState(newID string, st *state.State) *domain.Details {
+	var respDetails *domain.Details
+	err := cache.Do(oc.objectGetterDeleter, newID, func(b smartblock.SmartBlock) error {
+		currentRevision := b.Details().GetInt64(bundle.RelationKeyRevision)
+		newRevision := st.Details().GetInt64(bundle.RelationKeyRevision)
+		// never update objects with older revision
+		// we use revision for bundled objects like relations and object types
+		if isDerivedFromBundledObject(st) && currentRevision > newRevision {
+			log.With(zap.String("object id", newID)).Warnf("skipping object %s, revision %d > %d", st.Details().GetString(bundle.RelationKeyUniqueKey), currentRevision, newRevision)
+			return nil
+		}
+		preserveBundledIdentity(b, st)
+		keepLiveTypeInstalled(b.Details(), st)
+		if st.ObjectTypeKey() == bundle.TypeKeyObjectType {
+			template.InitTemplate(st, template.WithDetail(bundle.RelationKeyRecommendedLayout, domain.Int64(model.ObjectType_basic)))
+		}
+		err := history.ResetToVersion(b, st)
+		if err != nil {
+			log.With(zap.String("object id", newID)).Errorf("failed to set state %s: %s", newID, err)
+		}
+		respDetails = b.CombinedDetails()
+		return nil
+	})
+	if err != nil {
+		log.With(zap.String("object id", newID)).Errorf("failed to reset state %s: %s", newID, err)
+	}
+	return respDetails
+}
+
+// keepLiveTypeInstalled drops an incoming `isUninstalled` when the object
+// it is about to reset is LIVE in the destination: a bundle restores a type
+// the user removed as removed (AnyBlock SPEC §2a), but a type the user has
+// since restored — or never removed here — must not be hidden by a backup.
+// A nil existing means a new object, which keeps the flag.
+func keepLiveTypeInstalled(existing *domain.Details, st *state.State) {
+	if existing == nil || existing.Len() == 0 {
+		return
+	}
+	if st.Details().GetBool(bundle.RelationKeyIsUninstalled) && !existing.GetBool(bundle.RelationKeyIsUninstalled) {
+		st.RemoveDetail(bundle.RelationKeyIsUninstalled)
+	}
+}
+
+func (oc *ObjectCreator) setFavorite(snapshot *common.StateSnapshot, newID string) {
+	isFavorite := snapshot.Details.GetBool(bundle.RelationKeyIsFavorite)
+	if isFavorite {
+		err := oc.detailsService.SetIsFavorite(newID, true)
+		if err != nil {
+			log.With(zap.String("object id", newID)).Errorf("failed to set isFavorite when importing object: %s", err)
+		}
+	}
+}
+
+func (oc *ObjectCreator) setArchived(ctx context.Context, snapshot *common.StateSnapshot, newID string) {
+	isArchive := snapshot.Details.GetBool(bundle.RelationKeyIsArchived)
+	if isArchive {
+		err := oc.detailsService.SetIsArchived(nil, ctx, newID, true, false)
+		if err != nil {
+			log.With(zap.String("object id", newID)).
+				Errorf("failed to set isFavorite when importing object %s: %s", newID, err)
+		}
+	}
+}
+
+func (oc *ObjectCreator) syncFilesAndLinks(newIdsSet map[string]struct{}, id domain.FullID, origin objectorigin.ObjectOrigin) error {
+	tasks := make([]func() error, 0)
+	// todo: rewrite it in order not to create state with URLs inside links
+	err := cache.Do(oc.objectGetterDeleter, id.ObjectID, func(b smartblock.SmartBlock) error {
+		st := b.NewState()
+		return st.Iterate(func(bl simple.Block) (isContinue bool) {
+			s := oc.syncFactory.GetSyncer(bl)
+			if s != nil {
+				// We can't run syncer here because it will cause a deadlock, so we defer this operation
+				tasks = append(tasks, func() error {
+					err := s.Sync(id, newIdsSet, bl, origin)
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+			}
+			return true
+		})
+	})
+	if err != nil {
+		return err
+	}
+	var fileLoadErr error
+	for _, task := range tasks {
+		err = task()
+		if err != nil {
+			log.With(zap.String("objectId", id.ObjectID)).Errorf("failed to sync: %s", err)
+			if errors.Is(err, common.ErrFileLoad) {
+				fileLoadErr = err
+			}
+		}
+	}
+	return fileLoadErr
+}
+
+func (oc *ObjectCreator) updateLinksInCollections(st *state.State, oldIDtoNew map[string]string, isNewCollection bool) {
+	err := cache.Do(oc.objectGetterDeleter, st.RootId(), func(b smartblock.SmartBlock) error {
+		originalState := b.NewState()
+		var existedObjects []string
+		if !isNewCollection {
+			existedObjects = originalState.GetStoreSlice(template.CollectionStoreKey)
+		}
+		oc.mergeCollections(existedObjects, st, oldIDtoNew)
+		return nil
+	})
+	if err != nil {
+		log.Errorf("failed to get existed objects in collection, %s", err)
+	}
+}
+
+func (oc *ObjectCreator) replaceInCollection(st *state.State, oldIDtoNew map[string]string) {
+	objectsInCollections := st.GetStoreSlice(template.CollectionStoreKey)
+	newObjs := make([]string, 0, len(objectsInCollections))
+	for _, id := range objectsInCollections {
+		if newId, ok := oldIDtoNew[id]; ok {
+			newObjs = append(newObjs, newId)
+		}
+	}
+	st.UpdateStoreSlice(template.CollectionStoreKey, newObjs)
+}
+
+func (oc *ObjectCreator) mergeCollections(existedObjects []string, st *state.State, oldIDtoNew map[string]string) {
+	objectsInCollections := st.GetStoreSlice(template.CollectionStoreKey)
+	for i, id := range objectsInCollections {
+		if newID, ok := oldIDtoNew[id]; ok {
+			objectsInCollections[i] = newID
+		}
+	}
+	result := lo.Union(existedObjects, objectsInCollections)
+	st.UpdateStoreSlice(template.CollectionStoreKey, result)
+}
+
+func (oc *ObjectCreator) updateWidgetObject(st *state.State) (*domain.Details, string, error) {
+	err := cache.DoState(oc.objectGetterDeleter, st.RootId(), func(oldState *state.State, sb smartblock.SmartBlock) error {
+		blocks := st.Blocks()
+		blocksMap := make(map[string]*model.Block, len(blocks))
+		existingWidgetsTargetIDs, err := oc.getExistingWidgetsTargetIDs(oldState)
+		if err != nil {
+			return err
+		}
+		for _, block := range blocks {
+			blocksMap[block.Id] = block
+		}
+		for _, block := range blocks {
+			if widget := block.GetWidget(); widget != nil {
+				if len(block.ChildrenIds) > 0 {
+					err := oc.addWidgetBlock(oldState, block, blocksMap, existingWidgetsTargetIDs)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	})
+	return nil, "", err
+}
+
+func (oc *ObjectCreator) addWidgetBlock(oldState *state.State,
+	block *model.Block,
+	blocksMap map[string]*model.Block,
+	existingWidgetsTargetIDs map[string]struct{},
+) error {
+	linkBlockID := block.ChildrenIds[0]
+	if linkBlock, ok := blocksMap[linkBlockID]; ok {
+		if oc.skipObject(linkBlock.GetLink().GetTargetBlockId(), existingWidgetsTargetIDs) {
+			return nil
+		}
+		oldState.Add(simple.New(block))
+		oldState.Add(simple.New(linkBlock))
+		err := oldState.InsertTo("", model.Block_Inner, block.Id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (oc *ObjectCreator) skipObject(targetID string, existingWidgetsTargetIDs map[string]struct{}) bool {
+	if widgetObject.IsPredefinedWidgetTargetId(targetID) {
+		if _, ok := existingWidgetsTargetIDs[targetID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (oc *ObjectCreator) getExistingWidgetsTargetIDs(oldState *state.State) (map[string]struct{}, error) {
+	existingWidgetsTargetIDs := make(map[string]struct{}, 0)
+	err := oldState.Iterate(func(b simple.Block) (isContinue bool) {
+		if b.Model().GetLink() != nil {
+			existingWidgetsTargetIDs[b.Model().GetLink().GetTargetBlockId()] = struct{}{}
+		}
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	return existingWidgetsTargetIDs, nil
+}
+
+func (oc *ObjectCreator) updateKeys(st *state.State, oldIDtoNew map[string]string, relToFormat map[domain.RelationKey]int32) {
+	for key, value := range st.Details().Iterate() {
+		if newKey, ok := oldIDtoNew[string(key)]; ok && newKey != string(key) {
+			oc.updateDetails(st, domain.RelationKey(newKey), value, key, relToFormat)
+		}
+	}
+	if newKey, ok := oldIDtoNew[st.ObjectTypeKey().String()]; ok {
+		st.SetObjectTypeKey(domain.TypeKey(newKey))
+	}
+}
+
+func (oc *ObjectCreator) updateDetails(st *state.State, newKey domain.RelationKey, value domain.Value, key domain.RelationKey, relToFormat map[domain.RelationKey]int32) {
+	st.SetDetail(newKey, value)
+	format, ok := relToFormat[key]
+	if ok {
+		st.AddRelationLinks(&model.RelationLink{Key: newKey.String(), Format: model.RelationFormat(format)})
+	}
+	st.RemoveRelation(key)
+}

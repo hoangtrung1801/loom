@@ -1,0 +1,431 @@
+package spaceindex
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+
+	anystore "github.com/anyproto/any-store"
+	"github.com/anyproto/any-store/anyenc"
+
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/core/relationutils"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	"github.com/anyproto/anytype-heart/pkg/lib/database"
+	"github.com/anyproto/anytype-heart/pkg/lib/datastore/anystoreprovider"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/ftsearch"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/objectstore/anystorehelper"
+	"github.com/anyproto/anytype-heart/pkg/lib/logging"
+	"github.com/anyproto/anytype-heart/pkg/lib/pb/model"
+	"github.com/anyproto/anytype-heart/util/pbtypes"
+)
+
+var log = logging.Logger("objectstore.spaceindex")
+
+var (
+	ErrObjectNotFound = fmt.Errorf("object not found in space index")
+	ErrNotAnObject    = fmt.Errorf("not an object")
+)
+
+// OutgoingLink represents a link from this object to another object
+type OutgoingLink struct {
+	TargetID    string // ID of the target object
+	BlockID     string // Block ID where the link originates (empty for relation links)
+	RelationKey string // Relation key (empty for block links)
+}
+
+// IncomingLink represents a link to this object from another object
+type IncomingLink struct {
+	SourceID    string // ID of the source object that links to this object
+	BlockID     string // Block ID where the link originates (empty for relation links)
+	RelationKey string // Relation key (empty for block links)
+}
+
+type Store interface {
+	SpaceId() string
+	Close() error
+	Init() error
+
+	// Query adds implicit filters on isArchived, isDeleted and objectType relations! To avoid them use QueryRaw
+	Query(q database.Query) (records []database.Record, err error)
+	// QueryFromFulltext resolves already-grouped fulltext results against the
+	// store: details, filters, related-object injections, final score, head
+	// re-rank. Used by cross-space search, which runs the tantivy query
+	// globally and resolves candidates per space.
+	// withInjections=false skips the related-object injections, whose
+	// per-group store queries are unindexed collection scans
+	QueryFromFulltext(results []database.FulltextResult, params database.Filters, limit int, offset int, ftsSearch string, withInjections bool) ([]database.Record, error)
+	// QueryAndCount runs the query (with limit/offset) and additionally returns the total number of
+	// objects matching the filters, ignoring limit/offset. The filters are compiled only once.
+	// It applies the same implicit filters as Query. Fulltext queries are not supported.
+	QueryAndCount(q database.Query) (records []database.Record, total int, err error)
+	QueryRaw(f *database.Filters, limit int, offset int) (records []database.Record, err error)
+	// CountRaw returns how many records match the precompiled filters. Like QueryRaw it applies no
+	// implicit isArchived/isDeleted/type filters, and it neither materializes nor sorts the results.
+	CountRaw(f *database.Filters) (int, error)
+	QueryByIds(ids []string) (records []database.Record, err error)
+	QueryByIdsAndSubscribeForChanges(ids []string, subscription database.Subscription) (records []database.Record, close func(), err error)
+	QueryObjectIds(q database.Query) (ids []string, total int, err error)
+	QueryIterate(q database.Query, proc func(details *domain.Details)) error
+	// QueryIterateRaw streams every record matching the precompiled filters
+	// without materializing the result set (no implicit filters, no sorts).
+	// proc returning an error stops the iteration.
+	QueryIterateRaw(f *database.Filters, proc func(details *domain.Details) error) error
+	IterateAll(proc func(doc *anyenc.Value) error) error
+	HasIds(ids []string) (exists []string, err error)
+	GetInfosByIds(ids []string) ([]*database.ObjectInfo, error)
+	List(includeArchived bool) ([]*database.ObjectInfo, error)
+
+	ListIds() ([]string, error)
+	ListFullIds() ([]domain.FullID, error)
+
+	// UpdateObjectDetails updates existing object or create if not missing. Should be used in order to amend existing indexes based on prev/new value
+	// set discardLocalDetailsChanges to true in case the caller doesn't have local details in the State
+	UpdateObjectDetails(ctx context.Context, id string, details *domain.Details) error
+	SubscribeForAll(callback func(rec database.Record))
+	// UpdaeObjectLinks is deprecated, use UpdateObjectLinksDetailed instead
+	UpdateObjectLinks(ctx context.Context, id string, links []string) error
+	UpdateObjectLinksDetailed(ctx context.Context, id string, outgoingLinks []OutgoingLink) error
+	UpdatePendingLocalDetails(id string, proc func(details *domain.Details) (*domain.Details, error)) error
+	ModifyObjectDetails(id string, proc func(details *domain.Details) (*domain.Details, bool, error), upsert bool) error
+	// ModifyObjectDetailsCtx is like ModifyObjectDetails but runs under the
+	// provided context instead of the store component context. Pass a tx-bearing
+	// context (see WriteTx) to batch many modifications into a single write tx.
+	ModifyObjectDetailsCtx(ctx context.Context, id string, proc func(details *domain.Details) (*domain.Details, bool, error), upsert bool) error
+	// ListIdsWithoutSyncDetails returns ids of objects that are missing at least
+	// one of the relations maintained by helper.InjectsSyncDetails
+	// (SyncStatus/SyncDate/SyncError). Presence, not value, is checked.
+	ListIdsWithoutSyncDetails(ctx context.Context) ([]string, error)
+
+	DeleteObject(id string) error
+	DeleteDetails(ctx context.Context, ids []string) error
+	DeleteLinks(ids []string) error
+
+	GetDetails(id string) (*domain.Details, error)
+	GetObjectByUniqueKey(uniqueKey domain.UniqueKey) (*domain.Details, error)
+	GetUniqueKeyById(id string) (key domain.UniqueKey, err error)
+
+	GetInboundLinksById(id string) ([]string, error)
+	GetOutboundLinksById(id string) ([]string, error)
+	GetOutboundLinksDetailedById(id string) ([]OutgoingLink, error)
+	GetOutboundLinksDetailedIterator(f func(id string, links []OutgoingLink) bool) error
+	GetInboundLinksDetailedById(id string) ([]IncomingLink, error)
+
+	GetWithLinksInfoById(id string) (*model.ObjectInfoWithLinks, error)
+
+	SetActiveView(objectId, blockId, viewId string) error
+	SetActiveViews(objectId string, views map[string]string) error
+	GetActiveViews(objectId string) (map[string]string, error)
+
+	GetDeletionAuditMark() (heads string, err error)
+	SetDeletionAuditMark(heads string) error
+
+	GetRelationLink(key string) (*model.RelationLink, error)
+	FetchRelationByKey(key string) (relation *relationutils.Relation, err error)
+	FetchRelationByKeys(keys ...domain.RelationKey) (relations relationutils.Relations, err error)
+	FetchRelationByLinks(links pbtypes.RelationLinks) (relations relationutils.Relations, err error)
+	ListAllRelations() (relations relationutils.Relations, err error)
+	GetRelationById(id string) (relation *model.Relation, err error)
+	GetRelationByKey(key string) (*model.Relation, error)
+	GetRelationFormatByKey(key domain.RelationKey) (model.RelationFormat, error)
+	ListRelationOptions(relationKey domain.RelationKey) (options []*model.RelationOption, err error)
+
+	GetObjectType(id string) (*model.ObjectType, error)
+
+	GetLastIndexedHeadsHash(ctx context.Context, id string) (headsHash string, err error)
+	ListLastIndexedHeadsHashes(ctx context.Context) (map[string]string, error)
+	SaveLastIndexedHeadsHash(ctx context.Context, id string, headsHash string) (err error)
+	SaveLastIndexedHeadsHashWithFtQueueCtr(ctx context.Context, id string, headsHash string, ftQueueCtr uint64) (err error)
+	GetReconcileMarker(ctx context.Context, id string) (marker string, err error)
+	SaveReconcileMarker(ctx context.Context, id string, marker string) error
+	GetHeadsWithFtQueueCtrGreaterThan(ctx context.Context, threshold uint64) ([]HeadsStateEntry, error)
+	ClearHeadsState(ctx context.Context) error
+
+	WriteTx(ctx context.Context) (anystore.WriteTx, error)
+}
+
+type SourceDetailsFromID interface {
+	DetailsFromIdBasedSource(id domain.FullID) (*domain.Details, error)
+}
+
+type FulltextQueue interface {
+	FtQueueMarkAsIndexed(objects []domain.FullTextQueuedObject, state uint64) error
+	AddToIndexQueue(ctx context.Context, ids ...domain.FullID) (uint64, int, error)
+	ListIdsFromFullTextQueue(spaceIds []string, limit uint) ([]domain.FullTextQueuedObject, error)
+	ClearFullTextQueue(spaceIds []string) error
+}
+
+type dsObjectStore struct {
+	spaceId    string
+	db         anystore.DB
+	objects    anystore.Collection
+	links      anystore.Collection
+	headsState anystore.Collection
+
+	activeViews    anystore.Collection
+	pendingDetails anystore.Collection
+	deletionAudit  anystore.Collection
+	collections    []anystore.Collection
+
+	// Deps
+	fts           ftsearch.FTSearch
+	sourceService SourceDetailsFromID
+	subManager    *SubscriptionManager
+	fulltextQueue FulltextQueue
+	dbProvider    anystoreprovider.Provider
+
+	componentCtx       context.Context
+	arenaPool          *anyenc.ArenaPool
+	collatorBufferPool *collatorBufferPool
+
+	// State
+	lock             sync.RWMutex
+	subscriptions    []database.Subscription
+	onChangeCallback func(rec database.Record)
+	dbLockRemove     func() error
+}
+
+type Deps struct {
+	DbProvider    anystoreprovider.Provider
+	Fts           ftsearch.FTSearch
+	SourceService SourceDetailsFromID
+	SubManager    *SubscriptionManager
+	FulltextQueue FulltextQueue
+}
+
+func New(componentCtx context.Context, spaceId string, deps Deps) Store {
+	s := &dsObjectStore{
+		spaceId:            spaceId,
+		componentCtx:       componentCtx,
+		arenaPool:          &anyenc.ArenaPool{},
+		collatorBufferPool: newCollatorBufferPool(),
+		sourceService:      deps.SourceService,
+		fts:                deps.Fts,
+		subManager:         deps.SubManager,
+		fulltextQueue:      deps.FulltextQueue,
+		dbProvider:         deps.DbProvider,
+	}
+
+	return s
+}
+
+func (s *dsObjectStore) Init() error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.db != nil {
+		return nil
+	}
+
+	db, err := s.dbProvider.GetSpaceIndexDb(s.spaceId)
+	if err != nil {
+		return fmt.Errorf("get crdt db: %w", err)
+	}
+
+	s.db = db
+
+	return s.initCollections(s.componentCtx)
+}
+
+type LinksUpdateInfo struct {
+	LinksFromId    domain.FullID
+	Added, Removed []string
+}
+
+var _ Store = (*dsObjectStore)(nil)
+
+func (s *dsObjectStore) WriteTx(ctx context.Context) (anystore.WriteTx, error) {
+	tx, err := s.db.WriteTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin write tx: %w", err)
+	}
+	if parent, ok := ctx.Value(txNotificationsKey{}).(*txNotifications); ok && parent != nil {
+		// nested (savepoint) tx: notifications belong to the ROOT tx's
+		// buffer and must flush only on the root commit — a savepoint
+		// release is not durability. (A rolled-back savepoint can leave
+		// already-buffered notifications behind; acceptable: phantom
+		// notifications self-heal, lost ones would not.)
+		return &notifyingTx{WriteTx: tx, store: s, notifications: parent, nested: true}, nil
+	}
+	return &notifyingTx{WriteTx: tx, store: s, notifications: &txNotifications{}}, nil
+}
+
+// notifyingTx defers subscription notifications raised by writes inside the
+// tx until the tx commits. Without it a notification would announce a write
+// that is not yet visible to readers — or never will be, on rollback.
+type notifyingTx struct {
+	anystore.WriteTx
+	store         *dsObjectStore
+	notifications *txNotifications
+	nested        bool
+}
+
+// Context returns the tx-bearing context with the notification buffer
+// attached, so detail writes running under this tx (see
+// sendUpdatesToSubscriptions) buffer instead of firing.
+func (t *notifyingTx) Context() context.Context {
+	return context.WithValue(t.WriteTx.Context(), txNotificationsKey{}, t.notifications)
+}
+
+func (t *notifyingTx) Commit() error {
+	// a finished tx makes Commit a nil-returning no-op (rollback-then-commit
+	// pattern); flushing then would announce rolled-back writes
+	alreadyDone := t.Done()
+	err := t.WriteTx.Commit()
+	if err == nil && !alreadyDone && !t.nested {
+		t.store.flushTxNotifications(t.notifications)
+	}
+	return err
+}
+
+func (s *dsObjectStore) initCollections(ctx context.Context) error {
+	objects, err := s.newCollection(ctx, "objects")
+	if err != nil {
+		return fmt.Errorf("open objects collection: %w", err)
+	}
+	links, err := s.newCollection(ctx, "links")
+	if err != nil {
+		return fmt.Errorf("open links collection: %w", err)
+	}
+	headsState, err := s.newCollection(ctx, "headsState")
+	if err != nil {
+		return fmt.Errorf("open headsState collection: %w", err)
+	}
+	activeViews, err := s.newCollection(ctx, "activeViews")
+	if err != nil {
+		return fmt.Errorf("open activeViews collection: %w", err)
+	}
+	pendingDetails, err := s.newCollection(ctx, "pendingDetails")
+	if err != nil {
+		return fmt.Errorf("open pendingDetails collection: %w", err)
+	}
+	deletionAudit, err := s.newCollection(ctx, "deletionAudit")
+	if err != nil {
+		return fmt.Errorf("open deletionAudit collection: %w", err)
+	}
+
+	objectIndexes := []anystore.IndexInfo{
+		{
+			Name:   "uniqueKey",
+			Fields: []string{bundle.RelationKeyUniqueKey.String()},
+		},
+		{
+			Name:   "source",
+			Fields: []string{bundle.RelationKeySource.String()},
+		},
+		{
+			Name:   "resolvedLayout",
+			Fields: []string{bundle.RelationKeyResolvedLayout.String()},
+		},
+		{
+			Name:   "type",
+			Fields: []string{bundle.RelationKeyType.String()},
+		},
+		{
+			Name:   "relationKey",
+			Fields: []string{bundle.RelationKeyRelationKey.String()},
+		},
+		{
+			Name:   "lastModifiedDate",
+			Fields: []string{bundle.RelationKeyLastModifiedDate.String()},
+		},
+		{
+			Name:   "fileId",
+			Fields: []string{bundle.RelationKeyFileId.String()},
+			Sparse: true,
+		},
+		{
+			Name:   "oldAnytypeID",
+			Fields: []string{bundle.RelationKeyOldAnytypeID.String()},
+			Sparse: true,
+		},
+		{
+			Name:   "fileVariantChecksums",
+			Fields: []string{bundle.RelationKeyFileVariantChecksums.String()},
+			Sparse: true,
+		},
+		{
+			Name:   "fileSourceChecksum",
+			Fields: []string{bundle.RelationKeyFileSourceChecksum.String()},
+			Sparse: true,
+		},
+		// The deletion audit filters on deletedDate's presence and sorts by (deletedDate desc, id).
+		// Only removed objects carry deletedDate, so a sparse index holds exactly the audit set and
+		// serves both the filter and the sort. Without it every audit page is a full scan of the
+		// collection plus an in-memory sort.
+		//
+		// deletedDate alone, not (deletedDate, id): the index table already stores docId as its join
+		// key, so the id tiebreak resolves from the join without a second indexed column.
+		{
+			Name:   "deletedDate",
+			Fields: []string{bundle.RelationKeyDeletedDate.String()},
+			Sparse: true,
+		},
+		// Uninstalled types/properties are found by this flag when re-deriving who uninstalled them.
+		// Sparse keeps the index to the handful of objects that have ever carried it.
+		{
+			Name:   "isUninstalled",
+			Fields: []string{bundle.RelationKeyIsUninstalled.String()},
+			Sparse: true,
+		},
+	}
+	err = anystorehelper.AddIndexes(ctx, objects, objectIndexes)
+	if err != nil {
+		log.Errorf("ensure object indexes: %s", err)
+	}
+
+	linksIndexes := []anystore.IndexInfo{
+		{
+			Name:   linkOutboundField,
+			Fields: []string{linkOutboundField},
+		},
+	}
+	err = anystorehelper.AddIndexes(ctx, links, linksIndexes)
+	if err != nil {
+		log.Errorf("ensure links indexes: %s", err)
+	}
+
+	// Add sparse index on ftQueueCtr for efficient crash recovery queries
+	headsStateIndexes := []anystore.IndexInfo{
+		{
+			Name:   "ftQueueCtr_idx",
+			Fields: []string{ftQueueCtrField},
+			Sparse: true, // Many objects don't have FT indexing
+		},
+	}
+	err = anystorehelper.AddIndexes(ctx, headsState, headsStateIndexes)
+	if err != nil {
+		log.Errorf("ensure headsState indexes: %s", err)
+	}
+
+	s.objects = objects
+	s.links = links
+	s.headsState = headsState
+	s.activeViews = activeViews
+	s.pendingDetails = pendingDetails
+	s.deletionAudit = deletionAudit
+
+	return nil
+}
+
+func (s *dsObjectStore) newCollection(ctx context.Context, name string) (anystore.Collection, error) {
+	coll, err := s.db.Collection(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("open collection %s: %w", name, err)
+	}
+	s.collections = append(s.collections, coll)
+	return coll, nil
+}
+
+func (s *dsObjectStore) Close() error {
+	var err error
+	for _, col := range s.collections {
+		err = errors.Join(err, col.Close())
+	}
+	return err
+}
+
+func (s *dsObjectStore) SpaceId() string {
+	return s.spaceId
+}

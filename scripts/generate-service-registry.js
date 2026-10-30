@@ -14,7 +14,7 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const heartPath = process.env.HEART_DIR || process.env.ANYTYPE_HEART_PATH;
 const HEART_DIR = heartPath
 	? path.resolve(heartPath)
-	: path.resolve(ROOT_DIR, '..', 'anytype-heart');
+	: path.resolve(ROOT_DIR, 'anytype-heart');
 const SERVICE_TS = path.join(ROOT_DIR, 'src/ts/lib/api/service.ts');
 
 const fromDist = process.argv.includes('--from-dist');

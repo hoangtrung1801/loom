@@ -1,0 +1,779 @@
+package chatobject
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/anyproto/any-sync/app"
+	"github.com/anyproto/any-sync/app/debugstat"
+	"github.com/anyproto/any-sync/commonspace/object/accountdata"
+	"github.com/anyproto/any-sync/commonspace/object/tree/objecttree"
+	"github.com/anyproto/any-sync/util/crypto"
+	"github.com/globalsign/mgo/bson"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/anyproto/anytype-heart/core/block/cache/mock_cache"
+	"github.com/anyproto/anytype-heart/core/block/chats/chatmodel"
+	"github.com/anyproto/anytype-heart/core/block/chats/chatrepository"
+	"github.com/anyproto/anytype-heart/core/block/chats/chatsubscription"
+	"github.com/anyproto/anytype-heart/core/block/editor/smartblock"
+	"github.com/anyproto/anytype-heart/core/block/editor/smartblock/smarttest"
+	"github.com/anyproto/anytype-heart/core/block/editor/state"
+	"github.com/anyproto/anytype-heart/core/block/editor/storestate"
+	"github.com/anyproto/anytype-heart/core/block/object/idresolver/mock_idresolver"
+	"github.com/anyproto/anytype-heart/core/block/source"
+	"github.com/anyproto/anytype-heart/core/block/source/mock_source"
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/core/event/mock_event"
+	"github.com/anyproto/anytype-heart/core/session"
+	"github.com/anyproto/anytype-heart/pb"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	"github.com/anyproto/anytype-heart/pkg/lib/datastore/anystoreprovider"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/objectstore"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/objectstore/spaceindex"
+	"github.com/anyproto/anytype-heart/pkg/lib/pb/model"
+	"github.com/anyproto/anytype-heart/tests/testutil"
+)
+
+const (
+	testSpaceId = "spaceId1"
+)
+
+type accountServiceStub struct {
+	accountId string
+	signKey   crypto.PrivKey
+}
+
+func (a *accountServiceStub) AccountID() string {
+	return a.accountId
+}
+
+func (a *accountServiceStub) Keys() *accountdata.AccountKeys {
+	return &accountdata.AccountKeys{
+		SignKey: a.signKey,
+	}
+}
+
+func (a *accountServiceStub) Name() string { return "accountServiceStub" }
+
+func (a *accountServiceStub) Init(ap *app.App) error {
+	signKey, _, _ := crypto.GenerateRandomEd25519KeyPair()
+	a.signKey = signKey
+	return nil
+}
+
+// stubTree satisfies objecttree.ObjectTree for tests.
+// Only GetChange (by markReadReactions) and Root (by a discussion's Init) are called; all other
+// methods are unused and will panic if called.
+type stubTree struct {
+	objecttree.ObjectTree
+	parentId string
+}
+
+func (s *stubTree) GetChange(string) (*objecttree.Change, error) {
+	return nil, fmt.Errorf("change not found")
+}
+
+func (s *stubTree) Root() *objecttree.Change {
+	return &objecttree.Change{ParentId: s.parentId}
+}
+
+type stubSeenHeadsCollector struct {
+	heads []string
+}
+
+func (c *stubSeenHeadsCollector) collectSeenHeads(ctx context.Context, afterOrderId string) ([]string, error) {
+	return c.heads, nil
+}
+
+type fixture struct {
+	*storeObject
+	sb                 *smarttest.SmartTest
+	source             *mock_source.MockStore
+	accountServiceStub *accountServiceStub
+	sourceCreator      string
+	eventSender        *mock_event.MockSender
+	events             []*pb.EventMessage
+	spaceIndex         spaceindex.Store
+	storeFixture       *objectstore.StoreFixture
+	// spaceObjects is what Space().Do reaches; set by withSpace, nil otherwise (the default
+	// smarttest space's Do does nothing).
+	spaceObjects *spaceObjects
+
+	generateOrderIdFunc func(tx *storestate.StoreStateTx) string
+	lastOrder           string
+
+	// appliedChangeSets records every change set committed through applyToStore so a
+	// test can faithfully re-drive the store's replay (as storeApply does on reopen)
+	// without needing a real object tree.
+	appliedChangeSets []storestate.ChangeSet
+}
+
+const (
+	testCreator = "accountId1"
+	chatId      = "chatId1"
+)
+
+type fixtureOption func(fx *fixture)
+
+func withReactionsCounterEpoch(epoch int64) fixtureOption {
+	return func(fx *fixture) {
+		fx.reactionsCounterEpoch = epoch
+	}
+}
+
+func newFixture(t *testing.T, opts ...fixtureOption) *fixture {
+	ctx := context.Background()
+
+	a := &app.App{}
+
+	idResolver := mock_idresolver.NewMockResolver(t)
+	idResolver.EXPECT().ResolveSpaceID(mock.Anything).Return(testSpaceId, nil).Maybe()
+	idResolver.EXPECT().ResolveSpaceIdWithRetry(mock.Anything, mock.Anything).Return(testSpaceId, nil).Maybe()
+
+	accountService := &accountServiceStub{accountId: testCreator}
+
+	eventSender := mock_event.NewMockSender(t)
+
+	sb := smarttest.New(chatId)
+	sb.SetTree(&stubTree{})
+
+	objectStore := objectstore.NewStoreFixture(t)
+	spaceIndex := objectStore.SpaceIndex(testSpaceId)
+
+	repo := chatrepository.New()
+	subscriptions := chatsubscription.New()
+
+	provider, err := anystoreprovider.NewInPath(t.TempDir())
+	require.NoError(t, err)
+
+	objectGetter := mock_cache.NewMockObjectWaitGetterComponent(t)
+	objectGetter.EXPECT().WaitAndGetObject(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+
+	a.Register(accountService)
+	a.Register(testutil.PrepareMock(ctx, a, eventSender))
+	a.Register(testutil.PrepareMock(ctx, a, idResolver))
+	a.Register(testutil.PrepareMock(ctx, a, objectGetter))
+	a.Register(objectStore)
+	a.Register(repo)
+	a.Register(subscriptions)
+	a.Register(provider)
+
+	err = a.Start(ctx)
+	require.NoError(t, err)
+	db, err := provider.GetCrdtDb(testSpaceId).Wait()
+	require.NoError(t, err)
+
+	object := New(sb, accountService, db, repo, subscriptions, nil, objectStore, nil, nil, debugstat.NewNoOp(), bundle.TypeKeyChatDerived, model.ObjectType_chatDerived)
+	rawObject := object.(*storeObject)
+
+	fx := &fixture{
+		storeObject:        rawObject,
+		sb:                 sb,
+		accountServiceStub: accountService,
+		sourceCreator:      testCreator,
+		eventSender:        eventSender,
+		spaceIndex:         spaceIndex,
+		storeFixture:       objectStore,
+	}
+	eventSender.EXPECT().Broadcast(mock.Anything).Run(func(event *pb.Event) {
+		for _, msg := range event.Messages {
+			fx.events = append(fx.events, msg)
+		}
+	}).Return().Maybe()
+
+	source := mock_source.NewMockStore(t)
+	source.EXPECT().Id().Return(chatId)
+	source.EXPECT().SpaceID().Return(testSpaceId)
+	source.EXPECT().ReadStoreDoc(ctx, mock.Anything, mock.Anything).Return(nil)
+	source.EXPECT().PushStoreChange(mock.Anything, mock.Anything).RunAndReturn(fx.applyToStore).Maybe()
+	source.EXPECT().SetPushChangeHook(mock.Anything)
+	// Default tests don't exercise admin/owner moderation paths; nil is fine and
+	// canModerateAt() guards against it (falls back to creator-only checks).
+	source.EXPECT().AclList().Return(nil).Maybe()
+
+	onSeenHooks := map[string]func([]string){}
+	source.EXPECT().RegisterDiffManager(mock.Anything, mock.Anything).Run(func(name string, hook func([]string)) {
+		onSeenHooks[name] = hook
+	}).Return()
+
+	source.EXPECT().InitDiffManager(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	source.EXPECT().StoreSeenHeads(mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	// Imitate diff manager
+	source.EXPECT().MarkSeenHeads(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, name string, seenHeads []string) error {
+		allMessagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{
+			AfterOrderId:    "",
+			IncludeBoundary: true,
+		})
+		if err != nil {
+			return fmt.Errorf("get messages: %w", err)
+		}
+
+		var collectedHeads []string
+
+		for _, msg := range allMessagesResp.Messages {
+			for _, seen := range seenHeads {
+				if msg.Id <= seen {
+					collectedHeads = append(collectedHeads, msg.Id)
+					break
+				}
+			}
+		}
+
+		onSeenHooks[name](collectedHeads)
+
+		return nil
+	}).Maybe()
+
+	fx.source = source
+
+	for _, opt := range opts {
+		opt(fx)
+	}
+
+	// Init runs under the object lock, as ObjectFactory.InitObject runs it: the unread counters
+	// worker it starts writes under the same lock.
+	fx.Lock()
+	err = object.Init(&smartblock.InitContext{
+		Ctx:    ctx,
+		Source: source,
+		Doc:    state.NewDoc(chatId, nil),
+	})
+	fx.Unlock()
+	require.NoError(t, err)
+	// Registered after the options, so it runs before the cleanups of the mocks they create.
+	t.Cleanup(func() {
+		_ = fx.Close()
+	})
+
+	rawObject.seenHeadsCollector = &stubSeenHeadsCollector{heads: []string{}}
+
+	return fx
+}
+
+func TestAddMessage(t *testing.T) {
+	t.Run("a validation failure carries the validate: prefix", func(t *testing.T) {
+		// core/api/v2 classifies chat validation refusals to a 400 by
+		// matching this prefix (the "validate: %w" wraps in chatobject.go) —
+		// rewording it would silently degrade those 400s to retry-looping
+		// 500s, so the prefix is pinned here at the producer
+		ctx := context.Background()
+		fx := newFixture(t)
+
+		inputMessage := givenComplexMessage()
+		inputMessage.Message.Text = strings.Repeat("a", chatmodel.MaxMessageLength+1)
+
+		_, err := fx.AddMessage(ctx, nil, inputMessage)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "validate:")
+	})
+
+	t.Run("add own messages", func(t *testing.T) {
+		ctx := context.Background()
+		sessionCtx := session.NewContext()
+
+		fx := newFixture(t)
+		fx.eventSender.EXPECT().BroadcastToOtherSessions(sessionCtx.ID(), mock.Anything).Return().Maybe()
+
+		_, err := fx.chatSubscriptionService.SubscribeLastMessages(ctx, chatsubscription.SubscribeLastMessagesRequest{
+			ChatObjectId:           fx.Id(),
+			SubId:                  "sub",
+			CouldUseSessionContext: true,
+		})
+		require.NoError(t, err)
+
+		inputMessage := givenComplexMessage()
+		messageId, err := fx.AddMessage(ctx, sessionCtx, inputMessage)
+		require.NoError(t, err)
+		assert.NotEmpty(t, messageId)
+		assert.NotEmpty(t, sessionCtx.GetMessages())
+
+		messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{})
+		require.NoError(t, err)
+		require.Len(t, messagesResp.Messages, 1)
+
+		want := givenComplexMessage()
+		want.Id = messageId
+		want.Creator = testCreator
+
+		got := messagesResp.Messages[0]
+		assertMessagesEqual(t, want, got)
+
+		ids, err := fx.storeFixture.ListIdsFromFullTextQueue([]string{testSpaceId}, 0)
+		require.NoError(t, err)
+		require.Len(t, ids, 1)
+		assert.Equal(t, testSpaceId, ids[0].SpaceId)
+		assert.Equal(t, chatId, ids[0].ObjectId)
+		assert.NotEmpty(t, ids[0].MsgOrderId)
+	})
+
+	t.Run("imitate adding other's messages", func(t *testing.T) {
+		ctx := context.Background()
+		sessionCtx := session.NewContext()
+
+		fx := newFixture(t)
+		fx.eventSender.EXPECT().BroadcastToOtherSessions(sessionCtx.ID(), mock.Anything).Return().Maybe()
+
+		_, err := fx.chatSubscriptionService.SubscribeLastMessages(ctx, chatsubscription.SubscribeLastMessagesRequest{
+			ChatObjectId:           fx.Id(),
+			SubId:                  "sub",
+			CouldUseSessionContext: true,
+		})
+		require.NoError(t, err)
+
+		// Force all messages as not read
+		fx.chatHandler.forceNotRead = true
+
+		inputMessage := givenComplexMessage()
+		messageId, err := fx.AddMessage(ctx, sessionCtx, inputMessage)
+		require.NoError(t, err)
+		assert.NotEmpty(t, messageId)
+		assert.NotEmpty(t, sessionCtx.GetMessages())
+
+		messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{})
+		require.NoError(t, err)
+		require.Len(t, messagesResp.Messages, 1)
+		assert.Equal(t, messagesResp.ChatState.LastStateId, messagesResp.Messages[0].StateId)
+
+		want := givenComplexMessage()
+		want.Id = messageId
+		want.Creator = testCreator
+		want.Read = false
+		want.MentionRead = false
+
+		got := messagesResp.Messages[0]
+		assertMessagesEqual(t, want, got)
+
+		ids, err := fx.storeFixture.ListIdsFromFullTextQueue([]string{testSpaceId}, 0)
+		require.NoError(t, err)
+		require.Len(t, ids, 1)
+		assert.Equal(t, testSpaceId, ids[0].SpaceId)
+		assert.Equal(t, chatId, ids[0].ObjectId)
+		assert.NotEmpty(t, ids[0].MsgOrderId)
+	})
+
+	t.Run("message exceeds max length", func(t *testing.T) {
+		ctx := context.Background()
+		fx := newFixture(t)
+
+		inputMessage := givenSimpleMessage(strings.Repeat("a", chatmodel.MaxMessageLength+1))
+		_, err := fx.AddMessage(ctx, nil, inputMessage)
+		require.Error(t, err)
+	})
+}
+
+func TestGetMessages(t *testing.T) {
+	ctx := context.Background()
+	fx := newFixture(t)
+
+	for i := 0; i < 10; i++ {
+		inputMessage := givenComplexMessage()
+		inputMessage.Message.Text = fmt.Sprintf("text %d", i+1)
+		messageId, err := fx.AddMessage(ctx, nil, inputMessage)
+		require.NoError(t, err)
+		assert.NotEmpty(t, messageId)
+	}
+
+	messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{Limit: 5})
+	require.NoError(t, err)
+
+	lastMessage := messagesResp.Messages[4]
+	assert.Equal(t, messagesResp.ChatState.LastStateId, lastMessage.StateId)
+
+	wantTexts := []string{"text 6", "text 7", "text 8", "text 9", "text 10"}
+	for i, msg := range messagesResp.Messages {
+		assert.Equal(t, wantTexts[i], msg.Message.Text)
+	}
+
+	t.Run("with requested BeforeOrderId", func(t *testing.T) {
+		lastOrderId := messagesResp.Messages[0].OrderId // text 6
+		gotMessages, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{BeforeOrderId: lastOrderId, Limit: 5})
+		require.NoError(t, err)
+		wantTexts = []string{"text 1", "text 2", "text 3", "text 4", "text 5"}
+		for i, msg := range gotMessages.Messages {
+			assert.Equal(t, wantTexts[i], msg.Message.Text)
+		}
+	})
+
+	t.Run("with requested AfterOrderId", func(t *testing.T) {
+		lastOrderId := messagesResp.Messages[0].OrderId // text 6
+		gotMessages, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{AfterOrderId: lastOrderId, Limit: 2})
+		require.NoError(t, err)
+		wantTexts = []string{"text 7", "text 8"}
+		for i, msg := range gotMessages.Messages {
+			assert.Equal(t, wantTexts[i], msg.Message.Text)
+		}
+	})
+}
+
+func TestGetMessagesByIds(t *testing.T) {
+	ctx := context.Background()
+
+	fx := newFixture(t)
+
+	inputMessage := givenComplexMessage()
+	messageId, err := fx.AddMessage(ctx, nil, inputMessage)
+	require.NoError(t, err)
+
+	messages, err := fx.GetMessagesByIds(ctx, []string{messageId, "wrongId"})
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+
+	want := givenComplexMessage()
+	want.Id = messageId
+	want.Creator = testCreator
+	got := messages[0]
+	assertMessagesEqual(t, want, got)
+}
+
+func TestEditMessage(t *testing.T) {
+	t.Run("edit own message", func(t *testing.T) {
+		ctx := context.Background()
+		fx := newFixture(t)
+
+		// Add
+		inputMessage := givenComplexMessage()
+
+		messageId, err := fx.AddMessage(ctx, nil, inputMessage)
+		require.NoError(t, err)
+		assert.NotEmpty(t, messageId)
+
+		// Edit
+		editedMessage := givenComplexMessage()
+		editedMessage.Message.Text = "edited text!"
+
+		err = fx.EditMessage(ctx, messageId, editedMessage)
+		require.NoError(t, err)
+
+		messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{})
+		require.NoError(t, err)
+		require.Len(t, messagesResp.Messages, 1)
+
+		want := editedMessage
+		want.Id = messageId
+		want.Creator = testCreator
+
+		got := messagesResp.Messages[0]
+		assert.True(t, got.ModifiedAt > 0)
+		got.ModifiedAt = 0
+		assertMessagesEqual(t, want, got)
+
+		ids, err := fx.storeFixture.ListIdsFromFullTextQueue([]string{testSpaceId}, 0)
+		require.NoError(t, err)
+		require.Len(t, ids, 1)
+		assert.Equal(t, testSpaceId, ids[0].SpaceId)
+		assert.Equal(t, chatId, ids[0].ObjectId)
+		assert.NotEmpty(t, ids[0].MsgOrderId)
+	})
+
+	t.Run("edit other's message", func(t *testing.T) {
+		ctx := context.Background()
+		fx := newFixture(t)
+
+		// Add
+		inputMessage := givenComplexMessage()
+
+		messageId, err := fx.AddMessage(ctx, nil, inputMessage)
+		require.NoError(t, err)
+		assert.NotEmpty(t, messageId)
+
+		// Edit
+		editedMessage := givenComplexMessage()
+		editedMessage.Message.Text = "edited text!"
+
+		fx.sourceCreator = "maliciousPerson"
+
+		err = fx.EditMessage(ctx, messageId, editedMessage)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrModifyForeignMessage.Error(),
+			"core/api/v2 classifies the RPC description on this sentinel's text — the edit path must keep producing it")
+
+		// Check that nothing is changed
+		messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{})
+		require.NoError(t, err)
+		require.Len(t, messagesResp.Messages, 1)
+
+		want := givenComplexMessage()
+		want.Id = messageId
+		want.Creator = testCreator
+
+		got := messagesResp.Messages[0]
+		assertMessagesEqual(t, want, got)
+	})
+
+}
+
+func TestDeleteMessage(t *testing.T) {
+	t.Run("delete own message", func(t *testing.T) {
+		ctx := context.Background()
+		fx := newFixture(t)
+
+		inputMessage := givenComplexMessage()
+		messageId, err := fx.AddMessage(ctx, nil, inputMessage)
+		require.NoError(t, err)
+
+		err = fx.DeleteMessage(ctx, messageId)
+		require.NoError(t, err)
+
+		messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{})
+		require.NoError(t, err)
+		require.Len(t, messagesResp.Messages, 0)
+	})
+
+	t.Run("delete other's message", func(t *testing.T) {
+		ctx := context.Background()
+		fx := newFixture(t)
+
+		inputMessage := givenComplexMessage()
+		messageId, err := fx.AddMessage(ctx, nil, inputMessage)
+		require.NoError(t, err)
+
+		fx.sourceCreator = "maliciousPerson"
+
+		err = fx.DeleteMessage(ctx, messageId)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), ErrDeleteForeignMessage.Error(),
+			"core/api/v2 classifies the RPC description on this sentinel's text — the delete path must keep producing it")
+
+		// Check that message is not deleted
+		fx.sourceCreator = testCreator
+		messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{})
+		require.NoError(t, err)
+		require.Len(t, messagesResp.Messages, 1)
+	})
+}
+
+func TestToggleReaction(t *testing.T) {
+	ctx := context.Background()
+	fx := newFixture(t)
+
+	// Add
+	inputMessage := givenComplexMessage()
+	inputMessage.Reactions = nil
+
+	messageId, err := fx.AddMessage(ctx, nil, inputMessage)
+	require.NoError(t, err)
+	assert.NotEmpty(t, messageId)
+
+	// Edit
+	editedMessage := givenComplexMessage()
+	editedMessage.Message.Text = "edited text!"
+
+	t.Run("can toggle own reactions", func(t *testing.T) {
+		added, err := fx.ToggleMessageReaction(ctx, messageId, "👻")
+		require.NoError(t, err)
+		assert.True(t, added)
+
+		added, err = fx.ToggleMessageReaction(ctx, messageId, "🐻")
+		require.NoError(t, err)
+		assert.True(t, added)
+
+		added, err = fx.ToggleMessageReaction(ctx, messageId, "👺")
+		require.NoError(t, err)
+		assert.True(t, added)
+
+		added, err = fx.ToggleMessageReaction(ctx, messageId, "👺")
+		require.NoError(t, err)
+		assert.False(t, added)
+	})
+
+	anotherPerson := "anotherPerson"
+
+	t.Run("can't toggle someone else's reactions", func(t *testing.T) {
+		fx.sourceCreator = testCreator
+		fx.accountServiceStub.accountId = anotherPerson
+		_, err := fx.ToggleMessageReaction(ctx, messageId, "🐻")
+		require.Error(t, err)
+	})
+	t.Run("can toggle reactions on someone else's messages", func(t *testing.T) {
+		fx.sourceCreator = anotherPerson
+		fx.accountServiceStub.accountId = anotherPerson
+		added, err := fx.ToggleMessageReaction(ctx, messageId, "🐻")
+		require.NoError(t, err)
+		assert.True(t, added)
+	})
+
+	messagesResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{})
+	require.NoError(t, err)
+	require.Len(t, messagesResp.Messages, 1)
+
+	got := messagesResp.Messages[0].Reactions
+
+	want := &model.ChatMessageReactions{
+		Reactions: map[string]*model.ChatMessageReactionsIdentityList{
+			"👻": {
+				Ids: []string{testCreator},
+			},
+			"🐻": {
+				Ids: []string{testCreator, anotherPerson},
+			},
+		},
+	}
+	assert.Equal(t, want, got)
+}
+
+func (fx *fixture) assertReadStatus(t *testing.T, ctx context.Context, afterOrderId string, beforeOrderId string, isRead bool, isMentionRead bool) *GetMessagesResponse {
+	messageResp, err := fx.GetMessages(ctx, chatrepository.GetMessagesRequest{
+		AfterOrderId:    afterOrderId,
+		BeforeOrderId:   beforeOrderId,
+		IncludeBoundary: true,
+		Limit:           1000,
+	})
+	require.NoError(t, err)
+
+	for _, m := range messageResp.Messages {
+		assert.Equal(t, isRead, m.Read)
+		assert.Equal(t, isMentionRead, m.MentionRead)
+	}
+	return messageResp
+}
+
+func (fx *fixture) generateOrderId(tx *storestate.StoreStateTx) string {
+	if fx.generateOrderIdFunc != nil {
+		return fx.generateOrderIdFunc(tx)
+	}
+	fx.lastOrder = storestate.LexId.Next(fx.lastOrder)
+	return fx.lastOrder
+}
+
+func (fx *fixture) applyToStore(ctx context.Context, params source.PushStoreChangeParams) (string, error) {
+	changeId := bson.NewObjectId().Hex()
+	tx, err := params.State.NewTx(ctx)
+	if err != nil {
+		return "", fmt.Errorf("new tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	order := fx.generateOrderId(tx)
+	changeSet := storestate.ChangeSet{
+		Id:        changeId,
+		Order:     order,
+		Changes:   params.Changes,
+		Creator:   fx.sourceCreator,
+		Timestamp: params.Time.Unix(),
+	}
+	err = tx.ApplyChangeSetReturnAllErrors(changeSet)
+	if err != nil {
+		return "", fmt.Errorf("apply change set: %w", err)
+	}
+	err = tx.Commit()
+	if err != nil {
+		return "", err
+	}
+	fx.appliedChangeSets = append(fx.appliedChangeSets, changeSet)
+	fx.onUpdate()
+	return changeId, nil
+}
+
+func givenSimpleMessage(text string) *chatmodel.Message {
+	return &chatmodel.Message{
+		ChatMessage: &model.ChatMessage{
+			Id:          "",
+			OrderId:     "",
+			Creator:     "",
+			Read:        true,
+			MentionRead: true,
+			Message: &model.ChatMessageMessageContent{
+				Text:  text,
+				Style: model.BlockContentText_Paragraph,
+			},
+		},
+	}
+}
+
+func givenMessageWithMention(text string) *chatmodel.Message {
+	return &chatmodel.Message{
+		ChatMessage: &model.ChatMessage{
+			Id:          "",
+			OrderId:     "",
+			Creator:     "",
+			Read:        true,
+			MentionRead: true,
+			Message: &model.ChatMessageMessageContent{
+				Text:  text,
+				Style: model.BlockContentText_Paragraph,
+				Marks: []*model.BlockContentTextMark{
+					{
+						Type:  model.BlockContentTextMark_Mention,
+						Param: domain.NewParticipantId(testSpaceId, testCreator),
+						Range: &model.Range{From: 0, To: 1},
+					},
+				},
+			},
+		},
+	}
+}
+
+func givenComplexMessage() *chatmodel.Message {
+	return &chatmodel.Message{
+		ChatMessage: &model.ChatMessage{
+			Id:               "",
+			OrderId:          "",
+			Creator:          "",
+			Read:             true,
+			MentionRead:      true,
+			ReplyToMessageId: "replyToMessageId1",
+			Message: &model.ChatMessageMessageContent{
+				Text:  "text!",
+				Style: model.BlockContentText_Quote,
+				Marks: []*model.BlockContentTextMark{
+					{
+						Range: &model.Range{
+							From: 0,
+							To:   1,
+						},
+						Type:  model.BlockContentTextMark_Link,
+						Param: "https://example.com",
+					},
+					{
+						Range: &model.Range{
+							From: 2,
+							To:   3,
+						},
+						Type: model.BlockContentTextMark_Italic,
+					},
+				},
+			},
+			Attachments: []*model.ChatMessageAttachment{
+				{
+					Target: "attachmentId1",
+					Type:   model.ChatMessageAttachment_IMAGE,
+				},
+				{
+					Target: "attachmentId2",
+					Type:   model.ChatMessageAttachment_LINK,
+				},
+			},
+			Reactions: &model.ChatMessageReactions{
+				Reactions: map[string]*model.ChatMessageReactionsIdentityList{
+					"🥰": {
+						Ids: []string{"identity1", "identity2"},
+					},
+					"🤔": {
+						Ids: []string{"identity3"},
+					},
+				},
+			},
+		},
+	}
+}
+
+func assertMessagesEqual(t *testing.T, want, got *chatmodel.Message) {
+	// Cleanup order id
+	assert.NotEmpty(t, got.OrderId)
+	got.OrderId = ""
+	// Cleanup timestamp
+	assert.NotZero(t, got.CreatedAt)
+	got.CreatedAt = 0
+
+	assert.NotEmpty(t, got.StateId)
+	got.StateId = ""
+
+	assert.Equal(t, want, got)
+}

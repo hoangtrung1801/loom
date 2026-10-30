@@ -1,0 +1,312 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with the API service component in this repository.
+
+## API Development Commands
+
+### Testing API Code
+```bash
+# Run all API tests
+go test ./core/api/...
+
+# Run specific service tests
+go test ./core/api/service -run TestObjectService
+
+# Run with verbose output
+go test -v ./core/api/server
+
+# Generate/update mocks before testing
+make test-deps
+```
+
+### API Documentation
+```bash
+# Generate OpenAPI documentation
+make openapi
+
+# One document per API version:
+# - core/api/docs/v1/openapi.{yaml,json}   (from core/api, v2 excluded)
+# - core/api/docs/v2/openapi.{yaml,json}   (from core/api/v2)
+# Served at /v1/docs/openapi.*, /v2/docs/openapi.*, and /docs/openapi.* (= v2)
+```
+
+The v2 Introduction is authored in `core/api/v2/markdown/api.md`. Keep the
+shared API behavior there; `core/api/v2/doc.go` holds metadata and references
+it with `@description.markdown`. `make openapi` passes the Markdown directory
+to swag. The OpenAPI 3 parser in swag v2.0.0-rc4 drops this value, so
+`scripts/fix_openapi_v2.py` injects the same source into both generated formats,
+preserving headings, tables, and code blocks in `info.description`.
+Do not edit the generated OpenAPI description directly.
+
+## Architecture Overview
+
+### Layer Structure
+
+The API follows a clean layered architecture:
+
+1. **Handler Layer** (`/handler/`) - HTTP request handling
+   - Parses requests and validates input
+   - Calls service methods
+   - Maps errors to HTTP status codes
+   - Returns JSON responses
+
+2. **Service Layer** (`/service/`) - Business logic
+   - Implements core functionality
+   - Interacts with middleware via interfaces
+   - Handles caching and data transformation
+   - No HTTP concerns
+
+3. **Model Layer** (`/model/`) - Data structures
+   - Request/response DTOs
+   - API-specific data models
+   - JSON serialization tags
+
+4. **Core Interfaces** (`/core/`) - External dependencies
+   - Defines interfaces for middleware interaction
+   - Keeps API decoupled from implementation
+
+#### API v2 lives in its own tree
+
+`/handler/`, `/service/` and `/model/` above are **v1 only**. API v2 has the
+same three layers under `/v2/`:
+
+```
+core/api/
+  core/  util/  pagination/   SHARED by both versions
+  server/                     the one gin engine, auth, rate limit, analytics
+  handler/ service/ model/    v1
+  v2/                         package apiv2 — router.go, middleware.go, doc.go
+    handler/                  package v2handler
+    service/                  package v2service
+    model/                    package v2model
+  docs/v1/  docs/v2/          the two generated documents (data only)
+  wrapper/                    the v2 task-tool wrapper
+```
+
+v2 shares **nothing** with v1 at the type level, and the package split is what
+makes that a compile error rather than a convention. Dependencies point one
+way: `server` → `v2`, never back. `server` hands v2 the shared middleware
+through `apiv2.RouteDeps`; v2 owns its own routes, its C8 idempotency and C9
+dry-run middleware, and its C10 pagination defaults.
+
+v2 model types carry **no `V2` prefix** — the package qualifier carries the
+version (`v2model.Error`, `v2model.ListResponse[v2model.ObjectRow]`), and each
+version gets its own OpenAPI document, so schema names cannot collide.
+
+The three object adapters and `chatsubadapter.go` stay in package `api`: that
+package is the composition root (the only one that touches `*app.App` and
+heart-internal services), and what they produce are implementations of the
+SHARED `apicore` ports.
+
+### Key Patterns
+
+#### Handler Pattern
+```go
+func ResourceActionHandler(s *service.Service) gin.HandlerFunc {
+    return func(c *gin.Context) {
+        // 1. Extract and validate parameters
+        var req apimodel.RequestType
+        if err := c.ShouldBindJSON(&req); err != nil {
+           apiErr := util.CodeToApiError(http.StatusBadRequest, err.Error())
+           c.JSON(http.StatusBadRequest, apiErr)
+           return
+        }
+        
+        // 2. Call service layer
+        result, err := s.ResourceAction(c, req)
+		code := util.MapErrorCode(err, 
+			util.ErrToCode(service.ErrMissingAppName, http.StatusBadRequest), 
+			util.ErrToCode(service.ErrFailedCreateNewChallenge, http.StatusInternalServerError)
+         )
+         
+         if code != http.StatusOK {
+			 apiErr := util.CodeToApiError(code, err.Error())
+			 c.JSON(code, apiErr)
+			 return
+         }
+        
+        // 3. Return response
+        c.JSON(http.StatusOK,, model.ResponseType{Data: result})
+    }
+}
+```
+
+#### Testing Guidelines
+
+1. **Test Structure**: Use fixture pattern for consistent test setup
+   ```go
+   type fixture struct {
+       service  *Service
+       mwMock   *mock_apicore.MockClientCommands
+       // other mocks as needed
+   }
+
+   func newFixture(t *testing.T) *fixture {
+       mwMock := mock_apicore.NewMockClientCommands(t)
+       service := NewService(mwMock, gatewayUrl, techSpaceId, crossSpaceSubService)
+       return &fixture{
+           service: service,
+           mwMock:  mwMock,
+       }
+   }
+
+   func TestServiceMethod(t *testing.T) {
+       fx := newFixture(t)
+       
+       // Setup expectations using testify/mock
+       fx.mwMock.On("Method", mock.Anything, expectedArgs).Return(result, nil)
+       
+       // Execute
+       result, err := fx.service.Method(context.Background(), ...)
+       
+       // Assert
+       assert.NoError(t, err)
+       assert.Equal(t, expected, result)
+   }
+   ```
+
+2. **Mock Generation**: Use mockery with `.mockery.yaml` configuration
+   ```yaml
+   github.com/anyproto/anytype-heart/core/api/core:
+    interfaces:
+      AccountService:
+   ```
+
+3. **Mock Library**: Use `github.com/stretchr/testify/mock` (not gomock)
+   ```go
+   import "github.com/stretchr/testify/mock"
+   
+   mockService := mock_filter.NewMockApiService(t)
+   mockService.On("Method", args...).Return(results...)
+   ```
+
+4. **Table-Driven Tests**: Preferred for comprehensive test coverage
+   ```go
+   tests := []struct {
+       name          string
+       input         InputType
+       setupMock     func(m *MockType)
+       expectedError string
+       checkResult   func(t *testing.T, result ResultType)
+   }{
+       // test cases
+   }
+   
+   for _, tt := range tests {
+       t.Run(tt.name, func(t *testing.T) {
+           // test implementation
+       })
+   }
+   ```
+
+5. **Assertion Style**: Use testify assertions
+   ```go
+   assert.Equal(t, expected, actual)
+   require.NoError(t, err)
+   require.Len(t, slice, expectedLen)
+   ```
+
+6. **Mock Expectations**: Use `mock.Anything` for flexible matching
+   ```go
+   mockService.On("Method", 
+       mock.Anything,  // for parameters you don't need to match exactly
+       specificValue,  // for parameters that must match
+   ).Return(result, nil)
+   ```
+
+### API Resources
+
+Main resources exposed by the API:
+
+- **Auth** - Authentication endpoints
+- **Objects** - Core content objects (pages, notes, etc.)
+- **Spaces** - Workspace management
+- **Properties** - Object property definitions
+- **Types** - Object type management
+- **Tags** - Property tag system
+- **Templates** - Object templates
+- **Lists** - Queries (formerly Sets) and Collections
+- **Members** - Space membership
+- **Search** - Global and space search
+
+### API Middleware Stack
+
+Request processing order:
+1. **Recovery** - Panic recovery
+2. **Metadata** - API version headers
+3. **Logger** - Request logging (debug only)
+4. **Pagination** - Query parameter parsing
+5. **Cache** - Initialize caches if needed
+6. **Auth** - Bearer token validation
+7. **RateLimit** - Request throttling
+8. **Analytics** - Event tracking
+9. **Filters** - Query filtering
+
+### Important Conventions
+
+1. **Authentication**: Bearer token in Authorization header
+2. **Pagination**: Use offset/limit query parameters (default: offset=0, limit=100)
+3. **Error Handling**: 
+   - Use `util.MapErrorCode()` and `util.ErrToCode()` for consistent error responses
+   - User-facing validation errors: Use `util.ErrBadInput(fmt.Sprintf("message with %q formatting", value))`
+   - When adding context to errors: Use `fmt.Errorf("context: %w", err)` to wrap with additional information
+   - Avoid double "bad input" prefixes - use `fmt.Errorf` for wrapping, not `util.ErrBadInput` when the underlying error is already a bad input error
+   - Use quoted formatting (`%q`) in error messages for clarity when displaying user input
+4. **Response Format**: Paginated responses use `PaginatedResponse[T]` wrapper
+5. **Space Scoping**: Most resources are scoped to a space ID in the URL path
+6. **Caching**: Types, properties, and tags are cached - use GetCached* methods
+7. **Testing**: Always use mocks for middleware dependencies
+8. **OpenAPI**: Update Swagger annotations when changing endpoints
+9. **Constants**: Always use defined constants instead of hardcoded strings for consistency
+   - Use `apimodel.FilterConditionEq` not `"eq"`
+   - Use `model.BlockContentDataviewFilter_Equal` not magic numbers
+   - This applies to all enums, conditions, operators, and status codes
+10. **Naming Conventions**: Follow Anytype's project conventions for acronyms (not standard Go idioms):
+    - Use `Api` not `API` (e.g., `ApiService`, `ToApiCondition`)
+    - Use `Url` not `URL` (e.g., `UrlFilterItem`, `GatewayUrl`)
+    - Use `Id` not `ID` (e.g., `object.Id`, `type.Id`)
+    - This maintains consistency with the rest of the Anytype codebase
+
+### Common Tasks
+
+#### Adding a New Endpoint
+1. Define request/response models in `/model/`
+2. Add service method in `/service/`
+3. Create handler in `/handler/`
+4. Add route in `/server/router.go` (v1) or `/v2/router.go` (v2)
+5. Write tests for both service and handler
+6. Update OpenAPI annotations
+7. Run `make openapi` to regenerate docs
+
+#### Modifying Existing Endpoints
+1. Check impact on API compatibility
+2. Update models if needed
+3. Modify service logic
+4. Update tests
+5. Regenerate OpenAPI docs
+
+#### Debugging API Issues
+1. Enable debug logging in config
+2. Check middleware order for request processing
+3. Verify authentication token validity
+4. Use integration tests for end-to-end validation
+5. Check rate limiting configuration
+## Where the design is written down
+
+- `APIV2.md` — the v2 specification. Start here.
+- `APIV2_PLAN.md` — outstanding work and the decisions still waiting on a human.
+- `APIV2_SURFACES.md` — what `/v1` serves that `/v2` does not yet, and the decisions about it.
+- `APIV2_ADDRESSING.md` — the identifier layer: how a type or property is named, minted and resolved.
+- `APIV2_VOCABULARY.md` — slugs on the wire, names at the edge, ids in reference slots.
+- `APIV2_TOKENS.md` — the measured token review the served shapes were chosen from.
+- `APIV2_TYPED_HINTS.md` — how repair hints name operations instead of spelling HTTP routes.
+- `APIV2_TYPE_OPS.md` — the incremental type-edit op channel.
+- `APIV2_OBJECT_DELETE.md` — creator provenance and the own-output delete rule.
+- `APIV2_WIDGETS.md` — the sidebar widget surface: the desktop's rules mirrored, the two roots, what is re-checked under the lock.
+- `v2/markdown/api.md` — the **published** API introduction. A test pins it; run `make openapi` after
+  editing it.
+
+Eval rounds and surface-review reports are not kept in the repo. They are archived at
+`../anytype-heart-docs/core/api/` along with an unapplied Swagger prose patch; see the MANIFEST there.
+Their findings were never re-triaged against current code, so treat one as a lead to verify, not as a
+known-open bug.

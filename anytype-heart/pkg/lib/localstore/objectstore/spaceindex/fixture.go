@@ -1,0 +1,199 @@
+package spaceindex
+
+import (
+	"context"
+	"fmt"
+	"math/rand"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/anyproto/any-store/query"
+	"github.com/anyproto/any-sync/app"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
+
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/core/wallet"
+	"github.com/anyproto/anytype-heart/core/wallet/mock_wallet"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	"github.com/anyproto/anytype-heart/pkg/lib/database"
+	"github.com/anyproto/anytype-heart/pkg/lib/datastore/anystoreprovider"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/ftsearch"
+)
+
+var ctx = context.Background()
+
+type StoreFixture struct {
+	*dsObjectStore
+}
+
+const spaceName = "space1"
+
+type detailsFromId struct {
+}
+
+func (d *detailsFromId) DetailsFromIdBasedSource(id domain.FullID) (*domain.Details, error) {
+	return nil, fmt.Errorf("not found")
+}
+
+type dummyFulltextQueue struct {
+	lock sync.Mutex
+	ids  []string
+}
+
+func (q *dummyFulltextQueue) ClearFullTextQueue(spaceIds []string) error {
+	return nil
+}
+
+func (q *dummyFulltextQueue) FtQueueMarkAsIndexed(objects []domain.FullTextQueuedObject, state uint64) error {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+	// filter-out ids that are not in the queue
+	q.ids = lo.Filter(q.ids, func(item string, index int) bool {
+		for _, obj := range objects {
+			if item == obj.ObjectId {
+				return false
+			}
+		}
+		return true
+	})
+	return nil
+}
+
+func (q *dummyFulltextQueue) AddToIndexQueue(ctx context.Context, ids ...domain.FullID) (uint64, int, error) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+	var added int
+	for _, id := range ids {
+		if !lo.Contains(q.ids, id.ObjectID) {
+			q.ids = append(q.ids, id.ObjectID)
+			added++
+		}
+	}
+	return uint64(time.Now().Unix()), added, nil
+}
+
+func (q *dummyFulltextQueue) ListIdsFromFullTextQueue(spaceIds []string, limit uint) ([]domain.FullTextQueuedObject, error) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	if limit > uint(len(q.ids)) {
+		limit = uint(len(q.ids))
+	}
+	return lo.Map(q.ids[:limit], func(item string, index int) domain.FullTextQueuedObject {
+		return domain.FullTextQueuedObject{ObjectId: item}
+	}), nil
+}
+
+func NewStoreFixture(t testing.TB) *StoreFixture {
+	walletService := mock_wallet.NewMockWallet(t)
+	walletService.EXPECT().Name().Return(wallet.CName).Maybe()
+	walletService.EXPECT().RepoPath().Return(t.TempDir())
+	walletService.EXPECT().FtsPrimaryLang().Return("")
+
+	provider, err := anystoreprovider.NewInPath(t.TempDir())
+	require.NoError(t, err)
+
+	fullText := ftsearch.TantivyNew()
+	testApp := &app.App{}
+
+	testApp.Register(walletService)
+	err = fullText.Init(testApp)
+	require.NoError(t, err)
+	err = fullText.Run(context.Background())
+	require.NoError(t, err)
+
+	s := New(context.Background(), "test", Deps{
+		DbProvider:    provider,
+		Fts:           fullText,
+		SourceService: &detailsFromId{},
+		SubManager:    &SubscriptionManager{},
+		FulltextQueue: &dummyFulltextQueue{},
+	})
+	err = s.Init()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		fullText.Close(context.Background())
+		provider.Close(context.Background())
+	})
+	return &StoreFixture{
+		dsObjectStore: s.(*dsObjectStore),
+	}
+}
+
+type TestObject map[domain.RelationKey]domain.Value
+
+func (o TestObject) Id() string {
+	return o[bundle.RelationKeyId].String()
+}
+
+func (o TestObject) Details() *domain.Details {
+	return makeDetails(o)
+}
+
+func (o TestObject) Record() database.Record {
+	return database.Record{
+		Details: o.Details(),
+	}
+}
+
+func generateObjectWithRandomID() TestObject {
+	id := fmt.Sprintf("%d", rand.Int())
+	return TestObject{
+		bundle.RelationKeyId:   domain.String(id),
+		bundle.RelationKeyName: domain.String("name" + id),
+	}
+}
+
+func makeObjectWithName(id string, name string) TestObject {
+	return TestObject{
+		bundle.RelationKeyId:      domain.String(id),
+		bundle.RelationKeyName:    domain.String(name),
+		bundle.RelationKeySpaceId: domain.String(spaceName),
+	}
+}
+
+func makeObjectWithNameAndDescription(id string, name string, description string) TestObject {
+	return TestObject{
+		bundle.RelationKeyId:          domain.String(id),
+		bundle.RelationKeyName:        domain.String(name),
+		bundle.RelationKeyDescription: domain.String(description),
+		bundle.RelationKeySpaceId:     domain.String(spaceName),
+	}
+}
+
+func makeDetails(fields TestObject) *domain.Details {
+	return domain.NewDetailsFromMap(fields)
+}
+
+func (fx *StoreFixture) AddObjects(t testing.TB, objects []TestObject) {
+	for _, obj := range objects {
+		id := obj[bundle.RelationKeyId].String()
+		require.NotEmpty(t, id)
+		err := fx.UpdateObjectDetails(context.Background(), id, makeDetails(obj))
+		require.NoError(t, err)
+	}
+}
+
+// IndexesUsedBy reports, per index name, whether the planner would use it for filters+sort.
+//
+// It exists so packages that own a query can assert their real filter still reaches the sparse
+// index it was shaped for: since any-store v1.0.2 a sparse index only serves a predicate that
+// guarantees its fields are present and non-null, so an innocuous-looking filter change silently
+// turns an index seek into a full collection scan. False for every index means a full scan.
+func (fx *StoreFixture) IndexesUsedBy(t testing.TB, filters database.Filter, sort query.Sort) map[string]bool {
+	t.Helper()
+	q := fx.objects.Find(filters.AnystoreFilter())
+	if sort != nil {
+		q = q.Sort(sort)
+	}
+	explain, err := q.Explain(context.Background())
+	require.NoError(t, err)
+	used := make(map[string]bool, len(explain.Indexes))
+	for _, idx := range explain.Indexes {
+		used[idx.Name] = idx.Used
+	}
+	return used
+}

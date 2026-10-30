@@ -1,0 +1,254 @@
+package indexer
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"runtime"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/anyproto/any-sync/app"
+	"github.com/samber/lo"
+	"go.uber.org/zap"
+
+	"github.com/anyproto/anytype-heart/core/anytype/config"
+	"github.com/anyproto/anytype-heart/core/block/cache"
+	"github.com/anyproto/anytype-heart/core/block/chats/chatrepository"
+	"github.com/anyproto/anytype-heart/core/block/editor/smartblock"
+	"github.com/anyproto/anytype-heart/core/block/source"
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/core/participants"
+	"github.com/anyproto/anytype-heart/core/relationutils"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	"github.com/anyproto/anytype-heart/pkg/lib/database"
+	"github.com/anyproto/anytype-heart/pkg/lib/datastore/anystoreprovider"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/addr"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/ftsearch"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/objectstore"
+	"github.com/anyproto/anytype-heart/pkg/lib/logging"
+	"github.com/anyproto/anytype-heart/pkg/lib/pb/model"
+	"github.com/anyproto/anytype-heart/space"
+	"github.com/anyproto/anytype-heart/space/clientspace"
+)
+
+// openedObjectsProvider is the part of the block service used to prioritize
+// reindex slots for spaces the user currently has objects open in; entry.Value
+// is the object's space id.
+type openedObjectsProvider interface {
+	GetOpenedObjects() []lo.Entry[string, string]
+}
+
+const (
+	CName = "indexer"
+)
+
+var log = logging.Logger("anytype-doc-indexer")
+
+func New() Indexer {
+	return new(indexer)
+}
+
+type Indexer interface {
+	ForceFTIndex()
+	StartFullTextIndex() error
+	ReindexMarketplaceSpace(space clientspace.Space) error
+	ReindexSpace(space clientspace.Space) error
+	RemoveIndexes(spaceId string) (err error)
+	Index(info smartblock.DocInfo, options ...smartblock.IndexOption) error
+	GetLastIndexTime(spaceId string) time.Time
+	app.ComponentRunnable
+}
+
+type Hasher interface {
+	Hash() string
+}
+
+type indexer struct {
+	dbProvider           anystoreprovider.Provider
+	store                objectstore.ObjectStore
+	source               source.Service
+	picker               cache.CachedObjectGetter
+	formatFetcher        relationutils.RelationFormatFetcher
+	chatRepository       chatrepository.Service
+	ftsearch             ftsearch.FTSearch
+	ftsearchLastIndexSeq uint64
+
+	runCtx          context.Context
+	runCtxCancel    context.CancelFunc
+	ftQueueStop     context.CancelFunc
+	ftQueueFinished chan struct{}
+	config          *config.Config
+	// reindexLimiter bounds cross-space concurrency of the outdated-objects
+	// reindex pass and prioritizes spaces the user is looking at
+	reindexLimiter *reindexLimiter
+
+	btHash  Hasher
+	forceFt chan struct{}
+
+	// state
+	lock                sync.RWMutex
+	reindexLogFields    []zap.Field
+	spaceIndexers       map[string]*spaceIndexer
+	techSpaceIdProvider objectstore.TechSpaceIdProvider
+	spaces              map[string]struct{}
+	spacesLock          sync.RWMutex
+
+	ftConsistencyCheckDone atomic.Bool
+}
+
+func (i *indexer) Init(a *app.App) (err error) {
+	i.store = a.MustComponent(objectstore.CName).(objectstore.ObjectStore)
+	i.source = app.MustComponent[source.Service](a)
+	i.btHash = a.MustComponent("builtintemplate").(Hasher)
+	i.ftsearch = app.MustComponent[ftsearch.FTSearch](a)
+	i.picker = app.MustComponent[cache.CachedObjectGetter](a)
+	i.runCtx, i.runCtxCancel = context.WithCancel(context.Background())
+	i.forceFt = make(chan struct{})
+	// optional (absent in tests): reindex slot priority source, resolved by name
+	// to avoid importing core/block (same pattern as space/service.go's sweep)
+	var openedSpaceIds func() map[string]struct{}
+	if c := a.Component(space.BlockServiceCName); c != nil {
+		if provider, ok := c.(openedObjectsProvider); ok {
+			openedSpaceIds = func() map[string]struct{} {
+				opened := map[string]struct{}{}
+				for _, entry := range provider.GetOpenedObjects() {
+					opened[entry.Value] = struct{}{}
+				}
+				return opened
+			}
+		}
+	}
+	i.reindexLimiter = newReindexLimiter(maxConcurrentSpaceReindexFor(runtime.GOOS), openedSpaceIds)
+	i.config = app.MustComponent[*config.Config](a)
+	i.spaceIndexers = map[string]*spaceIndexer{}
+	i.techSpaceIdProvider = app.MustComponent[objectstore.TechSpaceIdProvider](a)
+	i.dbProvider = app.MustComponent[anystoreprovider.Provider](a)
+	i.formatFetcher = app.MustComponent[relationutils.RelationFormatFetcher](a)
+	i.chatRepository = app.MustComponent[chatrepository.Service](a)
+	return
+}
+
+func (i *indexer) Name() (name string) {
+	return CName
+}
+
+func (i *indexer) Run(context.Context) (err error) {
+	return i.StartFullTextIndex()
+}
+
+func (i *indexer) StateChange(state int) {
+	if state == int(domain.CompStateAppClosingInitiated) && i.ftQueueStop != nil {
+		i.ftQueueStop()
+	}
+}
+
+func (i *indexer) StartFullTextIndex() (err error) {
+	if ftErr := i.ftInit(); ftErr != nil {
+		log.Errorf("can't init ft: %v", ftErr)
+	}
+	i.ftQueueFinished = make(chan struct{})
+	var ftCtx context.Context
+	if os.Getenv("ANYTYPE_DISABLE_FT_INDEXER") == "1" {
+		close(i.ftQueueFinished)
+		log.Warn("FT indexer disabled")
+		return
+	}
+	log.Info("Starting full text indexer")
+	ftCtx, i.ftQueueStop = context.WithCancel(i.runCtx)
+	go i.ftLoopRoutine(ftCtx)
+	return
+}
+
+func (i *indexer) Close(ctx context.Context) (err error) {
+	i.lock.Lock()
+	for spaceId, si := range i.spaceIndexers {
+		err = si.close()
+		if err != nil {
+			log.With("spaceId", spaceId, "error", err).Errorf("close spaceIndexer")
+		}
+		delete(i.spaceIndexers, spaceId)
+	}
+	i.lock.Unlock()
+	if i.runCtxCancel != nil {
+		i.runCtxCancel()
+		// we need to wait for the ftQueue processing to be finished gracefully. Because we may be in the middle of badger transaction
+		<-i.ftQueueFinished
+	}
+	return nil
+}
+
+func (i *indexer) RemoveAclIndexes(spaceId string) (err error) {
+	// TODO: It seems we should also filter objects by Layout, because participants should be re-indexed to receive resolvedLayout
+	store := i.store.SpaceIndex(spaceId)
+	ids, _, err := store.QueryObjectIds(database.Query{
+		Filters: []database.FilterRequest{
+			{
+				RelationKey: bundle.RelationKeyResolvedLayout,
+				Condition:   model.BlockContentDataviewFilter_Equal,
+				Value:       domain.Int64(model.ObjectType_participant),
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("query participant ids: %w", err)
+	}
+	err = i.store.ClearFullTextQueue([]string{spaceId})
+	if err != nil {
+		return fmt.Errorf("remove fts: %w", err)
+	}
+
+	// todo: should we use the queue here as well?
+	err = i.ftsearch.BatchDeleteObjects(ids)
+	if err != nil {
+		return fmt.Errorf("remove acl: %w", err)
+	}
+
+	// the records are wiped, so the next space load must run full ACL processing
+	err = store.SaveLastIndexedHeadsHash(i.runCtx, participants.AclHeadMarkerId, "")
+	if err != nil {
+		return fmt.Errorf("clear participants acl head marker: %w", err)
+	}
+
+	return store.DeleteDetails(i.runCtx, ids)
+}
+
+func (i *indexer) isFulltextEnabled(space smartblock.Space) bool {
+	return i.techSpaceIdProvider.TechSpaceId() != space.Id() &&
+		space.Id() != addr.AnytypeMarketplaceWorkspace
+}
+
+func (i *indexer) Index(info smartblock.DocInfo, options ...smartblock.IndexOption) error {
+	if info.SmartblockType.DetailsStoreOwned() {
+		// store-owned objects (participants) are written to the object index directly
+		// by their dedicated writers; the smartblock state is only a derived view and
+		// may be stale, so writing it back here would corrupt the record
+		return nil
+	}
+	i.lock.Lock()
+	spaceInd, ok := i.spaceIndexers[info.Space.Id()]
+	if !ok {
+		spaceInd = newSpaceIndexer(
+			i.runCtx,
+			i.store.SpaceIndex(info.Space.Id()),
+			i.store,
+			i.isFulltextEnabled(info.Space),
+		)
+		i.spaceIndexers[info.Space.Id()] = spaceInd
+	}
+	i.lock.Unlock()
+
+	return spaceInd.Index(info, options...)
+}
+
+// GetLastIndexTime returns the time of the last indexing operation for a space
+func (i *indexer) GetLastIndexTime(spaceId string) time.Time {
+	i.lock.RLock()
+	defer i.lock.RUnlock()
+
+	if spaceInd, ok := i.spaceIndexers[spaceId]; ok {
+		return spaceInd.LastIndex()
+	}
+	return time.Time{}
+}
