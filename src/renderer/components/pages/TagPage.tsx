@@ -8,6 +8,10 @@ import { errorMessage } from '../../api.js';
 import { PropInput } from '../CardProps.js';
 import { Icon } from '../Icon.js';
 import { Empty, timeAgo } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 const COLORS = ['', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'gray'];
 
@@ -47,9 +51,9 @@ export function TagPage({ tag }: { tag: string }) {
     <div className="page tag-page">
       <div className="page-head">
         <h2 className="grow">#{tag}</h2>
-        <select value={table.color} onChange={(e) => void run(() => api.setTagDef(tag, { color: e.target.value }))} aria-label="Tag color">
-          {COLORS.map((c) => <option key={c} value={c}>{c || 'no color'}</option>)}
-        </select>
+        <NativeSelect value={table.color} onChange={(e) => void run(() => api.setTagDef(tag, { color: e.target.value }))} aria-label="Tag color">
+          {COLORS.map((c) => <NativeSelectOption key={c} value={c}>{c || 'no color'}</NativeSelectOption>)}
+        </NativeSelect>
       </div>
       <textarea
         className="tag-desc"
@@ -68,7 +72,7 @@ export function TagPage({ tag }: { tag: string }) {
               {table.props.map((p) => (
                 <th key={p.id}>
                   <button onClick={() => setSortBy(p.id)}>{p.name}</button>
-                  <button className="icon-btn" aria-label={`Remove property ${p.name}`} onClick={() => void run(() => api.removeTagProp(p.id))}><Icon name="close" size={11} /></button>
+                  <Button variant="ghost" size="icon" aria-label={`Remove property ${p.name}`} onClick={() => void run(() => api.removeTagProp(p.id))}><Icon name="close" size={11} /></Button>
                 </th>
               ))}
               <th><button onClick={() => setSortBy('')}>Edited</button></th>
@@ -98,11 +102,11 @@ export function TagPage({ tag }: { tag: string }) {
           setNewProp({ name: '', type: 'text' });
         }}
       >
-        <input value={newProp.name} onChange={(e) => setNewProp({ ...newProp, name: e.target.value })} placeholder="New property" aria-label="New property name" />
-        <select value={newProp.type} onChange={(e) => setNewProp({ ...newProp, type: e.target.value as PropType })} aria-label="Property type">
-          {PROP_TYPES.map((t) => <option key={t}>{t}</option>)}
-        </select>
-        <button className="btn" type="submit">Add property</button>
+        <Input value={newProp.name} onChange={(e) => setNewProp({ ...newProp, name: e.target.value })} placeholder="New property" aria-label="New property name" />
+        <NativeSelect value={newProp.type} onChange={(e) => setNewProp({ ...newProp, type: e.target.value as PropType })} aria-label="Property type">
+          {PROP_TYPES.map((t) => <NativeSelectOption key={t}>{t}</NativeSelectOption>)}
+        </NativeSelect>
+        <Button variant="outline" type="submit">Add property</Button>
       </form>
       {table.props.some((p) => p.type.includes('select')) && (
         <details>
@@ -110,7 +114,7 @@ export function TagPage({ tag }: { tag: string }) {
           {table.props.filter((p) => p.type.includes('select')).map((p) => (
             <label key={p.id} className="prop">
               <span>{p.name}</span>
-              <input
+              <Input
                 defaultValue={p.options.join(', ')}
                 aria-label={`Options for ${p.name}`}
                 onBlur={(e) => void run(() => api.updateTagProp(p.id, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }))}

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import { applyLink, currentBlock, currentLink, markActive, toggle, turnInto, type BlockChoice } from './commands.js';
+import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 const BLOCKS: [BlockChoice, string][] = [
   ['paragraph', 'Text'],
@@ -45,9 +47,9 @@ export function Toolbar({ view }: { view: EditorView }) {
     <div className="toolbar" ref={bar} role="toolbar" aria-label="Format" style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999 }} onMouseDown={(e) => { if (!(e.target as HTMLElement).closest('input')) e.preventDefault(); }}>
       {linking === null ? (
         <>
-          <select aria-label="Turn into" value={currentBlock(view)} onChange={(e) => turnInto(view, e.target.value as BlockChoice)} onMouseDown={(e) => e.stopPropagation()}>
-            {BLOCKS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
+          <NativeSelect aria-label="Turn into" value={currentBlock(view)} onChange={(e) => turnInto(view, e.target.value as BlockChoice)} onMouseDown={(e) => e.stopPropagation()}>
+            {BLOCKS.map(([value, label]) => <NativeSelectOption key={value} value={value}>{label}</NativeSelectOption>)}
+          </NativeSelect>
           {btn('B', 'Bold (Ctrl/⌘ B)', 'strong')}
           {btn('I', 'Italic (Ctrl/⌘ I)', 'em')}
           {btn('U', 'Underline (Ctrl/⌘ U)', 'underline')}
@@ -64,7 +66,7 @@ export function Toolbar({ view }: { view: EditorView }) {
             setLinking(null);
           }}
         >
-          <input autoFocus value={linking} onChange={(e) => setLinking(e.target.value)} placeholder="Paste a link, Enter to apply" aria-label="Link address" onKeyDown={(e) => { if (e.key === 'Escape') { setLinking(null); view.focus(); } }} />
+          <Input autoFocus value={linking} onChange={(e) => setLinking(e.target.value)} placeholder="Paste a link, Enter to apply" aria-label="Link address" onKeyDown={(e) => { if (e.key === 'Escape') { setLinking(null); view.focus(); } }} />
         </form>
       )}
     </div>

@@ -6,6 +6,10 @@ import { openApp, openBoard, openCard, openTag } from '../../actions.js';
 import { mutate, refresh, toast } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { Markdown } from './Markdown.js';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Chip } from '@/components/ui/chip';
+import { AnimatedShinyText } from '@/components/ui/animated-shiny-text';
 
 interface AiEvent {
   type: 'start' | 'delta' | 'tool' | 'done' | 'error';
@@ -197,8 +201,8 @@ export function ChatView({
               )}
               {m.role === 'assistant' && (
                 <div className="msg-actions">
-                  <button className="icon-btn" aria-label="Copy" title="Copy" onClick={() => void navigator.clipboard?.writeText(m.content)}><Icon name="copy" size={13} /></button>
-                  <button className="icon-btn" aria-label="Save as card" title="Save as card" onClick={() => void mutate(async () => openCard(await api.createCard({ title: (chat?.title ?? 'AI answer').slice(0, 60), content: markdownToContent(m.content), inbox: true })))}><Icon name="card" size={13} /></button>
+                  <Button variant="ghost" size="icon" aria-label="Copy" title="Copy" onClick={() => void navigator.clipboard?.writeText(m.content)}><Icon name="copy" size={13} /></Button>
+                  <Button variant="ghost" size="icon" aria-label="Save as card" title="Save as card" onClick={() => void mutate(async () => openCard(await api.createCard({ title: (chat?.title ?? 'AI answer').slice(0, 60), content: markdownToContent(m.content), inbox: true })))}><Icon name="card" size={13} /></Button>
                 </div>
               )}
             </div>
@@ -207,7 +211,7 @@ export function ChatView({
         {activity.map((a, i) => <div key={i} className="tool-line live"><Icon name="search" size={12} /> {a}</div>)}
         {busy && (
           <div className="msg assistant streaming">
-            {streaming ? <Markdown text={streaming.replace(/\[c\d+:[\d-]+\]/g, '')} /> : <span className="thinking">Thinking…</span>}
+            {streaming ? <Markdown text={streaming.replace(/\[c\d+:[\d-]+\]/g, '')} /> : <AnimatedShinyText className="thinking mx-0 text-muted-foreground via-foreground/80 dark:via-foreground/80">Thinking…</AnimatedShinyText>}
           </div>
         )}
         {error && <div className="error" role="alert">{error}</div>}
@@ -223,14 +227,11 @@ export function ChatView({
         {context.length > 0 && (
           <div className="chips" aria-label="Attached context">
             {context.map((c) => (
-              <span key={`${c.type}:${c.id}`} className="chip">
-                <button className="chip-label" onClick={() => openContext(c)} title={c.type}>{c.label || c.id}</button>
-                <button aria-label={`Remove ${c.label || c.id}`} onClick={() => setCtx(context.filter((x) => x !== c))}><Icon name="close" size={11} /></button>
-              </span>
+              <Chip key={`${c.type}:${c.id}`} label={c.label || c.id} title={c.type} removeLabel={`Remove ${c.label || c.id}`} onOpen={() => openContext(c)} onRemove={() => setCtx(context.filter((x) => x !== c))} />
             ))}
           </div>
         )}
-        <textarea
+        <Textarea
           value={draft}
           rows={2}
           placeholder="Ask about your notes…  (/ for your saved prompts)"
@@ -250,9 +251,9 @@ export function ChatView({
           </label>
           <span className="grow" />
           {busy ? (
-            <button className="btn" onClick={() => currentId.current && void api.stopChat(currentId.current)}><Icon name="stop" size={14} /> Stop</button>
+            <Button variant="outline" onClick={() => currentId.current && void api.stopChat(currentId.current)}><Icon name="stop" size={14} /> Stop</Button>
           ) : (
-            <button className="btn primary" disabled={!draft.trim()} onClick={() => void send(draft)}><Icon name="send" size={14} /> Send</button>
+            <Button disabled={!draft.trim()} onClick={() => void send(draft)}><Icon name="send" size={14} /> Send</Button>
           )}
         </div>
       </div>

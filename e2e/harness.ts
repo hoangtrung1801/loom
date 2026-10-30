@@ -1,9 +1,13 @@
+import { existsSync } from 'node:fs';
 import { expect as pw } from '@playwright/test';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { createServer, type ViteDevServer } from 'vite';
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest';
 
-const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// CHROME_PATH wins; otherwise the first browser found in the usual image locations, else Playwright's own lookup.
+const CHROME =
+  process.env.CHROME_PATH ||
+  ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => existsSync(p));
 
 export interface Harness {
   page(): Page;

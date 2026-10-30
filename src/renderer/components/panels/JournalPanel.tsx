@@ -5,6 +5,7 @@ import { openJournal } from '../../actions.js';
 import { todayIso } from '../../editor/commands.js';
 import { useData } from '../../store/data.js';
 import { CardRow, Empty } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
 
 /** Recent journal days, so you can drag a thought from a journal onto a whiteboard. */
 export function JournalPanel() {
@@ -19,7 +20,7 @@ export function JournalPanel() {
   }, [version]);
   return (
     <div className="panel">
-      <button className="btn primary" onClick={() => void openJournal(todayIso())}>Today's journal</button>
+      <Button onClick={() => void openJournal(todayIso())}>Today's journal</Button>
       {days.length === 0 ? <Empty title="No journal entries yet" /> : <ul className="card-list">{days.map((d) => <CardRow key={d.id} card={d} />)}</ul>}
     </div>
   );

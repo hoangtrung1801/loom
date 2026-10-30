@@ -7,6 +7,9 @@ import { pickFiles } from '../../editor/commands.js';
 import { useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { CardRow, Empty, useDebounced } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 const SORTS = [
   { id: 'updated', label: 'Last edited' },
@@ -44,22 +47,22 @@ export function CardLibrary() {
     <div className="page">
       <div className="page-head">
         <h2 className="grow">Card Library</h2>
-        <button className="btn" onClick={() => void pickFiles('*/*', true).then((files) => importFiles(files))}><Icon name="upload" size={14} /> Import files</button>
-        <button className="btn primary" onClick={() => void newCard()}><Icon name="plus" size={14} /> New card</button>
+        <Button variant="outline" onClick={() => void pickFiles('*/*', true).then((files) => importFiles(files))}><Icon name="upload" size={14} /> Import files</Button>
+        <Button onClick={() => void newCard()}><Icon name="plus" size={14} /> New card</Button>
       </div>
       <div className="filters">
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter cards…" aria-label="Filter cards" />
-        <select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Filter by tag">
-          <option value="">All tags</option>
-          {tags.map((t) => <option key={t.tag} value={t.tag}>#{t.tag} ({t.count})</option>)}
-        </select>
-        <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort cards">
-          {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
+        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter cards…" aria-label="Filter cards" />
+        <NativeSelect value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Filter by tag">
+          <NativeSelectOption value="">All tags</NativeSelectOption>
+          {tags.map((t) => <NativeSelectOption key={t.tag} value={t.tag}>#{t.tag} ({t.count})</NativeSelectOption>)}
+        </NativeSelect>
+        <NativeSelect value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort cards">
+          {SORTS.map((s) => <NativeSelectOption key={s.id} value={s.id}>{s.label}</NativeSelectOption>)}
+        </NativeSelect>
       </div>
       <div className="kind-filter" role="group" aria-label="Card types">
         {CARD_KINDS.map((k) => (
-          <button key={k} className={`pill${kinds.includes(k) ? ' on' : ''}`} aria-pressed={kinds.includes(k)} onClick={() => toggleKind(k)}>{k}</button>
+          <Button key={k} size="xs" variant={kinds.includes(k) ? 'default' : 'outline'} className="rounded-full" aria-pressed={kinds.includes(k)} onClick={() => toggleKind(k)}>{k}</Button>
         ))}
       </div>
       {shown.length === 0 ? (

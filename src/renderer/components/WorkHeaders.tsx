@@ -7,6 +7,9 @@ import { api, fileUrl } from '../api.js';
 import { newTask, openCard } from '../actions.js';
 import { mutate, useData } from '../store/data.js';
 import { Icon } from './Icon.js';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 /** Status, priority, assignee, due date, parent and subtasks of a task card. Each field is its own synced value. */
 export function TaskHeader({ card }: { card: CardDetail }) {
@@ -37,17 +40,17 @@ export function TaskHeader({ card }: { card: CardDetail }) {
     <section className="work-header" aria-label="Task details">
       <div className="work-fields">
         <label>Status
-          <select value={statusOf(task.status)} onChange={(e) => set({ status: e.target.value })} aria-label="Task status">
-            {TASK_STATUSES.map((s) => <option key={s} value={s}>{TASK_STATUS_LABELS[s]}</option>)}
-          </select>
+          <NativeSelect value={statusOf(task.status)} onChange={(e) => set({ status: e.target.value })} aria-label="Task status">
+            {TASK_STATUSES.map((s) => <NativeSelectOption key={s} value={s}>{TASK_STATUS_LABELS[s]}</NativeSelectOption>)}
+          </NativeSelect>
         </label>
         <label>Priority
-          <select value={task.priority || 'medium'} onChange={(e) => set({ priority: e.target.value })} aria-label="Task priority">
-            {TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
+          <NativeSelect value={task.priority || 'medium'} onChange={(e) => set({ priority: e.target.value })} aria-label="Task priority">
+            {TASK_PRIORITIES.map((p) => <NativeSelectOption key={p} value={p}>{p}</NativeSelectOption>)}
+          </NativeSelect>
         </label>
         <label>Assignee
-          <input value={assignee} onChange={(e) => setAssignee(e.target.value)} onBlur={() => assignee !== task.assignee && set({ assignee })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} placeholder="Nobody" aria-label="Task assignee" />
+          <Input value={assignee} onChange={(e) => setAssignee(e.target.value)} onBlur={() => assignee !== task.assignee && set({ assignee })} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} placeholder="Nobody" aria-label="Task assignee" />
         </label>
         <label>Due
           <input type="date" value={task.due} onChange={(e) => set({ due: e.target.value })} aria-label="Task due date" />
@@ -59,7 +62,7 @@ export function TaskHeader({ card }: { card: CardDetail }) {
         <ul className="task-list">
           {task.children.map((c) => (
             <li key={c.id} className="subtask">
-              <input
+              <Input
                 type="checkbox"
                 checked={statusOf(c.status) === 'done'}
                 aria-label={`Mark ${c.title} done`}
@@ -70,7 +73,7 @@ export function TaskHeader({ card }: { card: CardDetail }) {
           ))}
         </ul>
         <form onSubmit={(e) => { e.preventDefault(); addSubtask(); }}>
-          <input value={subtask} onChange={(e) => setSubtask(e.target.value)} placeholder="Add a subtask" aria-label="Add a subtask" />
+          <Input value={subtask} onChange={(e) => setSubtask(e.target.value)} placeholder="Add a subtask" aria-label="Add a subtask" />
         </form>
       </div>
     </section>
@@ -94,10 +97,10 @@ export function LinkHeader({ card }: { card: CardDetail }) {
     <section className="work-header link-header" aria-label="Link details">
       {isFileId(card.fileId) && <img className="link-hero" src={fileUrl(card.fileId)} alt="" />}
       <label>Address
-        <input value={address} onChange={(e) => setAddress(e.target.value)} onBlur={() => address.trim() && address !== card.url && save({ url: address })} aria-label="Link address" />
+        <Input value={address} onChange={(e) => setAddress(e.target.value)} onBlur={() => address.trim() && address !== card.url && save({ url: address })} aria-label="Link address" />
       </label>
       <label>Description
-        <textarea value={desc} rows={2} onChange={(e) => setDesc(e.target.value)} onBlur={() => desc !== description && save({ description: desc })} aria-label="Link description" />
+        <Textarea value={desc} rows={2} onChange={(e) => setDesc(e.target.value)} onBlur={() => desc !== description && save({ description: desc })} aria-label="Link description" />
       </label>
       {/^https?:\/\//i.test(card.url) && <a className="file-link" href={card.url} target="_blank" rel="noreferrer noopener"><Icon name="globe" size={14} /> Open original · {new URL(card.url).hostname}</a>}
     </section>

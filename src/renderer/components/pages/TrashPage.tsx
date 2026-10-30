@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { mutate, useData } from '../../store/data.js';
 import { Empty, timeAgo } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
 
 type Trash = Awaited<ReturnType<typeof api.listTrash>>;
 
@@ -27,14 +28,14 @@ export function TrashPage() {
             <li key={c.id} className="trash-row">
               <span className="ellipsis grow">{c.title || 'Untitled'}</span>
               <em>{c.kind} · {timeAgo(c.updatedAt)}</em>
-              <button className="btn" onClick={() => void mutate(() => api.restoreCard(c.id))}>Restore</button>
+              <Button variant="outline" onClick={() => void mutate(() => api.restoreCard(c.id))}>Restore</Button>
             </li>
           ))}
           {trash.whiteboards.map((b) => (
             <li key={b.id} className="trash-row">
               <span className="ellipsis grow">{b.name || 'Untitled whiteboard'}</span>
               <em>whiteboard</em>
-              <button className="btn" onClick={() => void mutate(() => api.restoreWhiteboard(b.id))}>Restore</button>
+              <Button variant="outline" onClick={() => void mutate(() => api.restoreWhiteboard(b.id))}>Restore</Button>
             </li>
           ))}
         </ul>

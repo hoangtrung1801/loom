@@ -2,6 +2,9 @@ import { useState } from 'react';
 import type { EdgeView, PlacementView } from '../../../core/store.js';
 import { Icon, type IconName } from '../Icon.js';
 import type { Tool } from './useBoard.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 export const COLORS = ['', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'gray'] as const;
 
@@ -90,14 +93,14 @@ export function SelectionBar({
       <ColorPicker value={colors.size === 1 ? [...colors][0]! : '__mixed'} onPick={onColor} />
       {hasText && (
         <>
-          <button className="icon-btn" aria-label="Smaller text" onClick={() => onSize(-2)}><Icon name="minus" /></button>
-          <button className="icon-btn" aria-label="Larger text" onClick={() => onSize(2)}><Icon name="plus" /></button>
+          <Button variant="ghost" size="icon" aria-label="Smaller text" onClick={() => onSize(-2)}><Icon name="minus" /></Button>
+          <Button variant="ghost" size="icon" aria-label="Larger text" onClick={() => onSize(2)}><Icon name="plus" /></Button>
         </>
       )}
-      <button className="icon-btn" aria-label="Bring to front" title="Bring to front" onClick={onFront}><Icon name="chevronRight" className="up" /></button>
-      <button className="icon-btn" aria-label="Send to back" title="Send to back" onClick={onBack}><Icon name="chevronDown" /></button>
-      <button className="icon-btn" aria-label="Ask AI" title="Ask AI about this" onClick={onAsk}><Icon name="sparkle" /></button>
-      <button className="icon-btn" aria-label="Remove from whiteboard" title="Remove from whiteboard (Delete)" onClick={onRemove}><Icon name="trash" /></button>
+      <Button variant="ghost" size="icon" aria-label="Bring to front" title="Bring to front" onClick={onFront}><Icon name="chevronRight" className="up" /></Button>
+      <Button variant="ghost" size="icon" aria-label="Send to back" title="Send to back" onClick={onBack}><Icon name="chevronDown" /></Button>
+      <Button variant="ghost" size="icon" aria-label="Ask AI" title="Ask AI about this" onClick={onAsk}><Icon name="sparkle" /></Button>
+      <Button variant="ghost" size="icon" aria-label="Remove from whiteboard" title="Remove from whiteboard (Delete)" onClick={onRemove}><Icon name="trash" /></Button>
     </div>
   );
 }
@@ -106,7 +109,7 @@ export function EdgeBar({ edge, onChange, onDelete }: { edge: EdgeView; onChange
   const [label, setLabel] = useState(edge.label);
   return (
     <div className="selection-bar" role="toolbar" aria-label="Connection" onPointerDown={(e) => e.stopPropagation()}>
-      <input
+      <Input
         value={label}
         placeholder="Label"
         aria-label="Connection label"
@@ -115,13 +118,13 @@ export function EdgeBar({ edge, onChange, onDelete }: { edge: EdgeView; onChange
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); e.stopPropagation(); }}
       />
       <ColorPicker value={edge.color} onPick={(color) => onChange({ color })} />
-      <select value={edge.style} aria-label="Line style" onChange={(e) => onChange({ style: e.target.value })}>
-        <option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option>
-      </select>
-      <select value={edge.arrow} aria-label="Arrow" onChange={(e) => onChange({ arrow: e.target.value })}>
-        <option value="end">Arrow →</option><option value="start">Arrow ←</option><option value="both">Both ↔</option><option value="none">None</option>
-      </select>
-      <button className="icon-btn" aria-label="Delete connection" onClick={onDelete}><Icon name="trash" /></button>
+      <NativeSelect value={edge.style} aria-label="Line style" onChange={(e) => onChange({ style: e.target.value })}>
+        <NativeSelectOption value="solid">Solid</NativeSelectOption><NativeSelectOption value="dashed">Dashed</NativeSelectOption><NativeSelectOption value="dotted">Dotted</NativeSelectOption>
+      </NativeSelect>
+      <NativeSelect value={edge.arrow} aria-label="Arrow" onChange={(e) => onChange({ arrow: e.target.value })}>
+        <NativeSelectOption value="end">Arrow →</NativeSelectOption><NativeSelectOption value="start">Arrow ←</NativeSelectOption><NativeSelectOption value="both">Both ↔</NativeSelectOption><NativeSelectOption value="none">None</NativeSelectOption>
+      </NativeSelect>
+      <Button variant="ghost" size="icon" aria-label="Delete connection" onClick={onDelete}><Icon name="trash" /></Button>
     </div>
   );
 }

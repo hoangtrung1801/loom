@@ -3,6 +3,7 @@ import type { SearchHit } from '../../../core/store.js';
 import { api } from '../../api.js';
 import { useData } from '../../store/data.js';
 import { Highlight, useDebounced } from '../ui/bits.js';
+import { Input } from '@/components/ui/input';
 
 /** Popover to add an existing card to the whiteboard without leaving it. */
 export function ExistingCardPicker({ onPick, onClose }: { onPick(cardId: string): void; onClose(): void }) {
@@ -22,7 +23,7 @@ export function ExistingCardPicker({ onPick, onClose }: { onPick(cardId: string)
   }, [q, index]);
   return (
     <div className="popover picker" role="dialog" aria-label="Add existing card" onPointerDown={(e) => e.stopPropagation()}>
-      <input ref={input} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cards…" aria-label="Search cards to add" onKeyDown={(e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter' && hits[0]) onPick(hits[0].id); e.stopPropagation(); }} />
+      <Input ref={input} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cards…" aria-label="Search cards to add" onKeyDown={(e) => { if (e.key === 'Escape') onClose(); if (e.key === 'Enter' && hits[0]) onPick(hits[0].id); e.stopPropagation(); }} />
       <ul>
         {hits.map((h) => (
           <li key={h.id}><button onClick={() => onPick(h.id)}><Highlight text={h.titleMarked || h.title || 'Untitled'} /></button></li>

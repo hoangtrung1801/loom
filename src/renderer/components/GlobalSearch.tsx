@@ -6,6 +6,11 @@ import { openBoard, openCard, openChatTab, openTag } from '../actions.js';
 import { useUi } from '../store/ui.js';
 import { Icon, KIND_ICON, type IconName } from './Icon.js';
 import { Highlight, useDebounced } from './ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Command, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 
 type Scope = 'whiteboards' | 'whiteboardText' | 'chats' | 'tags';
 const SCOPES: { id: Scope; label: string }[] = [
@@ -30,11 +35,9 @@ function SearchBox({ close }: { close(): void }) {
   const [scopes, setScopes] = useState<Scope[]>(['whiteboards', 'whiteboardText', 'chats', 'tags']);
   const [sort, setSort] = useState<'relevance' | 'time'>('relevance');
   const [hits, setHits] = useState<AnyHit[]>([]);
-  const [cursor, setCursor] = useState(0);
   const q = useDebounced(query, 120);
-  const input = useRef<HTMLInputElement>(null);
-
-  useEffect(() => input.current?.focus(), []);
+  const [active, setActive] = useState('');
+  const newTab = useRef(false);
   useEffect(() => {
     let live = true;
     void api
@@ -51,7 +54,6 @@ function SearchBox({ close }: { close(): void }) {
       .then((h) => {
         if (!live) return;
         setHits(h);
-        setCursor(0);
       });
     return () => {
       live = false;
@@ -69,45 +71,48 @@ function SearchBox({ close }: { close(): void }) {
     }
   };
 
+  const byValue = (value: string): AnyHit | undefined => hits.find((h) => `${h.type}:${h.id}` === value);
   const onKey = (e: React.KeyboardEvent): void => {
-    if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(hits.length - 1, c + 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
-    else if (e.key === 'Enter' && hits[cursor]) { e.preventDefault(); go(hits[cursor]!, e.metaKey || e.ctrlKey); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      const h = byValue(active);
+      if (h) { e.preventDefault(); go(h, true); }
+    }
   };
 
   const toggle = <T,>(list: T[], v: T): T[] => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="dialog search-dialog" role="dialog" aria-label="Search" onKeyDown={onKey}>
-        <div className="search-input">
-          <Icon name="search" />
-          <input ref={input} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search everything…" aria-label="Search everything" role="combobox" aria-expanded aria-controls="search-results" />
-        </div>
-        <div className="search-filters">
-          {CARD_KINDS.map((k) => <button key={k} className={`pill${kinds.includes(k) ? ' on' : ''}`} aria-pressed={kinds.includes(k)} onClick={() => setKinds(toggle(kinds, k))}>{k}</button>)}
-          <span className="sep" />
-          {SCOPES.map((s) => <button key={s.id} className={`pill${scopes.includes(s.id) ? ' on' : ''}`} aria-pressed={scopes.includes(s.id)} onClick={() => setScopes(toggle(scopes, s.id))}>{s.label}</button>)}
-          <span className="sep" />
-          <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort results"><option value="relevance">Relevance</option><option value="time">Last edited</option></select>
-        </div>
-        <ul id="search-results" className="results" role="listbox">
-          {hits.map((h, i) => (
-            <li key={`${h.type}:${h.id}`} role="option" aria-selected={i === cursor}>
-              <button className={`result${i === cursor ? ' selected' : ''}`} onMouseMove={() => setCursor(i)} onClick={(e) => go(h, e.metaKey || e.ctrlKey)}>
-                <span className="title ellipsis">
+    <Dialog open onOpenChange={(o) => !o && close()}>
+      <DialogContent aria-label="Search" showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0">
+        <DialogTitle className="sr-only">Search</DialogTitle>
+        <DialogDescription className="sr-only">Search cards, whiteboards, board text, chats and tags.</DialogDescription>
+        <Command shouldFilter={false} value={active} onValueChange={setActive} onKeyDown={onKey} onClickCapture={(e) => { newTab.current = e.metaKey || e.ctrlKey; }}>
+          <CommandInput value={query} onValueChange={setQuery} placeholder="Search everything…" aria-label="Search everything" />
+          <div className="search-filters flex flex-wrap items-center gap-1.5 border-b px-4 py-2">
+            {CARD_KINDS.map((k) => <Button key={k} size="xs" variant={kinds.includes(k) ? 'default' : 'outline'} className="rounded-full" aria-pressed={kinds.includes(k)} onClick={() => setKinds(toggle(kinds, k))}>{k}</Button>)}
+            <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
+            {SCOPES.map((s) => <Button key={s.id} size="xs" variant={scopes.includes(s.id) ? 'default' : 'outline'} className="rounded-full" aria-pressed={scopes.includes(s.id)} onClick={() => setScopes(toggle(scopes, s.id))}>{s.label}</Button>)}
+            <Separator orientation="vertical" className="mx-1 data-[orientation=vertical]:h-4" />
+            <Select value={sort} onValueChange={(v) => setSort(v as typeof sort)}>
+              <SelectTrigger size="sm" className="h-6 gap-1 px-2 text-xs" aria-label="Sort results"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="relevance">Relevance</SelectItem><SelectItem value="time">Last edited</SelectItem></SelectContent>
+            </Select>
+          </div>
+          <CommandList id="search-results" className="results max-h-[50vh] p-1.5">
+            {hits.length === 0 && <div className="none py-6 text-center text-muted-foreground">No results</div>}
+            {hits.map((h) => (
+              <CommandItem key={`${h.type}:${h.id}`} value={`${h.type}:${h.id}`} className="result flex-col items-start gap-0.5" onSelect={() => { go(h, newTab.current); newTab.current = false; }}>
+                <span className="flex min-w-0 max-w-full items-center gap-2 font-medium">
                   <Icon name={h.type === 'card' ? KIND_ICON[h.kind] ?? 'card' : TYPE_ICON[h.type]} size={14} />
-                  <Highlight text={h.titleMarked || h.title || 'Untitled'} />
+                  <span className="truncate"><Highlight text={h.titleMarked || h.title || 'Untitled'} /></span>
                 </span>
-                {h.snippet && <span className="snippet ellipsis"><Highlight text={h.snippet} /></span>}
-              </button>
-            </li>
-          ))}
-          {hits.length === 0 && <li className="none">No results</li>}
-        </ul>
+                {h.snippet && <span className="snippet max-w-full truncate"><Highlight text={h.snippet} /></span>}
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
         <footer className="dialog-foot"><kbd>↑↓</kbd> move <kbd>Enter</kbd> open <kbd>⌘Enter</kbd> new tab <kbd>Esc</kbd> close</footer>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

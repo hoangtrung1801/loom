@@ -7,6 +7,7 @@ import { Icon } from '../Icon.js';
 import { Editor } from '../../editor/Editor.js';
 import { editCard, useCardDetail } from '../../store/edits.js';
 import { openByTitle } from '../../actions.js';
+import { Button } from '@/components/ui/button';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 const iso = (y: number, m: number, d: number): string => `${y}-${pad(m + 1)}-${pad(d)}`;
@@ -50,9 +51,9 @@ export function JournalApp() {
     <div className="journal-app">
       <aside className="calendar" aria-label="Calendar">
         <div className="cal-head">
-          <button className="icon-btn" aria-label="Previous month" onClick={() => shift(-1)}><Icon name="chevronRight" className="flip" /></button>
+          <Button variant="ghost" size="icon" aria-label="Previous month" onClick={() => shift(-1)}><Icon name="chevronRight" className="flip" /></Button>
           <strong className="grow">{new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
-          <button className="icon-btn" aria-label="Next month" onClick={() => shift(1)}><Icon name="chevronRight" /></button>
+          <Button variant="ghost" size="icon" aria-label="Next month" onClick={() => shift(1)}><Icon name="chevronRight" /></Button>
         </div>
         <div className="cal-grid">
           {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <span key={i} className="dow">{d}</span>)}
@@ -71,8 +72,8 @@ export function JournalApp() {
             ),
           )}
         </div>
-        <button className="btn" onClick={() => { setDay(todayIso()); setMonth(todayIso().slice(0, 7)); }}>Today</button>
-        <button className="btn" onClick={() => void openJournal(day)}>Open as card</button>
+        <Button variant="outline" onClick={() => { setDay(todayIso()); setMonth(todayIso().slice(0, 7)); }}>Today</Button>
+        <Button variant="outline" onClick={() => void openJournal(day)}>Open as card</Button>
       </aside>
       <div className="journal-day">
         <h2>{new Date(`${day}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</h2>

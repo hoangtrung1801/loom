@@ -83,7 +83,7 @@ describe('two Electron devices syncing through a server', () => {
     // and B can find it with global search
     await b.keyboard.press('Control+o');
     await b.fill('input[aria-label="Search everything"]', 'other side');
-    await pw(b.locator('.result').first()).toContainText('Made on device A');
+    await pw(b.locator('[cmdk-item]').first()).toContainText('Made on device A');
     await b.keyboard.press('Escape');
 
     // B edits the same card; A sees the change

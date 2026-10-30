@@ -8,6 +8,9 @@ import { editCard } from '../../store/edits.js';
 import { isFileId } from '../../../core/fileid.js';
 import { Markdown } from '../chat/Markdown.js';
 import { Icon, KIND_ICON } from '../Icon.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 export interface ObjectHandlers {
   down(e: React.PointerEvent, p: PlacementView): void;
@@ -74,7 +77,7 @@ function CardObject(props: Props) {
         ) : (
           <strong className="ellipsis">{p.title || 'Untitled'}</strong>
         )}
-        <button className="icon-btn" aria-label="Open card" title="Open card" onPointerDown={(e) => e.stopPropagation()} onClick={() => handlers.open(p)}><Icon name="export" size={12} /></button>
+        <Button variant="ghost" size="icon" aria-label="Open card" title="Open card" onPointerDown={(e) => e.stopPropagation()} onClick={() => handlers.open(p)}><Icon name="export" size={12} /></Button>
       </header>
       <div className="obj-body" onPointerDown={(e) => editing && e.stopPropagation()}>
         {media && p.cardKind === 'image' && <img src={fileUrl(p.fileId)} alt={p.title} draggable={false} />}
@@ -108,7 +111,7 @@ function TextObject(props: Props) {
   return (
     <Frame {...props} className="text-obj">
       {editing ? (
-        <textarea
+        <Textarea
           ref={area}
           value={draft}
           style={{ fontSize: p.size }}
@@ -143,7 +146,7 @@ function SectionObject(props: Props) {
     <Frame {...props} className="section-obj">
       <header>
         {editing ? (
-          <input
+          <Input
             autoFocus
             onFocus={(e) => e.currentTarget.select()}
             value={draft}

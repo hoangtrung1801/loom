@@ -9,7 +9,7 @@ const cardObjs = () => page().locator('.obj.card-obj');
 async function openSeedBoard(): Promise<void> {
   await page().click('.app-link:has-text("Whiteboards")');
   await page().click('.tree-main');
-  await page().waitForSelector('.obj');
+  await page().waitForSelector('.canvas[data-ready] .obj');
 }
 interface Placement { id: string; kind: string; x: number; y: number; w: number; h: number; text: string; sectionId: string; parentId: string; color: string; size: number; cardId: string; title: string }
 async function boardData(): Promise<{ placements: Placement[]; edges: { id: string; from: string; to: string; label: string; style: string; color: string; arrow: string }[] }> {
@@ -77,6 +77,7 @@ describe('whiteboards', () => {
     expect(Math.round(after.y - before.box.y)).toBe(90);
 
     await pw(card).toHaveClass(/selected/);
+    await pw(card.locator('.handle.resize')).toBeVisible();
     const handle = (await card.locator('.handle.resize').boundingBox())!;
     await drag({ x: handle.x + 6, y: handle.y + 6 }, { x: handle.x + 86, y: handle.y + 56 });
     expect(Math.round((await card.boundingBox())!.width - before.box.width)).toBe(80);
@@ -232,7 +233,7 @@ describe('whiteboards', () => {
   it('creates sub-whiteboards and moves cards into them by dropping on the tile', async () => {
     await openSeedBoard();
     await page().mouse.click(1000, 120, { button: 'right' });
-    await page().click('.context-menu button:has-text("New sub-whiteboard here")');
+    await page().click('[role^="menuitem"]:has-text("New sub-whiteboard here")');
     await pw(page().locator('.board-obj')).toHaveCount(1);
     const tile = await centerOf(page().locator('.board-obj'));
     const head = (await cardObjs().nth(1).locator('header').boundingBox())!;

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { newBoard, newCard, newTask, openApp, openJournal, openNewTab } from '../actions.js';
 import { useSync } from '../store/sync.js';
 import { useTabs, activeTab } from '../store/tabs.js';
 import { useUi, type PanelId } from '../store/ui.js';
 import { PANELS, panelsFor } from './panels/registry.js';
 import { Icon, type IconName } from './Icon.js';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 interface Command {
   id: string;
@@ -51,44 +53,29 @@ export function CommandPalette() {
 }
 
 function Palette({ close }: { close(): void }) {
-  const [query, setQuery] = useState('');
-  const [cursor, setCursor] = useState(0);
   const all = useMemo(commands, []);
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), []);
-  const shown = useMemo(() => {
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return all.filter((c) => words.every((w) => c.label.toLowerCase().includes(w)));
-  }, [all, query]);
-  useEffect(() => setCursor(0), [query]);
-
-  const run = (c: Command | undefined): void => {
-    if (!c) return;
+  const run = (c: Command): void => {
     close();
     c.run();
   };
-  const onKey = (e: React.KeyboardEvent): void => {
-    if (e.key === 'Escape') close();
-    else if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(shown.length - 1, c + 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
-    else if (e.key === 'Enter') { e.preventDefault(); run(shown[cursor]); }
-  };
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="dialog palette" role="dialog" aria-label="Command palette" onKeyDown={onKey}>
-        <div className="search-input"><Icon name="command" /><input ref={input} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type a command…" aria-label="Command" /></div>
-        <ul className="results" role="listbox">
-          {shown.map((c, i) => (
-            <li key={c.id} role="option" aria-selected={i === cursor}>
-              <button className={`result${i === cursor ? ' selected' : ''}`} onMouseMove={() => setCursor(i)} onClick={() => run(c)}>
-                <span className="title"><Icon name={c.icon} size={14} />{c.label}</span>
+    <Dialog open onOpenChange={(o) => !o && close()}>
+      <DialogContent aria-label="Command palette" showCloseButton={false} className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0">
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <DialogDescription className="sr-only">Run any action by name.</DialogDescription>
+        <Command>
+          <CommandInput placeholder="Type a command…" aria-label="Command" />
+          <CommandList className="max-h-[50vh] p-1.5">
+            <CommandEmpty className="results none py-6 text-muted-foreground">No commands</CommandEmpty>
+            {all.map((c) => (
+              <CommandItem key={c.id} value={c.label} className="result justify-between" onSelect={() => run(c)}>
+                <span className="flex min-w-0 items-center gap-2 font-medium"><Icon name={c.icon} size={14} />{c.label}</span>
                 {c.hint && <kbd>{c.hint}</kbd>}
-              </button>
-            </li>
-          ))}
-          {shown.length === 0 && <li className="none">No commands</li>}
-        </ul>
-      </div>
-    </div>
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </DialogContent>
+    </Dialog>
   );
 }

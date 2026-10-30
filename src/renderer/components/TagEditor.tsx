@@ -3,6 +3,7 @@ import { openTag } from '../actions.js';
 import { api } from '../api.js';
 import { mutate, useData } from '../store/data.js';
 import { Icon } from './Icon.js';
+import { Chip } from '@/components/ui/chip';
 
 /** Tag chips for one card with an add field that suggests existing tags. */
 export function TagEditor({ cardId, tags }: { cardId: string; tags: string[] }) {
@@ -17,10 +18,7 @@ export function TagEditor({ cardId, tags }: { cardId: string; tags: string[] }) 
   return (
     <div className="chips" aria-label="Tags">
       {tags.map((t) => (
-        <span className="chip" key={t}>
-          <button className="chip-label" onClick={() => openTag(t)} title={`Open #${t}`}>#{t}</button>
-          <button aria-label={`Remove tag ${t}`} onClick={() => void mutate(() => api.removeTag(cardId, t))}><Icon name="close" size={11} /></button>
-        </span>
+        <Chip key={t} label={`#${t}`} title={`Open #${t}`} removeLabel={`Remove tag ${t}`} onOpen={() => openTag(t)} onRemove={() => void mutate(() => api.removeTag(cardId, t))} />
       ))}
       <form onSubmit={(e) => { e.preventDefault(); add(); }}>
         <input value={draft} list={listId} onChange={(e) => setDraft(e.target.value)} placeholder="Add tag" aria-label="Add tag" />

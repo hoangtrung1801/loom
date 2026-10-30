@@ -5,6 +5,7 @@ import { ChatView } from '../chat/ChatView.js';
 import { Icon } from '../Icon.js';
 import { Empty, timeAgo } from '../ui/bits.js';
 import { pruneTabs } from '../../actions.js';
+import { Button } from '@/components/ui/button';
 
 /** All conversations on the left, the selected one on the right. */
 export function ChatsApp({ openId }: { openId?: string }) {
@@ -21,7 +22,7 @@ export function ChatsApp({ openId }: { openId?: string }) {
   return (
     <div className="chats-app">
       <aside className="chat-list" aria-label="Conversations">
-        <button className="btn primary" onClick={() => { setSelected(null); setNonce((n) => n + 1); }}><Icon name="plus" size={14} /> New chat</button>
+        <Button onClick={() => { setSelected(null); setNonce((n) => n + 1); }}><Icon name="plus" size={14} /> New chat</Button>
         {chats.length === 0 && <Empty title="No chats yet" />}
         <ul>
           {chats.map((c) => (
@@ -31,7 +32,7 @@ export function ChatsApp({ openId }: { openId?: string }) {
                 <span className="snippet ellipsis">{c.preview}</span>
                 <span className="meta">{timeAgo(c.updatedAt)}</span>
               </button>
-              <button className="icon-btn" aria-label={`Delete ${c.title || 'chat'}`} onClick={() => void remove(c.id)}><Icon name="trash" size={13} /></button>
+              <Button variant="ghost" size="icon" aria-label={`Delete ${c.title || 'chat'}`} onClick={() => void remove(c.id)}><Icon name="trash" size={13} /></Button>
             </li>
           ))}
         </ul>

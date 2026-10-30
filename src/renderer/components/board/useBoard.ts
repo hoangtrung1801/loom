@@ -129,8 +129,9 @@ export const useBoard = create<BoardState>((set, get) => {
         await api.updatePlacements(patches);
         record({ label, undo: async () => { await api.updatePlacements(before); await changed(); }, redo: async () => { await api.updatePlacements(patches); await changed(); } });
       });
-      set({ draft: {} });
+      // Keep the live geometry until the saved one is loaded, or the object snaps back for a frame.
       await changed();
+      set({ draft: {} });
     },
 
     async addCard(cardId, x, y) {

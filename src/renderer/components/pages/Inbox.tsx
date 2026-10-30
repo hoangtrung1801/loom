@@ -5,6 +5,8 @@ import { newCard, openCard } from '../../actions.js';
 import { mutate, useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { CardRow, Empty } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 /** New cards land here. Archiving a card removes it from the inbox without deleting it. */
 export function Inbox() {
@@ -24,8 +26,8 @@ export function Inbox() {
     <div className="page">
       <div className="page-head">
         <h2 className="grow">Inbox</h2>
-        <button className="btn" disabled={!cards.length} onClick={() => void mutate(() => Promise.all(cards.map((c) => api.setInbox(c.id, false))))}>Archive all</button>
-        <button className="btn primary" onClick={() => void newCard()}><Icon name="plus" size={14} /> New card</button>
+        <Button variant="outline" disabled={!cards.length} onClick={() => void mutate(() => Promise.all(cards.map((c) => api.setInbox(c.id, false))))}>Archive all</Button>
+        <Button onClick={() => void newCard()}><Icon name="plus" size={14} /> New card</Button>
       </div>
       {tasks.length > 0 && (
         <section aria-label="Unfinished to-dos">
@@ -51,7 +53,7 @@ export function Inbox() {
 export function TaskRow({ task }: { task: TaskView }) {
   return (
     <li className="task">
-      <input
+      <Input
         type="checkbox"
         checked={task.checked}
         aria-label={task.text}

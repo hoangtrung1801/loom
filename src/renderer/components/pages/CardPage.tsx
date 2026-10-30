@@ -12,10 +12,21 @@ import { ConvertBar, LinkHeader, TaskHeader } from '../WorkHeaders.js';
 import { Empty, timeAgo } from '../ui/bits.js';
 import { isFileId } from '../../../core/fileid.js';
 import type { CardDetail } from '../../../core/store.js';
+import { Badge } from '@/components/ui/badge';
 
 const PdfView = lazy(() => import('../pdf/PdfView.js'));
 
 /** The full-page view of one card. What it shows above the notes depends on the card's kind. */
+/** Card kind → tinted badge colours (tokens come from the Ink & Thread palette). */
+const KIND_BADGE: Record<string, string> = {
+  note: 'border-transparent bg-[var(--k-note-bg)] text-[var(--k-note)]',
+  task: 'border-transparent bg-[var(--k-task-bg)] text-[var(--k-task)]',
+  link: 'border-transparent bg-[var(--k-link-bg)] text-[var(--k-link)]',
+  web: 'border-transparent bg-[var(--k-link-bg)] text-[var(--k-link)]',
+  memo: 'border-transparent bg-[var(--k-memo-bg)] text-[var(--k-memo)]',
+  journal: 'border-transparent bg-[var(--k-journal-bg)] text-[var(--k-journal)]',
+};
+
 export function CardPage({ id }: { id: string }) {
   const { card, loading } = useCardDetail(id);
   const scroller = useRef<HTMLDivElement>(null);
@@ -38,7 +49,7 @@ export function CardPage({ id }: { id: string }) {
     <div className="card-page" ref={scroller}>
       <article className="card-doc">
         <p className="card-meta">
-          <span className={`kind kind-chip k-${card.kind}`}>{card.kind}</span>
+          <Badge className={`kind capitalize ${KIND_BADGE[card.kind] ?? KIND_BADGE.note}`}>{card.kind}</Badge>
           <span>Edited {timeAgo(card.updatedAt)}</span>
           <span>{card.wordCount} words</span>
           <ConvertBar card={card} />

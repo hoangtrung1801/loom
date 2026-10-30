@@ -7,6 +7,9 @@ import { mutate, useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { menuFor } from '../ui/ContextMenu.js';
 import { Empty, useDebounced } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 const TASK_MIME = 'application/x-loom-task';
 /** The columns every board has; Blocked and On hold appear only while they hold something. */
@@ -76,22 +79,22 @@ export function TasksApp() {
           <button className={`seg-btn${view === 'board' ? ' on' : ''}`} aria-pressed={view === 'board'} onClick={() => setView('board')}>Board</button>
           <button className={`seg-btn${view === 'list' ? ' on' : ''}`} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</button>
         </div>
-        <button className="btn primary" onClick={() => void newTask()}><Icon name="plus" size={14} /> New task</button>
+        <Button onClick={() => void newTask()}><Icon name="plus" size={14} /> New task</Button>
       </div>
       <div className="filters">
         <input className="filter-search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Filter tasks…" aria-label="Filter tasks" />
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Filter by priority">
-          <option value="">Any priority</option>
-          {TASK_PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Filter by label">
-          <option value="">Any label</option>
-          {everyone.labels.map((l) => <option key={l} value={l}>#{l}</option>)}
-        </select>
-        <select value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label="Filter by assignee">
-          <option value="">Anyone</option>
-          {everyone.assignees.map((a) => <option key={a} value={a}>{a}</option>)}
-        </select>
+        <NativeSelect value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Filter by priority">
+          <NativeSelectOption value="">Any priority</NativeSelectOption>
+          {TASK_PRIORITIES.map((p) => <NativeSelectOption key={p} value={p}>{p}</NativeSelectOption>)}
+        </NativeSelect>
+        <NativeSelect value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Filter by label">
+          <NativeSelectOption value="">Any label</NativeSelectOption>
+          {everyone.labels.map((l) => <NativeSelectOption key={l} value={l}>#{l}</NativeSelectOption>)}
+        </NativeSelect>
+        <NativeSelect value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label="Filter by assignee">
+          <NativeSelectOption value="">Anyone</NativeSelectOption>
+          {everyone.assignees.map((a) => <NativeSelectOption key={a} value={a}>{a}</NativeSelectOption>)}
+        </NativeSelect>
         <label className="check"><input type="checkbox" checked={overdue} onChange={(e) => setOverdue(e.target.checked)} /> Overdue</label>
       </div>
 
@@ -126,9 +129,9 @@ export function TasksApp() {
 
 function StatusSelect({ task, onChange }: { task: WorkTask; onChange(id: string, status: string): void }) {
   return (
-    <select value={statusOf(task.status)} onChange={(e) => onChange(task.id, e.target.value)} aria-label={`Status of ${task.title}`}>
-      {TASK_STATUSES.map((s) => <option key={s} value={s}>{TASK_STATUS_LABELS[s]}</option>)}
-    </select>
+    <NativeSelect value={statusOf(task.status)} onChange={(e) => onChange(task.id, e.target.value)} aria-label={`Status of ${task.title}`}>
+      {TASK_STATUSES.map((s) => <NativeSelectOption key={s} value={s}>{TASK_STATUS_LABELS[s]}</NativeSelectOption>)}
+    </NativeSelect>
   );
 }
 
@@ -167,7 +170,7 @@ function Column({ status, items, onDrop }: { status: string; items: WorkTask[]; 
         {items.map((t) => <TaskCardView key={t.id} task={t} onMove={onDrop} />)}
       </ul>
       <form onSubmit={(e) => { e.preventDefault(); add(); }}>
-        <Icon name="plus" size={14} /><input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task" aria-label={`Add a task to ${label}`} />
+        <Icon name="plus" size={14} /><Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a task" aria-label={`Add a task to ${label}`} />
       </form>
     </section>
   );

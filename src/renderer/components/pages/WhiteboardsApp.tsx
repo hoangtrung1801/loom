@@ -5,6 +5,7 @@ import { useData } from '../../store/data.js';
 import { Icon } from '../Icon.js';
 import { menuFor } from '../ui/ContextMenu.js';
 import { Empty, timeAgo } from '../ui/bits.js';
+import { Button } from '@/components/ui/button';
 
 /** All whiteboards as a tree: sub-whiteboards nest under the board that holds their shortcut. */
 export function WhiteboardsApp() {
@@ -25,9 +26,9 @@ export function WhiteboardsApp() {
           { separator: true },
           { label: 'Move to trash', danger: true, onClick: () => void trashBoard(b.id) },
         ])}>
-          <button className="icon-btn" aria-label={expanded ? 'Collapse' : 'Expand'} style={{ visibility: kids.length ? 'visible' : 'hidden' }} onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })}>
+          <Button variant="ghost" size="icon" aria-label={expanded ? 'Collapse' : 'Expand'} style={{ visibility: kids.length ? 'visible' : 'hidden' }} onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(b.id)) n.delete(b.id); else n.add(b.id); return n; })}>
             <Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={14} />
-          </button>
+          </Button>
           <button className="tree-main" onClick={() => openBoard(b.id)}>
             <Icon name="board" size={14} />
             <span className="ellipsis">{b.name || 'Untitled whiteboard'}</span>
@@ -44,7 +45,7 @@ export function WhiteboardsApp() {
     <div className="page">
       <div className="page-head">
         <h2 className="grow">Whiteboards</h2>
-        <button className="btn primary" onClick={() => void newBoard()}><Icon name="plus" size={14} /> New whiteboard</button>
+        <Button onClick={() => void newBoard()}><Icon name="plus" size={14} /> New whiteboard</Button>
       </div>
       {roots.length === 0 ? <Empty title="No whiteboards yet">Create one to start laying cards out spatially.</Empty> : <ul className="tree" aria-label="Whiteboards">{roots.map((b) => row(b, 0))}</ul>}
     </div>
