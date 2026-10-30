@@ -4,6 +4,7 @@ import { Icon } from './Icon.js';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { BorderBeam } from '@/components/ui/border-beam';
 
 const RESEARCH_PROMPT = (topic: string): string =>
   `Research the topic "${topic}" using my notes. First search my cards and whiteboards for what I already know, then give me: ` +
@@ -38,6 +39,7 @@ export function ResearchDialog() {
             <Button type="submit" disabled={!topic.trim()}>Start research</Button>
           </DialogFooter>
         </form>
+        <BorderBeam size={120} duration={8} colorFrom="var(--accent)" colorTo="var(--accent-text)" />
       </DialogContent>
     </Dialog>
   );

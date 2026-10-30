@@ -62,7 +62,7 @@ export function CardLibrary() {
       </div>
       <div className="kind-filter" role="group" aria-label="Card types">
         {CARD_KINDS.map((k) => (
-          <button key={k} className={`pill${kinds.includes(k) ? ' on' : ''}`} aria-pressed={kinds.includes(k)} onClick={() => toggleKind(k)}>{k}</button>
+          <Button key={k} size="xs" variant={kinds.includes(k) ? 'default' : 'outline'} className="rounded-full" aria-pressed={kinds.includes(k)} onClick={() => toggleKind(k)}>{k}</Button>
         ))}
       </div>
       {shown.length === 0 ? (

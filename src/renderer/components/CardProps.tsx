@@ -5,6 +5,7 @@ import { openTag } from '../actions.js';
 import { toast, useData } from '../store/data.js';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
+import { Button } from '@/components/ui/button';
 
 /** Values of the properties defined by a card's tags (the "properties" of Heptabase's tag databases). */
 export function CardProps({ cardId }: { cardId: string }) {
@@ -65,15 +66,17 @@ export function PropInput({ type, options, value, onCommit }: { type: string; op
       return (
         <span className="multi">
           {options.map((o) => (
-            <button
+            <Button
               key={o}
               type="button"
-              className={`pill${picked.includes(o) ? ' on' : ''}`}
+              size="xs"
+              variant={picked.includes(o) ? 'default' : 'outline'}
+              className="rounded-full"
               aria-pressed={picked.includes(o)}
               onClick={() => onCommit(JSON.stringify(picked.includes(o) ? picked.filter((x) => x !== o) : [...picked, o]))}
             >
               {o}
-            </button>
+            </Button>
           ))}
         </span>
       );

@@ -78,8 +78,8 @@ export function LinksApp() {
       </form>
       <div className="filters">
         <div className="tag-pills" role="group" aria-label="Filter links by tag">
-          <button className={`pill${tag === '' ? ' on' : ''}`} aria-pressed={tag === ''} onClick={() => setTag('')}>All</button>
-          {allTags.map((t) => <button key={t} className={`pill${tag === t ? ' on' : ''}`} aria-pressed={tag === t} onClick={() => setTag(tag === t ? '' : t)}>#{t}</button>)}
+          <Button size="xs" variant={tag === '' ? 'default' : 'outline'} className="rounded-full" aria-pressed={tag === ''} onClick={() => setTag('')}>All</Button>
+          {allTags.map((t) => <Button key={t} size="xs" variant={tag === t ? 'default' : 'outline'} className="rounded-full" aria-pressed={tag === t} onClick={() => setTag(tag === t ? '' : t)}>#{t}</Button>)}
         </div>
         <input className="filter-search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Search links" aria-label="Search links" />
       </div>
