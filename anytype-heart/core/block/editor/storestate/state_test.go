@@ -1,0 +1,460 @@
+package storestate
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	anystore "github.com/anyproto/any-store"
+	"github.com/anyproto/any-store/anyenc"
+	"github.com/anyproto/any-store/query"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/anyproto/anytype-heart/pb"
+)
+
+var ctx = context.Background()
+
+func TestStoreStateTx_AddSeq(t *testing.T) {
+	t.Run("empty returns zero", func(t *testing.T) {
+		fx := newFixture(t, "test", DefaultHandler{Name: "tcoll"})
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, tx.Commit())
+		}()
+		assert.Equal(t, uint64(0), tx.GetMaxAddSeq())
+	})
+	t.Run("update and persist", func(t *testing.T) {
+		fx := newFixture(t, "test", DefaultHandler{Name: "tcoll"})
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		tx.UpdateMaxAddSeq(5)
+		assert.Equal(t, uint64(5), tx.GetMaxAddSeq())
+		require.NoError(t, tx.Commit())
+
+		tx, err = fx.NewTx(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(5), tx.GetMaxAddSeq())
+		tx.UpdateMaxAddSeq(10)
+		assert.Equal(t, uint64(10), tx.GetMaxAddSeq())
+		// smaller value should not update
+		tx.UpdateMaxAddSeq(3)
+		assert.Equal(t, uint64(10), tx.GetMaxAddSeq())
+		require.NoError(t, tx.Commit())
+
+		tx, err = fx.NewTx(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, uint64(10), tx.GetMaxAddSeq())
+		require.NoError(t, tx.Commit())
+	})
+}
+
+func TestStoreStateTx_ApplyChangeSet(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		fx := newFixture(t, "objId", DefaultHandler{Name: "testColl"})
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value"}`))
+		require.NoError(t, tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		}))
+		require.NoError(t, tx.Commit())
+
+		coll, err := fx.Collection(ctx, "testColl")
+		require.NoError(t, err)
+		doc, err := coll.FindId(ctx, "1")
+		require.NoError(t, err)
+		assert.Equal(t, "value", string(doc.Value().GetStringBytes("key")))
+
+	})
+	t.Run("modify", func(t *testing.T) {
+		fx := newFixture(t, "objId", DefaultHandler{Name: "testColl"})
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value"}`))
+		assert.NoError(t, build.Modify("testColl", "1", []string{"key"}, pb.ModifyOp_Set, `"valueChanged"`))
+		assert.NoError(t, build.Modify("testColl", "1", []string{"num"}, pb.ModifyOp_Inc, `2`))
+
+		require.NoError(t, tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		}))
+		require.NoError(t, tx.Commit())
+
+		coll, err := fx.Collection(ctx, "testColl")
+		require.NoError(t, err)
+		count, err := coll.Count(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+		doc, err := coll.FindId(ctx, "1")
+		require.NoError(t, err)
+		assert.Equal(t, "valueChanged", string(doc.Value().GetStringBytes("key")))
+		assert.Equal(t, float64(2), doc.Value().GetFloat64("num"))
+	})
+	t.Run("delete", func(t *testing.T) {
+		fx := newFixture(t, "objId", DefaultHandler{Name: "testColl"})
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value"}`))
+		require.NoError(t, tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		}))
+		require.NoError(t, tx.Commit())
+
+		tx, err = fx.NewTx(ctx)
+		require.NoError(t, err)
+		build = &Builder{}
+		build.Delete("testColl", "1")
+		require.NoError(t, tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		}))
+		require.NoError(t, tx.Commit())
+
+		coll, err := fx.Collection(ctx, "testColl")
+		require.NoError(t, err)
+		count, err := coll.Count(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 0, count)
+	})
+}
+
+func TestApplyChangeSetErrorHandling(t *testing.T) {
+	t.Run("unknown handler error is logged and skipped", func(t *testing.T) {
+		handler := &errorHandler{
+			Name:      "testColl",
+			createErr: fmt.Errorf("some unknown error from handler"),
+		}
+		fx := newFixture(t, "objId", handler)
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+
+		build := &Builder{}
+		// First change will fail with unknown error (should be skipped)
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value1"}`))
+		// Second change should still be applied
+		handler.createErr = nil
+		assert.NoError(t, build.Create("testColl", "2", `{"key":"value2"}`))
+
+		err = tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		})
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+
+		// Only second document should exist
+		coll, err := fx.Collection(ctx, "testColl")
+		require.NoError(t, err)
+		_, err = coll.FindId(ctx, "2")
+		require.NoError(t, err)
+	})
+
+	t.Run("ErrCritical breaks the loop", func(t *testing.T) {
+		handler := &errorHandler{
+			Name:      "testColl",
+			createErr: fmt.Errorf("db failure: %w", ErrCritical),
+		}
+		fx := newFixture(t, "objId", handler)
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		defer func() {
+			_ = tx.Rollback()
+		}()
+
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value1"}`))
+		assert.NoError(t, build.Create("testColl", "2", `{"key":"value2"}`))
+
+		err = tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrCritical)
+	})
+
+	t.Run("ErrIgnore continues silently", func(t *testing.T) {
+		handler := &errorHandler{
+			Name:      "testColl",
+			createErr: ErrIgnore,
+		}
+		fx := newFixture(t, "objId", handler)
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value1"}`))
+
+		err = tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		})
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+	})
+
+	t.Run("modify on non-existent document is skipped", func(t *testing.T) {
+		handler := DefaultHandler{Name: "testColl"}
+		fx := newFixture(t, "objId", handler)
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+
+		build := &Builder{}
+		// Modify a document that doesn't exist
+		assert.NoError(t, build.Modify("testColl", "nonexistent", nil, pb.ModifyOp_Set, nil))
+
+		err = tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		})
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+	})
+
+	t.Run("ErrValidation is logged and skipped", func(t *testing.T) {
+		handler := &errorHandler{
+			Name:      "testColl",
+			createErr: fmt.Errorf("validation failed: %w", ErrValidation),
+		}
+		fx := newFixture(t, "objId", handler)
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value1"}`))
+
+		err = tx.ApplyChangeSet(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		})
+		require.NoError(t, err)
+		require.NoError(t, tx.Commit())
+	})
+
+	t.Run("ApplyChangeSetReturnAllErrors returns validation error", func(t *testing.T) {
+		handler := &errorHandler{
+			Name:      "testColl",
+			createErr: fmt.Errorf("validation failed: %w", ErrValidation),
+		}
+		fx := newFixture(t, "objId", handler)
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		defer func() {
+			_ = tx.Rollback()
+		}()
+
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value1"}`))
+
+		err = tx.ApplyChangeSetReturnAllErrors(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrValidation)
+	})
+
+	t.Run("ApplyChangeSetReturnAllErrors returns unknown handler error", func(t *testing.T) {
+		handler := &errorHandler{
+			Name:      "testColl",
+			createErr: fmt.Errorf("some unknown error from handler"),
+		}
+		fx := newFixture(t, "objId", handler)
+		tx, err := fx.NewTx(ctx)
+		require.NoError(t, err)
+		defer func() {
+			_ = tx.Rollback()
+		}()
+
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", "1", `{"key":"value1"}`))
+
+		err = tx.ApplyChangeSetReturnAllErrors(ChangeSet{
+			Id:      "1",
+			Order:   "1",
+			Changes: build.ChangeSet,
+		})
+		require.Error(t, err)
+	})
+}
+
+// errorHandler is a test handler that returns configurable errors
+type errorHandler struct {
+	Name      string
+	createErr error
+}
+
+func (h *errorHandler) CollectionName() string { return h.Name }
+
+func (h *errorHandler) Init(ctx context.Context, s *StoreState) error {
+	_, err := s.Collection(ctx, h.Name)
+	return err
+}
+
+func (h *errorHandler) BeforeCreate(_ context.Context, _ ChangeOp) error {
+	return h.createErr
+}
+
+func (h *errorHandler) BeforeModify(_ context.Context, _ ChangeOp) (ModifyMode, error) {
+	return ModifyModeUpdate, nil
+}
+
+func (h *errorHandler) BeforeDelete(_ context.Context, _ ChangeOp) (DeleteMode, error) {
+	return DeleteModeDelete, nil
+}
+
+func (h *errorHandler) UpgradeKeyModifier(_ ChangeOp, _ *pb.KeyModify, mod query.Modifier) query.Modifier {
+	return mod
+}
+
+func TestBenchCreate(t *testing.T) {
+	// t.Skip()
+	var n = 100000
+	fx := newFixture(t, "objId", DefaultHandler{Name: "testColl"})
+	st := time.Now()
+	var changes = make([]ChangeSet, n)
+	for i := range n {
+		build := &Builder{}
+		assert.NoError(t, build.Create("testColl", fmt.Sprint(i), `{"some":"json"}`))
+		changes[i] = ChangeSet{
+			Id:      fmt.Sprint(i),
+			Order:   fmt.Sprint(i),
+			Changes: build.ChangeSet,
+		}
+	}
+	t.Logf("created %d changes for a %v", n, time.Since(st))
+	st = time.Now()
+	tx, err := fx.NewTx(ctx)
+	require.NoError(t, err)
+	for _, ch := range changes {
+		assert.NoError(t, tx.ApplyChangeSet(ch))
+	}
+	t.Logf("applied for a %v", time.Since(st))
+	st = time.Now()
+	assert.NoError(t, tx.Commit())
+	t.Logf("commited for a %v", time.Since(st))
+}
+
+type fixture struct {
+	*StoreState
+	db     anystore.DB
+	tmpDir string
+}
+
+func newFixture(t testing.TB, id string, handlers ...Handler) *fixture {
+	fx := &fixture{}
+	var err error
+	fx.tmpDir, err = os.MkdirTemp("", "storestate_*")
+	require.NoError(t, err)
+	fx.db, err = anystore.Open(ctx, filepath.Join(fx.tmpDir, "db.db"), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		fx.finish(t)
+	})
+	fx.StoreState, err = New(ctx, id, fx.db, handlers...)
+	require.NoError(t, err)
+	return fx
+}
+
+func (fx *fixture) finish(t testing.TB) {
+	if fx.db != nil {
+		require.NoError(t, fx.db.Close())
+	}
+	if fx.tmpDir != "" {
+		_ = os.RemoveAll(fx.tmpDir)
+	}
+}
+
+// captureHandler records the AclHeadId seen by the handler for each operation.
+type captureHandler struct {
+	DefaultHandler
+	last ChangeOp
+}
+
+func (h *captureHandler) BeforeCreate(ctx context.Context, ch ChangeOp) error {
+	h.last = ch
+	return h.DefaultHandler.BeforeCreate(ctx, ch)
+}
+
+// keepHandler rewrites the document itself on delete and keeps it, as a handler that leaves a
+// tombstone does.
+type keepHandler struct {
+	DefaultHandler
+}
+
+func (h *keepHandler) BeforeDelete(ctx context.Context, ch ChangeOp) (DeleteMode, error) {
+	coll, err := ch.State.Collection(ctx, h.Name)
+	if err != nil {
+		return DeleteModeKeep, err
+	}
+	_, err = coll.UpdateId(ctx, ch.Change.Change.GetDelete().GetDocumentId(), query.ModifyFunc(func(a *anyenc.Arena, v *anyenc.Value) (*anyenc.Value, bool, error) {
+		v.Set("deleted", a.NewTrue())
+		return v, true, nil
+	}))
+	return DeleteModeKeep, err
+}
+
+func TestApplyDelete_KeepMode(t *testing.T) {
+	// given
+	fx := newFixture(t, "objId", &keepHandler{DefaultHandler: DefaultHandler{Name: "testColl"}})
+	tx, err := fx.NewTx(ctx)
+	require.NoError(t, err)
+	build := &Builder{}
+	require.NoError(t, build.Create("testColl", "1", `{"key":"value"}`))
+	require.NoError(t, tx.ApplyChangeSet(ChangeSet{Id: "1", Order: "1", Changes: build.ChangeSet}))
+	require.NoError(t, tx.Commit())
+
+	// when
+	tx, err = fx.NewTx(ctx)
+	require.NoError(t, err)
+	build = &Builder{}
+	build.Delete("testColl", "1")
+	require.NoError(t, tx.ApplyChangeSetReturnAllErrors(ChangeSet{Id: "2", Order: "2", Changes: build.ChangeSet}))
+	require.NoError(t, tx.Commit())
+
+	// then
+	coll, err := fx.Collection(ctx, "testColl")
+	require.NoError(t, err)
+	doc, err := coll.FindId(ctx, "1")
+	require.NoError(t, err)
+	assert.Equal(t, "value", doc.Value().GetString("key"))
+	assert.True(t, doc.Value().GetBool("deleted"))
+}
+
+func TestApplyChangeSet_AclHeadIdPlumbing(t *testing.T) {
+	handler := &captureHandler{DefaultHandler: DefaultHandler{Name: "testColl"}}
+	fx := newFixture(t, "objId", handler)
+	tx, err := fx.NewTx(ctx)
+	require.NoError(t, err)
+	build := &Builder{}
+	assert.NoError(t, build.Create("testColl", "1", `{"key":"value"}`))
+	require.NoError(t, tx.ApplyChangeSet(ChangeSet{
+		Id:        "rec1",
+		Order:     "1",
+		AclHeadId: "acl-head-42",
+		Changes:   build.ChangeSet,
+	}))
+	require.NoError(t, tx.Commit())
+	require.Equal(t, "acl-head-42", handler.last.Change.AclHeadId)
+}

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# Extract ISSUE_ID from branch (e.g. JS-1234, GO-4222, FOO-99999) and
+# prepend it to your commit message if not already present.
+
+REGEX_ISSUE_ID='[A-Za-z]+-[0-9]+'    # letters-dash-numbers
+BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
+COMMIT_MSG_FILE=$1
+COMMIT_TEXT=$(< "$COMMIT_MSG_FILE")
+
+# Find and uppercase the first matching issue key
+ISSUE_ID=$(echo "$BRANCH_NAME" \
+  | grep -oE "$REGEX_ISSUE_ID" \
+  | head -1 \
+  | tr '[:lower:]' '[:upper:]')
+
+# If no issue key, reject the commit
+if [[ -z "$ISSUE_ID" ]]; then
+  echo "ERROR: Branch name must contain an issue key (e.g. GO-1234)." >&2
+  exit 1
+fi
+
+# If the commit message doesn’t already start with ISSUE_ID, prepend it
+if [[ ! "$COMMIT_TEXT" =~ ^$ISSUE_ID ]]; then
+  printf "%s %s\n" "$ISSUE_ID" "$COMMIT_TEXT" > "$COMMIT_MSG_FILE"
+fi
+
+exit 0

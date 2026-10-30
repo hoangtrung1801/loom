@@ -1,0 +1,269 @@
+package editor
+
+import (
+	"github.com/anyproto/any-sync/commonspace/object/acl/list"
+
+	"github.com/anyproto/anytype-heart/core/anytype/config"
+	"github.com/anyproto/anytype-heart/core/block/editor/basic"
+	"github.com/anyproto/anytype-heart/core/block/editor/dataview"
+	"github.com/anyproto/anytype-heart/core/block/editor/smartblock"
+	"github.com/anyproto/anytype-heart/core/block/editor/state"
+	"github.com/anyproto/anytype-heart/core/block/editor/stext"
+	"github.com/anyproto/anytype-heart/core/block/editor/template"
+	"github.com/anyproto/anytype-heart/core/block/migration"
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	"github.com/anyproto/anytype-heart/pkg/lib/database"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/objectstore/spaceindex"
+	"github.com/anyproto/anytype-heart/pkg/lib/pb/model"
+)
+
+const updateDetailsChanCapacity = 10
+
+var workspaceRequiredRelations = []domain.RelationKey{
+	// SpaceInviteFileCid and SpaceInviteFileKey are added only when creating invite
+}
+
+type Workspaces struct {
+	smartblock.SmartBlock
+	basic.AllOperations
+	basic.IHistory
+	dataview.Dataview
+	stext.Text
+
+	accountService accountService
+	spaceIndex     spaceindex.Store
+	spaceService   spaceService
+	config         *config.Config
+	migrator       subObjectsMigrator
+
+	subscribedForOneToOneProfile bool
+	otherProfileSubClose         func()
+
+	updateDetailsChan chan *domain.Details
+}
+
+func (f *ObjectFactory) newWorkspace(sb smartblock.SmartBlock, store spaceindex.Store) *Workspaces {
+	w := &Workspaces{
+		SmartBlock:    sb,
+		AllOperations: basic.NewBasic(sb, store, f.layoutConverter, f.fileObjectService),
+		IHistory:      basic.NewHistory(sb),
+		Text: stext.NewText(
+			sb,
+			store,
+			f.eventSender,
+		),
+		Dataview:       dataview.NewDataview(sb, store),
+		spaceService:   f.spaceService,
+		config:         f.config,
+		spaceIndex:     store,
+		accountService: f.accountService,
+	}
+	w.migrator = &subObjectsMigration{
+		workspace: w,
+	}
+	return w
+}
+
+func (w *Workspaces) Init(ctx *smartblock.InitContext) (err error) {
+	ctx.RequiredInternalRelationKeys = append(ctx.RequiredInternalRelationKeys, workspaceRequiredRelations...)
+	err = w.SmartBlock.Init(ctx)
+	if err != nil {
+		return err
+	}
+	w.initTemplate(ctx)
+	w.deriveSpaceType(ctx.State)
+	w.migrator.migrateSubObjects(ctx.State)
+
+	w.updateDetailsChan = make(chan *domain.Details, updateDetailsChanCapacity)
+	go func() {
+		for details := range w.updateDetailsChan {
+			w.spaceService.OnWorkspaceChanged(w.SpaceID(), details)
+		}
+	}()
+
+	w.onWorkspaceChanged(ctx.State)
+	w.AddHook(w.onApply, smartblock.HookAfterApply)
+
+	if w.isOneToOne() {
+		w.subscribeForOneToOneProfile(ctx.State)
+	}
+	return nil
+}
+
+func (w *Workspaces) deriveSpaceType(s *state.State) {
+	spaceType := w.Space().SpaceType()
+	s.SetDetail(bundle.RelationKeySpaceType, domain.Int64(spaceType.ToEnum()))
+}
+
+func (w *Workspaces) subscribeForOneToOneProfile(state *state.State) {
+	if w.subscribedForOneToOneProfile {
+		return
+	}
+
+	otherIdentity := w.oneToOneGetOtherIdentity()
+	w.spaceService.SpaceViewSetOneToOneIdentity(w.SpaceID(), otherIdentity)
+
+	participantId := domain.NewParticipantId(w.SpaceID(), otherIdentity)
+	recordsCh := make(chan *domain.Details)
+	sub := database.NewSubscription(nil, recordsCh)
+	recs, closeSub, err := w.spaceIndex.QueryByIdsAndSubscribeForChanges([]string{participantId}, sub)
+	if err != nil {
+		log.Errorf("one-to-one: subscribe for other's profile: %v", err)
+		return
+	}
+
+	w.otherProfileSubClose = closeSub
+	for _, rec := range recs {
+		w.updateOneToOneInfo(rec.Details)
+	}
+
+	w.subscribedForOneToOneProfile = true
+
+	go func() {
+		for otherDetails := range recordsCh {
+			w.updateOneToOneInfo(otherDetails)
+		}
+	}()
+}
+
+func (w *Workspaces) oneToOneGetOtherIdentity() string {
+	w.Tree().AclList().RLock()
+	defer w.Tree().AclList().RUnlock()
+	for _, acc := range w.Tree().AclList().AclState().CurrentAccounts() {
+		// Account with permissions = owner is the special identity derived from two participants identities.
+		// We should ignore it as it isn't used in business logic
+		if acc.Permissions == list.AclPermissionsOwner {
+			continue
+		}
+		identity := acc.PubKey.Account()
+		// We need other's identity
+		if identity != w.accountService.AccountID() {
+			return identity
+		}
+	}
+	return ""
+}
+
+func (w *Workspaces) updateOneToOneInfo(details *domain.Details) {
+	if details.Get(bundle.RelationKeyName).String() == "" {
+		return
+	}
+
+	toSave := domain.NewDetailsFromMap(map[domain.RelationKey]domain.Value{
+		bundle.RelationKeyName:       details.Get(bundle.RelationKeyName),
+		bundle.RelationKeyIconImage:  details.Get(bundle.RelationKeyIconImage),
+		bundle.RelationKeyIconOption: details.Get(bundle.RelationKeyIconOption),
+		bundle.RelationKeyHomepage:   w.Details().Get(bundle.RelationKeyHomepage),
+		bundle.RelationKeySpaceType:  domain.Int64(model.SpaceType_SpaceTypeOneToOne),
+	})
+	w.updateDetailsChan <- toSave
+}
+
+func (w *Workspaces) Close() error {
+	if w.otherProfileSubClose != nil {
+		w.otherProfileSubClose()
+	}
+	close(w.updateDetailsChan)
+	return w.SmartBlock.Close()
+}
+
+func (w *Workspaces) initTemplate(ctx *smartblock.InitContext) {
+	template.InitTemplate(ctx.State,
+		template.WithEmpty,
+		template.WithDetail(bundle.RelationKeyIsHidden, domain.Bool(true)),
+		template.WithLayout(model.ObjectType_space),
+		template.WithForcedObjectTypes([]domain.TypeKey{bundle.TypeKeySpace}),
+	)
+}
+
+func (w *Workspaces) CreationStateMigration(ctx *smartblock.InitContext) migration.Migration {
+	// TODO Maybe move init logic here?
+	return migration.Migration{
+		Version: 2,
+		Proc: func(s *state.State) {
+			// no-op
+		},
+	}
+}
+
+// SetInviteFileInfo writes an owner-held invite as the marker alone: its cid and key belong to the
+// owner's space view, and the workspace is read by every member of the space.
+func (w *Workspaces) SetInviteFileInfo(info domain.InviteInfo) (err error) {
+	st := w.NewState()
+	if info.HeldByOwner {
+		removeInviteDetails(st)
+		st.SetDetailAndBundledRelation(bundle.RelationKeySpaceInviteHeldByOwner, domain.Bool(true))
+	} else {
+		st.RemoveDetail(bundle.RelationKeySpaceInviteHeldByOwner)
+		setInviteDetails(st, info)
+	}
+	return w.Apply(st)
+}
+
+func (w *Workspaces) GetExistingInviteInfo() (inviteInfo domain.InviteInfo) {
+	details := w.CombinedDetails()
+	inviteInfo = getInviteDetails(details)
+	// a cid in the workspace is a shared invite, so it is not held by the owner — even if the marker is
+	// still set. An old client can write a cid without clearing the marker (it does not know about it),
+	// and the held-by-owner marker only means anything when there is no cid to read.
+	inviteInfo.HeldByOwner = inviteInfo.InviteFileCid == "" && details.GetBool(bundle.RelationKeySpaceInviteHeldByOwner)
+	return
+}
+
+func (w *Workspaces) RemoveExistingInviteInfo() (info domain.InviteInfo, err error) {
+	info = w.GetExistingInviteInfo()
+	newState := w.NewState()
+	removeInviteDetails(newState)
+	newState.RemoveDetail(bundle.RelationKeySpaceInviteHeldByOwner)
+	return info, w.Apply(newState)
+}
+
+func (w *Workspaces) SetGuestInviteFileInfo(fileCid string, fileKey string) (err error) {
+	st := w.NewState()
+	st.SetDetailAndBundledRelation(bundle.RelationKeySpaceInviteGuestFileCid, domain.String(fileCid))
+	st.SetDetailAndBundledRelation(bundle.RelationKeySpaceInviteGuestFileKey, domain.String(fileKey))
+	return w.Apply(st)
+}
+
+func (w *Workspaces) GetExistingGuestInviteInfo() (fileCid string, fileKey string) {
+	details := w.CombinedDetails()
+	fileCid = details.GetString(bundle.RelationKeySpaceInviteGuestFileCid)
+	fileKey = details.GetString(bundle.RelationKeySpaceInviteGuestFileKey)
+	return
+}
+
+func (w *Workspaces) StateMigrations() migration.Migrations {
+	return migration.MakeMigrations([]migration.Migration{{
+		Version: 2,
+		Proc: func(s *state.State) { // TODO: GO-7102 make this migration no-op
+			spaceUxType, ok := s.Details().TryInt64(bundle.RelationKeySpaceUxType)
+			if !ok {
+				spaceUxType = int64(model.SpaceUxType_Data)
+				s.SetDetail(bundle.RelationKeySpaceUxType, domain.Int64(spaceUxType))
+			} else if spaceUxType == 0 {
+				// convert old spaceUxType 0 to Chat
+				spaceUxType = int64(model.SpaceUxType_Chat)
+				s.SetDetail(bundle.RelationKeySpaceUxType, domain.Int64(spaceUxType))
+			}
+		},
+	}})
+}
+
+func (w *Workspaces) onApply(info smartblock.ApplyInfo) error {
+	w.onWorkspaceChanged(info.State)
+	return nil
+}
+
+func (w *Workspaces) isOneToOne() bool {
+	return w.Space().IsOneToOne()
+}
+
+func (w *Workspaces) onWorkspaceChanged(state *state.State) {
+	details := state.CombinedDetails().Copy()
+	if w.isOneToOne() {
+		w.subscribeForOneToOneProfile(state)
+		return
+	}
+	w.updateDetailsChan <- details
+}

@@ -1,0 +1,523 @@
+package database
+
+import (
+	"fmt"
+	"math"
+	"time"
+
+	"github.com/anyproto/any-store/anyenc"
+	"golang.org/x/text/collate"
+
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/ftsearch"
+	"github.com/anyproto/anytype-heart/pkg/lib/logging"
+	"github.com/anyproto/anytype-heart/pkg/lib/pb/model"
+	"github.com/anyproto/anytype-heart/util/text"
+)
+
+var log = logging.Logger("anytype-database")
+
+const (
+	secondsPerDay = 86400.0
+)
+
+type Record struct {
+	Details *domain.Details
+	Meta    model.SearchMeta
+}
+
+type ObjectInfo struct {
+	Id              string
+	ObjectTypeUrls  []string
+	Details         *domain.Details
+	Relations       []*model.Relation
+	Snippet         string
+	HasInboundLinks bool
+}
+
+func (info *ObjectInfo) ToProto() *model.ObjectInfo {
+	return &model.ObjectInfo{
+		Id:              info.Id,
+		ObjectTypeUrls:  info.ObjectTypeUrls,
+		Details:         info.Details.ToProto(),
+		Relations:       info.Relations,
+		Snippet:         info.Snippet,
+		HasInboundLinks: info.HasInboundLinks,
+	}
+}
+
+type FilterRequest struct {
+	Id               string
+	Operator         model.BlockContentDataviewFilterOperator
+	RelationKey      domain.RelationKey
+	RelationProperty string
+	Condition        model.BlockContentDataviewFilterCondition
+	Value            domain.Value
+	QuickOption      model.BlockContentDataviewFilterQuickOption
+	Format           model.RelationFormat
+	IncludeTime      bool
+	NestedFilters    []FilterRequest
+}
+
+type SortRequest struct {
+	RelationKey    domain.RelationKey
+	Type           model.BlockContentDataviewSortType
+	CustomOrder    []domain.Value
+	Format         model.RelationFormat
+	IncludeTime    bool
+	Id             string
+	EmptyPlacement model.BlockContentDataviewSortEmptyType
+	NoCollate      bool
+}
+
+type Query struct {
+	TextQuery string
+	SpaceId   string
+	// SpaceIds limits cross-space queries before any store is queried.
+	// Nil means all user spaces; an empty, non-nil list means none.
+	SpaceIds        []string
+	Filters         []FilterRequest // filters results. apply sequentially
+	Sorts           []SortRequest   // order results. apply hierarchically
+	Limit           int             // maximum number of results
+	Offset          int             // skip given number of results
+	PrefixNameQuery bool
+}
+
+func injectDefaultFilters(filters []FilterRequest) []FilterRequest {
+	hasArchivedFilter, hasDeletedFilter, hasTypeFilter := hasDefaultFilters(filters)
+	if len(filters) > 0 && len(filters[0].NestedFilters) > 0 {
+		return addDefaultFiltersToNested(filters, hasArchivedFilter, hasDeletedFilter, hasTypeFilter)
+	}
+	return addDefaultFilters(filters, hasArchivedFilter, hasDeletedFilter, hasTypeFilter)
+}
+
+func addDefaultFiltersToNested(filters []FilterRequest, hasArchivedFilter, hasDeletedFilter, hasTypeFilter bool) []FilterRequest {
+	if filters[0].Operator == model.BlockContentDataviewFilter_And {
+		filters[0].NestedFilters = addDefaultFilters(filters[0].NestedFilters, hasArchivedFilter, hasDeletedFilter, hasTypeFilter)
+	}
+	// build And filter based on original Or filter and default filters
+	if filters[0].Operator != model.BlockContentDataviewFilter_And {
+		filters = addDefaultFilters(filters, hasArchivedFilter, hasDeletedFilter, hasTypeFilter)
+		return []FilterRequest{
+			{
+				Operator:      model.BlockContentDataviewFilter_And,
+				NestedFilters: filters,
+			},
+		}
+	}
+	return filters
+}
+
+func addDefaultFilters(filters []FilterRequest, hasArchivedFilter, hasDeletedFilter, hasTypeFilter bool) []FilterRequest {
+	if !hasArchivedFilter {
+		filters = append(filters, FilterRequest{
+			RelationKey: bundle.RelationKeyIsArchived,
+			Condition:   model.BlockContentDataviewFilter_NotEqual,
+			Value:       domain.Bool(true),
+		})
+	}
+	if !hasDeletedFilter {
+		filters = append(filters, FilterRequest{
+			RelationKey: bundle.RelationKeyIsDeleted,
+			Condition:   model.BlockContentDataviewFilter_NotEqual,
+			Value:       domain.Bool(true),
+		})
+	}
+	if !hasTypeFilter {
+		// temporarily exclude Space objects from search if we don't have explicit type filter
+		filters = append(filters, FilterRequest{
+			RelationKey: bundle.RelationKeyType,
+			Condition:   model.BlockContentDataviewFilter_NotIn,
+			Value:       domain.Int64(model.ObjectType_space),
+		})
+	}
+	return filters
+}
+
+func hasDefaultFilters(filters []FilterRequest) (bool, bool, bool) {
+	var (
+		hasArchivedFilter bool
+		hasDeletedFilter  bool
+		hasTypeFilter     bool
+	)
+	if len(filters) == 0 {
+		return false, false, false
+	}
+	for _, filter := range filters {
+		if len(filter.NestedFilters) > 0 {
+			return hasDefaultFilters(filter.NestedFilters)
+		}
+		// include archived objects if we have explicit filter about it
+		if filter.RelationKey == bundle.RelationKeyIsArchived {
+			hasArchivedFilter = true
+		}
+
+		if filter.RelationKey == bundle.RelationKeyResolvedLayout {
+			hasTypeFilter = true
+		}
+
+		if filter.RelationKey == bundle.RelationKeyIsDeleted {
+			hasDeletedFilter = true
+		}
+	}
+	return hasArchivedFilter, hasDeletedFilter, hasTypeFilter
+}
+
+// InjectDefaultOrder returns the sorts a store query effectively applies for
+// qry: fulltext queries get _final_score desc prepended unless a score sort
+// was requested. Callers that merge records from several stores must build
+// their merge order from this, not from qry.Sorts — otherwise the per-store
+// candidate cut and the merged order disagree and offset paging breaks.
+func InjectDefaultOrder(qry Query, sorts []SortRequest) []SortRequest {
+	return injectDefaultOrder(qry, sorts)
+}
+
+func injectDefaultOrder(qry Query, sorts []SortRequest) []SortRequest {
+	var (
+		hasScoreSort bool
+	)
+	if qry.TextQuery == "" {
+		return sorts
+	}
+
+	for _, sort := range sorts {
+		if sort.RelationKey == bundle.RelationKey_score || sort.RelationKey == bundle.RelationKey_final_score {
+			hasScoreSort = true
+		}
+	}
+
+	if !hasScoreSort {
+		sorts = append([]SortRequest{{RelationKey: bundle.RelationKey_final_score, Type: model.BlockContentDataviewSort_Desc}}, sorts...)
+	}
+
+	return sorts
+}
+
+func FiltersFromProto(filters []*model.BlockContentDataviewFilter) []FilterRequest {
+	res := make([]FilterRequest, 0, len(filters))
+	for _, f := range filters {
+		res = append(res, FilterRequest{
+			Id:               f.Id,
+			Operator:         f.Operator,
+			RelationKey:      domain.RelationKey(f.RelationKey),
+			RelationProperty: f.RelationProperty,
+			Condition:        f.Condition,
+			Value:            domain.ValueFromProto(f.Value),
+			QuickOption:      f.QuickOption,
+			Format:           f.Format,
+			IncludeTime:      f.IncludeTime,
+			NestedFilters:    FiltersFromProto(f.NestedFilters),
+		})
+	}
+	return res
+}
+
+func FiltersToProto(filters []FilterRequest) []*model.BlockContentDataviewFilter {
+	result := make([]*model.BlockContentDataviewFilter, 0, len(filters))
+	for _, f := range filters {
+		result = append(result, &model.BlockContentDataviewFilter{
+			Id: f.Id, Operator: f.Operator, RelationKey: f.RelationKey.String(),
+			RelationProperty: f.RelationProperty, Condition: f.Condition, Value: f.Value.ToProto(),
+			QuickOption: f.QuickOption, Format: f.Format, IncludeTime: f.IncludeTime,
+			NestedFilters: FiltersToProto(f.NestedFilters),
+		})
+	}
+	return result
+}
+
+func SortsToProto(sorts []SortRequest) []*model.BlockContentDataviewSort {
+	result := make([]*model.BlockContentDataviewSort, 0, len(sorts))
+	for _, s := range sorts {
+		item := &model.BlockContentDataviewSort{
+			RelationKey: s.RelationKey.String(), Type: s.Type, Format: s.Format,
+			IncludeTime: s.IncludeTime, Id: s.Id, EmptyPlacement: s.EmptyPlacement, NoCollate: s.NoCollate,
+		}
+		for _, value := range s.CustomOrder {
+			item.CustomOrder = append(item.CustomOrder, value.ToProto())
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func SortsFromProto(sorts []*model.BlockContentDataviewSort) []SortRequest {
+	var res []SortRequest
+	for _, s := range sorts {
+		custom := make([]domain.Value, 0, len(s.CustomOrder))
+		for _, item := range s.CustomOrder {
+			custom = append(custom, domain.ValueFromProto(item))
+		}
+		res = append(res, SortRequest{
+			RelationKey:    domain.RelationKey(s.RelationKey),
+			Type:           s.Type,
+			CustomOrder:    custom,
+			Format:         s.Format,
+			IncludeTime:    s.IncludeTime,
+			Id:             s.Id,
+			EmptyPlacement: s.EmptyPlacement,
+			NoCollate:      s.NoCollate,
+		})
+	}
+	return res
+}
+
+func NewFilters(qry Query, store ObjectStore, arena *anyenc.Arena, collatorBuffer *collate.Buffer) (filters *Filters, err error) {
+	// spaceID could be empty
+	qry.Filters = injectDefaultFilters(qry.Filters)
+	qry.Sorts = injectDefaultOrder(qry, qry.Sorts)
+	filters = new(Filters)
+
+	qb := queryBuilder{
+		spaceId:        store.SpaceId(),
+		arena:          arena,
+		objectStore:    store,
+		collatorBuffer: collatorBuffer,
+	}
+
+	filterObj, err := MakeFilters(qry.Filters, store)
+	if err != nil {
+		return
+	}
+
+	filters.FilterObj = filterObj
+	filters.Order = qb.extractOrder(qry.Sorts)
+	return
+}
+
+type queryBuilder struct {
+	spaceId        string
+	arena          *anyenc.Arena
+	objectStore    ObjectStore
+	collatorBuffer *collate.Buffer
+}
+
+func getSpaceIDFromFilters(filters []FilterRequest) string {
+	for _, f := range filters {
+		if f.RelationKey == bundle.RelationKeySpaceId {
+			return f.Value.String()
+		}
+	}
+	return ""
+}
+
+func (b *queryBuilder) extractOrder(sorts []SortRequest) setOrder {
+	return extractOrder(b.objectStore, b.arena, b.collatorBuffer, sorts)
+}
+
+// NewSetOrder builds the composite order a store query applies for the given
+// sorts — including the per-sort includeTime resolution and custom orders —
+// so callers merging records from several stores can reproduce the stores'
+// own ordering. Returns nil when sorts is empty.
+func NewSetOrder(store ObjectStore, arena *anyenc.Arena, collatorBuffer *collate.Buffer, sorts []SortRequest) Order {
+	if order := extractOrder(store, arena, collatorBuffer, sorts); order != nil {
+		return order
+	}
+	return nil
+}
+
+func extractOrder(store ObjectStore, arena *anyenc.Arena, collatorBuffer *collate.Buffer, sorts []SortRequest) setOrder {
+	if len(sorts) > 0 {
+		order := setOrder{}
+		for _, sort := range sorts {
+			ko := NewKeyOrder(store, arena, collatorBuffer, sort).(*keyOrder)
+			ko.includeTime = isIncludeTime(sorts, sort)
+			order = appendCustomOrder(arena, sort, order, ko)
+		}
+		return order
+	}
+	return nil
+}
+
+func appendCustomOrder(arena *anyenc.Arena, sort SortRequest, orders setOrder, order *keyOrder) setOrder {
+	defer arena.Reset()
+	if sort.Type == model.BlockContentDataviewSort_Custom && len(sort.CustomOrder) > 0 {
+		idsIndices := make(map[string]int, len(sort.CustomOrder))
+		var idx int
+		for _, it := range sort.CustomOrder {
+			val := it.ToAnyEnc(arena)
+
+			raw := string(val.MarshalTo(nil))
+			if raw != "" {
+				idsIndices[raw] = idx
+				idx++
+			}
+		}
+		orders = append(orders, newCustomOrder(arena, sort.RelationKey, idsIndices, order))
+	} else {
+		orders = append(orders, order)
+	}
+	return orders
+}
+
+func isIncludeTime(sorts []SortRequest, s SortRequest) bool {
+	if isSingleDateSort(sorts) {
+		return true
+	} else {
+		return s.IncludeTime
+	}
+}
+
+func isSingleDateSort(sorts []SortRequest) bool {
+	return len(sorts) == 1 && sorts[0].Format == model.RelationFormat_date
+}
+
+type FulltextResult struct {
+	Path            domain.ObjectPath
+	Highlight       string
+	HighlightRanges []*model.Range
+	Score           float64
+	// NameMatch reports whether the object's BEST-scoring doc is a name (or
+	// pluralName) match. It deliberately does not depend on Path: the
+	// representative doc can change with the candidate budget (pluralName
+	// preference), and the final-score name boost must stay budget-stable or
+	// offset pagination drifts between requests.
+	NameMatch bool
+}
+
+func (r FulltextResult) Model() model.SearchMeta {
+	return model.SearchMeta{
+		Highlight:       r.Highlight,
+		HighlightRanges: r.HighlightRanges,
+		RelationKey:     r.Path.RelationKey,
+		BlockId:         r.Path.BlockId,
+	}
+}
+
+func (r FulltextResult) MessageModel() model.SearchMessageResult {
+	return model.SearchMessageResult{
+		ChatId:    r.Path.ObjectId,
+		MessageId: r.Path.MessageId,
+		// the proto field is an integer; round instead of truncating so that
+		// sub-integer BM25 scores don't all collapse to the same value
+		Score:           int64(math.Round(r.Score)),
+		Highlight:       r.Highlight,
+		HighlightRanges: r.HighlightRanges,
+	}
+}
+
+func FTDocumentMatchToFulltextResult(docMatch *ftsearch.DocumentMatch) (FulltextResult, error) {
+	path, err := domain.NewFromPath(docMatch.ID)
+	if err != nil {
+		return FulltextResult{}, fmt.Errorf("failed to parse ft search result: %w", err)
+	}
+	var highlight string
+	var ranges []*model.Range
+	for _, v := range docMatch.Fragments {
+		if len(v.Ranges) > 0 {
+			highlight = v.Text
+			ranges = convertToHighlightRanges(v.Ranges, highlight)
+			break
+		}
+	}
+	res := FulltextResult{
+		Path:      path,
+		Highlight: highlight,
+		Score:     docMatch.Score,
+	}
+	if highlight != "" {
+		res.Highlight, res.HighlightRanges = highlight, ranges
+	}
+
+	return res, nil
+}
+
+func convertToHighlightRanges(ranges [][]int, highlight string) []*model.Range {
+	var highlightRanges []*model.Range
+
+	byteToRuneIndex := make([]int, len(highlight)+1)
+	for i := range byteToRuneIndex {
+		byteToRuneIndex[i] = text.UTF16RuneCountString(highlight[:i])
+	}
+
+	for _, r := range ranges {
+		if len(r) == 2 {
+			fromByte := r[0]
+			toByte := r[1]
+
+			if fromByte < 0 || toByte > len(highlight) {
+				continue
+			}
+
+			fromRune := byteToRuneIndex[fromByte]
+			toRune := byteToRuneIndex[toByte]
+
+			highlightRange := &model.Range{
+				From: int32(fromRune), //nolint:gosec
+				To:   int32(toRune),   //nolint:gosec
+			}
+			highlightRanges = append(highlightRanges, highlightRange)
+		}
+	}
+
+	return highlightRanges
+}
+
+// todo: rename to SearchParams?
+type Filters struct {
+	FilterObj Filter
+	Order     Order
+}
+
+// participantLayoutBoost is a tie-break signal for participant (space member)
+// objects: deliberately an order of magnitude below the 1.0-weight signals so
+// a person wins over an otherwise-equal regular object without overcoming a
+// real relevance difference like a name match. Combined with the pinned
+// recency below it puts a matching person above ANY equally-matching regular
+// object regardless of how recently that object was edited (1.0 + 0.1 vs the
+// regular maximum of 1.0).
+const participantLayoutBoost = 0.1
+
+// ComputeFinalScore blends a Tantivy BM25 score with additive signals:
+//   - recency: exponential decay on the more-recent of lastOpenedDate / lastModifiedDate (30-day half-life, [0,1]).
+//     Participant objects are pinned to 1.0: their lastModifiedDate moves only
+//     on profile changes, so the decayed value is noise, and a person must not
+//     sink below recently edited objects on it.
+//   - nameBoost: 1.0 when the fulltext match landed in the "name" relation field, 0 otherwise
+//   - participantLayoutBoost: 0.1 for participant objects (tie-break)
+//
+// Formula: ln(1+bm25) + recency + nameBoost + participantBoost
+// Log-compressing the BM25 score keeps recency and nameBoost as equal-weight additive signals.
+// All signals derive from the doc itself, keeping the score budget-stable
+// (identical across page requests regardless of the candidate set).
+func ComputeFinalScore(bm25Score float64, details *domain.Details, nameMatch bool) float64 {
+	if details == nil {
+		return math.Log1p(bm25Score)
+	}
+	isParticipant := details.GetInt64(bundle.RelationKeyResolvedLayout) == int64(model.ObjectType_participant)
+	var recency float64
+	if isParticipant {
+		recency = 1.0
+	} else {
+		// hour granularity: the recency signal must be stable between consecutive
+		// page requests, or the re-ranked result order drifts mid-pagination and
+		// pages overlap; with a 30-day half-life the precision loss is negligible
+		now := time.Now().Truncate(time.Hour).Unix()
+		lastOpened := details.GetInt64(bundle.RelationKeyLastOpenedDate)
+		lastModified := details.GetInt64(bundle.RelationKeyLastModifiedDate)
+		if lastOpened > lastModified {
+			recency = recencyDecay(now, lastOpened)
+		} else {
+			recency = recencyDecay(now, lastModified)
+		}
+	}
+	nameBoost := 0.0
+	if nameMatch {
+		nameBoost = 1.0
+	}
+	participantBoost := 0.0
+	if isParticipant {
+		participantBoost = participantLayoutBoost
+	}
+	return math.Log1p(bm25Score) + recency + nameBoost + participantBoost
+}
+
+// recencyDecay returns exp(-ln(2)/30 * age_in_days) clamped to [0,1].
+// Returns 0 when ts is zero (never opened/modified).
+func recencyDecay(nowUnix, ts int64) float64 {
+	if ts == 0 {
+		return 0
+	}
+	ageDays := float64(nowUnix-ts) / secondsPerDay
+	return math.Min(1.0, math.Exp(-math.Log(2)/30.0*ageDays))
+}

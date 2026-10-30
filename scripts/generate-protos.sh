@@ -2,7 +2,7 @@
 # Generates TypeScript protobuf bindings from .proto files using ts-proto.
 #
 # Usage:
-#   bash scripts/generate-protos.sh                          # use ../anytype-heart
+#   bash scripts/generate-protos.sh                          # use bundled anytype-heart/
 #   HEART_DIR=../anytype-heart_foo scripts/generate-protos.sh # use another checkout
 #   bash scripts/generate-protos.sh --from-dist              # use dist/lib/protos (CI)
 set -euo pipefail
@@ -73,7 +73,7 @@ if [[ "$FROM_DIST" == true ]]; then
 else
 	# Local mode: use anytype-heart repo. HEART_DIR overrides the default checkout,
 	# with ANYTYPE_HEART_PATH supported as a fallback for existing worktrees.
-	HEART_DIR="${HEART_DIR:-${ANYTYPE_HEART_PATH:-$ROOT_DIR/../anytype-heart}}"
+	HEART_DIR="${HEART_DIR:-${ANYTYPE_HEART_PATH:-$ROOT_DIR/anytype-heart}}"
 	if [[ ! -d "$HEART_DIR" ]]; then
 		echo "Error: anytype-heart repo not found at $HEART_DIR"
 		exit 1

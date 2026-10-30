@@ -1,0 +1,35 @@
+.idea/*
+!.idea/codeStyles/
+*.iml
+.project
+.DS_Store
+node_modules
+package-lock.json
+/clientlibrary/jsaddon/build
+.vscode
+/vendor/
+*gomock_reflect*
+lib-server/service.pb.go
+dist/cli
+/grpcserver
+grpc-web
+.gradle
+tests/.cache/
+.env
+staging.yml
+build
+/core/anytype/config/nodes/custom.yml
+/.direnv/
+/.envrc
+*.swp
+doc/dependency_decisions.yml
+.serena/
+.ralphex/progress/
+/eval-out/
+
+# compiled cmd/ tool binaries, which land at the repo root when built with
+# `go build ./cmd/<name>` and have been committed by accident more than once
+/anyblockroundtrip
+/anyblockconvert
+/anyblockvalidate
+/apiv2eval

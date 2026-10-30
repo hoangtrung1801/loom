@@ -1,0 +1,346 @@
+package editor
+
+import (
+	"context"
+	"slices"
+
+	"github.com/anyproto/anytype-heart/core/block/editor/basic"
+	"github.com/anyproto/anytype-heart/core/block/editor/clipboard"
+	"github.com/anyproto/anytype-heart/core/block/editor/dataview"
+	"github.com/anyproto/anytype-heart/core/block/editor/file"
+	"github.com/anyproto/anytype-heart/core/block/editor/layout"
+	"github.com/anyproto/anytype-heart/core/block/editor/order"
+	"github.com/anyproto/anytype-heart/core/block/editor/smartblock"
+	"github.com/anyproto/anytype-heart/core/block/editor/state"
+	"github.com/anyproto/anytype-heart/core/block/editor/stext"
+	"github.com/anyproto/anytype-heart/core/block/editor/template"
+	"github.com/anyproto/anytype-heart/core/block/migration"
+	"github.com/anyproto/anytype-heart/core/domain"
+	"github.com/anyproto/anytype-heart/core/relationutils"
+	"github.com/anyproto/anytype-heart/pkg/lib/bundle"
+	coresb "github.com/anyproto/anytype-heart/pkg/lib/core/smartblock"
+	"github.com/anyproto/anytype-heart/pkg/lib/localstore/objectstore/spaceindex"
+	"github.com/anyproto/anytype-heart/pkg/lib/pb/model"
+)
+
+var typeRequiredRelations = append(typeAndRelationRequiredRelations,
+	bundle.RelationKeyRecommendedRelations,
+	bundle.RelationKeyRecommendedFeaturedRelations,
+	bundle.RelationKeyRecommendedHiddenRelations,
+	bundle.RelationKeyRecommendedFileRelations,
+	bundle.RelationKeyRecommendedLayout,
+	bundle.RelationKeySmartblockTypes,
+	bundle.RelationKeyIconOption,
+	bundle.RelationKeyIconName,
+	bundle.RelationKeyPluralName,
+	bundle.RelationKeyHeaderRelationsLayout,
+)
+
+type ObjectType struct {
+	smartblock.SmartBlock
+	basic.AllOperations
+	basic.IHistory
+	stext.Text
+	clipboard.Clipboard
+	dataview.Dataview
+	order.OrderSettable
+
+	spaceIndex spaceindex.Store
+}
+
+func (f *ObjectFactory) newObjectType(spaceId string, sb smartblock.SmartBlock) *ObjectType {
+	store := f.objectStore.SpaceIndex(spaceId)
+	fileComponent := file.NewFile(sb, f.picker, f.fileUploaderService)
+	return &ObjectType{
+		SmartBlock:    sb,
+		AllOperations: basic.NewBasic(sb, store, f.layoutConverter, f.fileObjectService),
+		IHistory:      basic.NewHistory(sb),
+		Text: stext.NewText(
+			sb,
+			store,
+			f.eventSender,
+		),
+		Clipboard: clipboard.NewClipboard(
+			sb,
+			fileComponent,
+			f.tempDirProvider,
+			store,
+			f.fileService,
+			f.fileObjectService,
+		),
+		Dataview:      dataview.NewDataview(sb, store),
+		OrderSettable: order.NewOrderSettable(sb, bundle.RelationKeyOrderId),
+		spaceIndex:    store,
+	}
+}
+
+func (ot *ObjectType) Init(ctx *smartblock.InitContext) (err error) {
+	ctx.RequiredInternalRelationKeys = append(ctx.RequiredInternalRelationKeys, typeRequiredRelations...)
+
+	if err = ot.SmartBlock.Init(ctx); err != nil {
+		return
+	}
+
+	ot.AddHook(ot.syncLayoutHook, smartblock.HookAfterApply)
+	// reconcileDataviewColumns is deliberately NOT wired here — see GO-7511.
+	// Init mutates ctx.State and InitObject applies it, so a repair here is a
+	// real change on the type's tree: opening a type became a write, and every
+	// device that opened the same stale type pushed the same repair. It was
+	// added (aeab6750c) partly as a migration for types created before the
+	// columns fix, and a migration on open is what we are removing.
+	//
+	// The end-of-import pass still runs, through ReconcileDataviewColumns
+	// below — that is the half that fixes the import race, and it belongs to
+	// the import rather than to opening a type.
+
+	oldLayout := layout.NewLayoutStateFromDetails(domain.NewDetailsFromMap(map[domain.RelationKey]domain.Value{
+		bundle.RelationKeyRecommendedLayout: domain.Int64(model.ObjectType_basic),
+	}))
+	newLayout := layout.NewLayoutStateFromDetails(ot.Details().CopyOnlyKeys(bundle.RelationKeyRecommendedLayout))
+	return ot.syncLayoutForObjectsAndTemplates(oldLayout, newLayout, false)
+}
+
+func (ot *ObjectType) CreationStateMigration(ctx *smartblock.InitContext) migration.Migration {
+	return migration.Migration{
+		Version: 5,
+		Proc: func(s *state.State) {
+			if len(ctx.ObjectTypeKeys) > 0 && len(ctx.State.ObjectTypeKeys()) == 0 {
+				ctx.State.SetObjectTypeKeys(ctx.ObjectTypeKeys)
+			}
+
+			templates := []template.StateTransformer{
+				template.WithEmpty,
+				template.WithObjectTypes(ctx.State.ObjectTypeKeys()),
+				template.WithTitle,
+				template.WithLayout(model.ObjectType_objectType),
+				template.WithDetail(bundle.RelationKeyRecommendedLayout, domain.Int64(model.ObjectType_basic)),
+			}
+			templates = append(templates, ot.dataviewTemplates()...)
+
+			template.InitTemplate(s, templates...)
+		},
+	}
+}
+
+func (ot *ObjectType) StateMigrations() migration.Migrations {
+	return migration.MakeMigrations([]migration.Migration{
+		{
+			Version: 2,
+			Proc:    func(s *state.State) {},
+		},
+		{
+			Version: 3,
+			Proc:    ot.featuredRelationsMigration,
+		},
+		{
+			Version: 4,
+			Proc: func(s *state.State) {
+				template.InitTemplate(s, ot.dataviewTemplates()...)
+			},
+		},
+		{
+			Version: 5,
+			Proc:    removeDescriptionMigration,
+		},
+	})
+}
+
+func (ot *ObjectType) featuredRelationsMigration(s *state.State) {
+	if ot.Type() != coresb.SmartBlockTypeObjectType {
+		return
+	}
+
+	if s.HasRelation(bundle.RelationKeyRecommendedFeaturedRelations) {
+		return
+	}
+
+	typeKey := domain.TypeKey(s.UniqueKeyInternal())
+	featuredRelationKeys := relationutils.DefaultFeaturedRelationKeys(typeKey)
+	featuredRelationIds := make([]string, 0, len(featuredRelationKeys))
+
+	for _, key := range featuredRelationKeys {
+		id, err := ot.Space().DeriveObjectID(context.Background(), domain.MustUniqueKey(coresb.SmartBlockTypeRelation, key.String()))
+		if err != nil {
+			log.Errorf("failed to derive object id: %v", err)
+			continue
+		}
+		featuredRelationIds = append(featuredRelationIds, id)
+	}
+
+	if len(featuredRelationIds) == 0 {
+		return
+	}
+
+	s.SetDetail(bundle.RelationKeyRecommendedFeaturedRelations, domain.StringList(featuredRelationIds))
+
+	recommendedRelations := s.Details().GetStringList(bundle.RelationKeyRecommendedRelations)
+	oldLen := len(recommendedRelations)
+	recommendedRelations = slices.DeleteFunc(recommendedRelations, func(s string) bool {
+		return slices.Contains(featuredRelationIds, s)
+	})
+
+	if oldLen == len(recommendedRelations) {
+		return
+	}
+
+	s.SetDetail(bundle.RelationKeyRecommendedRelations, domain.StringList(recommendedRelations))
+}
+
+func removeDescriptionMigration(s *state.State) {
+	uk := s.UniqueKeyInternal()
+	if uk == "" {
+		return
+	}
+
+	// we should delete description value only for bundled object types
+	if !bundle.HasObjectTypeByKey(domain.TypeKey(uk)) {
+		return
+	}
+
+	if s.Details().GetString(bundle.RelationKeyDescription) == "" {
+		return
+	}
+
+	s.RemoveDetail(bundle.RelationKeyDescription)
+}
+
+func (ot *ObjectType) syncLayoutForObjectsAndTemplates(oldLayout, newLayout layout.LayoutState, applyOtherObjects bool) error {
+	syncer := layout.NewSyncer(ot.Id(), ot.Space(), ot.spaceIndex)
+	return syncer.SyncLayoutWithType(oldLayout, newLayout, false, applyOtherObjects, true)
+}
+
+func (ot *ObjectType) syncLayoutHook(info smartblock.ApplyInfo) error {
+	newLayout := layout.NewLayoutStateFromEvents(info.Events)
+	oldLayout := layout.NewLayoutStateFromDetails(info.ParentDetails)
+	return ot.syncLayoutForObjectsAndTemplates(oldLayout, newLayout, info.ApplyOtherObjects)
+}
+
+// reconcileDataviewColumns keeps the type's own dataview in step with the
+// type's properties: a view can fall behind because it was built before
+// columns were made visible, or because a property's relation object was not
+// indexed yet when the view was built — an import creates both within moments
+// of each other and can outrun the index. The state is only written when
+// something actually changed.
+//
+// It no longer runs on open (GO-7511); the import's own pass is the one
+// caller left.
+func (ot *ObjectType) reconcileDataviewColumns(s *state.State) bool {
+	if s == nil {
+		return false
+	}
+	block := s.Pick(state.DataviewBlockID)
+	if block == nil {
+		return false // a new type has no dataview yet; the creation migration builds it
+	}
+	reconciled := block.Copy()
+	if !template.ReconcileTypeDataviewColumns(reconciled.Model().GetDataview(), ot.recommendedRelationLinks(s.Details())) {
+		return false
+	}
+	s.Set(reconciled)
+	return true
+}
+
+// ReconcileDataviewColumns runs the same reconcile outside the init path, for
+// a type already open. The importer calls it once its run has created every
+// object: its workers run concurrently, so a type can be built while one of
+// its relations is still being written, and the view then misses that
+// property until something reloads the type.
+//
+// This is now the only caller: the Init hook that used to catch up a type on
+// open is disabled (GO-7511), so nothing reloads a type to repair it. A type
+// that still loses the race is repaired when someone next edits it — both
+// PATCH /v2/.../types/{type} and ObjectTypePropertyAdd maintain the views in
+// the same call — or not at all, which is what GO-7511 has to settle.
+func (ot *ObjectType) ReconcileDataviewColumns() error {
+	st := ot.NewState()
+	if !ot.reconcileDataviewColumns(st) {
+		return nil
+	}
+	// rebuilding a type's view from its own relations is maintenance, not a user edit, and system
+	// types need it just as much as custom ones
+	return ot.Apply(st, smartblock.NoSpaceConfigCheck)
+}
+
+// recommendedRelationLinks resolves the type's featured and recommended
+// relation ids into the links a dataview needs (key plus format). Ids that do
+// not resolve are skipped — an id that is merely not indexed yet resolves on a
+// later pass. That used to be the next open; with the Init hook gone
+// (GO-7511) it is the end of the import run, and after that only an edit.
+func (ot *ObjectType) recommendedRelationLinks(details *domain.Details) []*model.RelationLink {
+	ids := slices.Concat(
+		details.GetStringList(bundle.RelationKeyRecommendedFeaturedRelations),
+		details.GetStringList(bundle.RelationKeyRecommendedRelations),
+	)
+	links := make([]*model.RelationLink, 0, len(ids))
+	for _, id := range ids {
+		rel, err := ot.spaceIndex.GetRelationById(id)
+		if err != nil || rel == nil {
+			continue
+		}
+		if rel.Key == bundle.RelationKeyType.String() {
+			continue
+		}
+		links = append(links, &model.RelationLink{Key: rel.Key, Format: rel.Format})
+	}
+	return links
+}
+
+func (ot *ObjectType) dataviewTemplates() []template.StateTransformer {
+	return []template.StateTransformer{
+		func(s *state.State) {
+			if s.Exists(state.DataviewBlockID) {
+				return
+			}
+			details := s.Details()
+			name := details.GetString(bundle.RelationKeyName)
+
+			// Build relation links from recommended and featured relations
+			relationLinks := []*model.RelationLink{
+				{
+					Key:    bundle.RelationKeyName.String(),
+					Format: model.RelationFormat_longtext,
+				},
+			}
+
+			// Add featured relations
+			featuredRelations := details.GetStringList(bundle.RelationKeyRecommendedFeaturedRelations)
+			for _, relId := range featuredRelations {
+				// Get relation format from space index
+				if rel, err := ot.spaceIndex.GetRelationById(relId); err == nil && rel != nil {
+					relationLinks = append(relationLinks, &model.RelationLink{
+						Key:    rel.Key,
+						Format: rel.Format,
+					})
+				}
+			}
+
+			// Add recommended relations
+			recommendedRelations := details.GetStringList(bundle.RelationKeyRecommendedRelations)
+			for _, relId := range recommendedRelations {
+				// Get relation format from space index
+				if rel, err := ot.spaceIndex.GetRelationById(relId); err == nil && rel != nil {
+					relationLinks = append(relationLinks, &model.RelationLink{
+						Key:    rel.Key,
+						Format: rel.Format,
+					})
+				}
+			}
+
+			relationLinks = slices.DeleteFunc(relationLinks, func(rel *model.RelationLink) bool {
+				return rel.Key == bundle.RelationKeyType.String()
+			})
+
+			dvContent := template.MakeDataviewContent(false, &model.ObjectType{
+				Url:           ot.Id(),
+				Name:          name,
+				Key:           s.UniqueKeyInternal(),
+				RelationLinks: relationLinks,
+			}, relationLinks, nil)
+
+			dvContent.Dataview.TargetObjectId = ot.Id()
+
+			template.WithDataviewIDIfNotExists(state.DataviewBlockID, dvContent, false)(s)
+		},
+		template.WithForcedDetail(bundle.RelationKeySetOf, domain.StringList([]string{ot.Id()})),
+	}
+}

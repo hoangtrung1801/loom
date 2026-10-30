@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "anytype",
@@ -136,11 +137,11 @@
   ],
   "overrides": {
     "async": "^3.2.5",
-    "node-abi": "^4.35.0",
     "getos": "^3.2.1",
     "jsonfile": "^6.1.0",
     "lodash-es": "^4.17.23",
     "micromatch": "^4.0.8",
+    "node-abi": "^4.35.0",
     "node-gyp": "^12.1.0",
     "tar": "^7.5.7",
     "tmp": "^0.2.4",

@@ -30,8 +30,12 @@ Two modes:
 
 | Command | Source of `.proto` files | Requires |
 |---------|--------------------------|----------|
-| `bash scripts/generate-protos.sh` (or `bun run generate:protos`) | local `../anytype-heart` checkout (runs `make install-dev-js`) | Go toolchain **and** the `anytype-heart` repo at `../anytype-heart` |
+| `bash scripts/generate-protos.sh` (or `bun run generate:protos`) | bundled `anytype-heart/` source (runs `make install-dev-js`) | Go toolchain, Node.js/npm, and `protoc` |
 | `bash scripts/generate-protos.sh --from-dist` | `dist/lib/protos/` (populated by `./update.sh`) | just `protoc` — **use this if you don't develop the middleware** |
+
+The bundled backend is imported from `anyproto/anytype-heart` commit `cfed14bd90e5d3fccd8f7a0809b1c61ee7c3f453`. It is regular source in this repository, not a submodule; backend and frontend changes are committed and pushed together. Its license remains in `anytype-heart/LICENSE.md`.
+
+For local full-stack development, run `bun install`, `bun run generate:protos`, then `bun run start:dev` from the repository root. The generator builds the native helper and installs it into the root `dist/` directory. Backend native-library prerequisites are documented in `anytype-heart/docs/Build.md`. Set `HEART_DIR` (or `ANYTYPE_HEART_PATH`) only to use a different backend checkout.
 
 ### Linux first-time setup (Fedora / Ubuntu)
 
@@ -69,11 +73,12 @@ bun run start:dev
 | `protoc not found` | Install `protobuf-compiler` |
 | `ts-proto not found at .../protoc-gen-ts_proto` | Run `bun install` first |
 | `dist/lib/protos not found` (with `--from-dist`) | Run `./update.sh <platform> <arch>` first |
-| `anytype-heart repo not found at ../anytype-heart` (local mode) | Clone it to `../anytype-heart`, or use `--from-dist` instead |
+| `anytype-heart repo not found` (local mode) | Ensure the bundled `anytype-heart/` directory exists, or check the `HEART_DIR` / `ANYTYPE_HEART_PATH` override |
+| `runtime/cgo ... exit status 2` when `cc` resolves to a wrapper | On macOS, use `CC=/usr/bin/clang CXX=/usr/bin/clang++ bun run generate:protos` to select the system compiler |
 
 ## generate-service-registry.js
 
-Invoked by `generate-protos.sh` — never run directly. Generates `src/ts/lib/api/service.ts`, a registry mapping every gRPC method name to its ts-proto request/response `MessageFns`. Pass `--from-dist` to read protos from `dist/lib/protos/` instead of `../anytype-heart`.
+Invoked by `generate-protos.sh` — never run directly. Generates `src/ts/lib/api/service.ts`, a registry mapping every gRPC method name to its ts-proto request/response `MessageFns`. Pass `--from-dist` to read protos from `dist/lib/protos/` instead of the bundled `anytype-heart/`.
 
 ## proto-overrides/struct.ts
 

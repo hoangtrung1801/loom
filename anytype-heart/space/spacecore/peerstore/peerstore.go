@@ -1,0 +1,191 @@
+package peerstore
+
+/*
+AI generated
+
+Name: Local Peer Registry
+Scope: global
+
+## Responsibility
+- Tracks local network peers (discovered via P2P/local discovery) and their space memberships
+- Maintains bidirectional mappings: peer-to-spaces and space-to-peers
+- Proxies responsible node IDs and file peers from nodeconf service
+- Notifies observers on peer additions, removals, and space membership changes
+*/
+
+import (
+	"sync"
+
+	"github.com/anyproto/any-sync/app"
+	"github.com/anyproto/any-sync/nodeconf"
+	libslice "github.com/anyproto/any-sync/util/slice"
+	"golang.org/x/exp/slices"
+
+	"github.com/anyproto/anytype-heart/util/slice"
+)
+
+const CName = "client.space.peerstore"
+
+type PeerStore interface {
+	app.Component
+	ResponsibleNodeIds(spaceId string) []string
+	ResponsibleFilePeers() []string
+	LocalPeerIds(spaceId string) []string
+	AllLocalPeers() []string
+	UpdateLocalPeer(peerId string, spaceIds []string)
+	RemoveLocalPeer(peerId string)
+	AddObserver(observer Observer)
+}
+
+func New() PeerStore {
+	return &peerStore{
+		localPeerIdsBySpace:  map[string][]string{},
+		spacesByLocalPeerIds: map[string][]string{},
+		Mutex:                sync.Mutex{},
+	}
+}
+
+// Observer is a function that will be called when a peer is updated
+type Observer func(peerId string, spaceIdsBefore []string, spaceIdsAfter []string, peerRemoved bool)
+
+type peerStore struct {
+	nodeConf             nodeconf.Service
+	localPeerIds         []string
+	localPeerIdsBySpace  map[string][]string
+	spacesByLocalPeerIds map[string][]string
+	observers            []Observer
+	sync.Mutex
+}
+
+func (p *peerStore) Init(a *app.App) (err error) {
+	p.nodeConf = a.MustComponent(nodeconf.CName).(nodeconf.Service)
+	return
+}
+
+func (p *peerStore) Name() (name string) {
+	return CName
+}
+
+func (p *peerStore) AddObserver(observer Observer) {
+	p.Lock()
+	defer p.Unlock()
+	p.observers = append(p.observers, observer)
+}
+
+func (p *peerStore) UpdateLocalPeer(peerId string, spaceIds []string) {
+	// A sorted copy, stored as is and handed to the observers. They read it
+	// after the lock is released, so a stored list is never reordered: the
+	// next update compares against it as it is.
+	spaceIds = slices.Clone(spaceIds)
+	slices.Sort(spaceIds)
+	notify := true
+	p.Lock()
+	var (
+		oldIds []string
+		ok     bool
+	)
+	defer func() {
+		observers := p.observers
+		p.Unlock()
+		if !notify {
+			return
+		}
+
+		for _, ob := range observers {
+			ob(peerId, oldIds, spaceIds, false)
+		}
+	}()
+	if oldIds, ok = p.spacesByLocalPeerIds[peerId]; ok {
+		if slices.Equal(oldIds, spaceIds) {
+			notify = false
+			return
+		}
+		p.updatePeer(peerId, oldIds, spaceIds)
+		return
+	}
+	p.addNewPeer(peerId, spaceIds)
+}
+
+func (p *peerStore) addNewPeer(peerId string, newIds []string) {
+	p.localPeerIds = append(p.localPeerIds, peerId)
+	p.spacesByLocalPeerIds[peerId] = newIds
+	for _, spaceId := range newIds {
+		spacePeerIds := p.localPeerIdsBySpace[spaceId]
+		spacePeerIds = append(spacePeerIds, peerId)
+		p.localPeerIdsBySpace[spaceId] = spacePeerIds
+	}
+}
+
+func (p *peerStore) updatePeer(peerId string, oldIds, newIds []string) {
+	removed, added := slice.DifferenceRemovedAdded(oldIds, newIds)
+	p.spacesByLocalPeerIds[peerId] = newIds
+	for _, spaceId := range added {
+		peerIds := p.localPeerIdsBySpace[spaceId]
+		peerIds = append(peerIds, peerId)
+		p.localPeerIdsBySpace[spaceId] = peerIds
+	}
+	for _, spaceId := range removed {
+		peerIds := p.localPeerIdsBySpace[spaceId]
+		peerIds = libslice.DiscardFromSlice(peerIds, func(s string) bool {
+			return s == peerId
+		})
+		p.localPeerIdsBySpace[spaceId] = peerIds
+	}
+}
+
+func (p *peerStore) AllLocalPeers() []string {
+	p.Lock()
+	defer p.Unlock()
+	// Clone under the lock: the caller reads the result after we return, and
+	// a concurrent UpdateLocalPeer/RemoveLocalPeer appends to the same slice.
+	return slices.Clone(p.localPeerIds)
+}
+
+func (p *peerStore) LocalPeerIds(spaceId string) []string {
+	p.Lock()
+	defer p.Unlock()
+	// a copy, as in AllLocalPeers: removing a peer from the space discards it
+	// from this very slice in place while callers still iterate the result
+	ids := p.localPeerIdsBySpace[spaceId]
+	return append(ids[:0:0], ids...)
+}
+
+func (p *peerStore) RemoveLocalPeer(peerId string) {
+	p.Lock()
+	spaceIds, exists := p.spacesByLocalPeerIds[peerId]
+	if !exists {
+		p.Unlock()
+		return
+	}
+	defer func() {
+		observers := p.observers
+		p.Unlock()
+		for _, ob := range observers {
+			ob(peerId, spaceIds, nil, true)
+		}
+	}()
+	// TODO: do we need to notify observer here
+	for _, spaceId := range spaceIds {
+		peerIds := p.localPeerIdsBySpace[spaceId]
+		if len(peerIds) <= 1 {
+			delete(p.localPeerIdsBySpace, spaceId)
+			continue
+		}
+		peerIds = libslice.DiscardFromSlice(peerIds, func(s string) bool {
+			return s == peerId
+		})
+		p.localPeerIdsBySpace[spaceId] = peerIds
+	}
+	delete(p.spacesByLocalPeerIds, peerId)
+	p.localPeerIds = libslice.DiscardFromSlice(p.localPeerIds, func(s string) bool {
+		return s == peerId
+	})
+}
+
+func (p *peerStore) ResponsibleNodeIds(spaceId string) (ids []string) {
+	return p.nodeConf.NodeIds(spaceId)
+}
+
+func (p *peerStore) ResponsibleFilePeers() (ids []string) {
+	return p.nodeConf.FilePeers()
+}

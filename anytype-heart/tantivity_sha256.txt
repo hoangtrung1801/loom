@@ -1,0 +1,12 @@
+f744fba953519688350cf0c56755dd892e0df0b4bd3b1df9f935cf0d2537a403  deps/libs/android-386.tar.gz
+ae643a1a46ab6dc1115f0c77277eceeab744b3edbc51a7c4222365dce28f858b  deps/libs/android-amd64.tar.gz
+43714d934e838dc141883bf04fa62b0ac82d578fb71d8296747a6dfa54100f20  deps/libs/android-arm.tar.gz
+22823b01aed071227e36037b83b801af5637aa83faad9009740750a12d6a2c65  deps/libs/android-arm64.tar.gz
+10916b0f4f36c4d9fb115b6aa4f70f4ec0a36d3634fb755fe9b9addb9a33c325  deps/libs/darwin-amd64.tar.gz
+f0e4fa9bdca31da3b115db4fbe6689c5d6cab771be8f9468e5309c818b3f8add  deps/libs/darwin-arm64.tar.gz
+14737c6c76937db14dd282d1a366f58d0b609776ca8aa21c0d7f97d8954388aa  deps/libs/ios-amd64.tar.gz
+c949c72ac58601ef02f5b5e11569fbf21970a6afcd05d1ac645e78174398ccde  deps/libs/ios-arm64.tar.gz
+8902d1608a2263597f8f9fa9d7d4155e8ec5efe4701cc0db03905c170c25899a  deps/libs/ios-arm64-sim.tar.gz
+88b34e006707bfec2d29e8b26405f67cbb975d06fd4ea164da856d0084aaabbc  deps/libs/linux-amd64-musl.tar.gz
+0a4a9143388977df41a174075ce05cd6aee2821da6425b5b9f9d591fe35d3756  deps/libs/linux-arm64-musl.tar.gz
+28b3a02cb3a3ad9d54675e7e2e65494c03183055e1b59f6866fd9dcf77b062e9  deps/libs/windows-amd64.tar.gz
