@@ -18,6 +18,7 @@ Electron main process files for desktop app integration. TypeScript source in `t
 - `linkApproval.ts` - Local-link pairing prompts: deduplicates requests, queues prompts, validates user-chosen space grants, updates the space catalog, and keeps BAD_INPUT responses open for correction
 - `safeStorage.ts` - Electron safe storage wrapper
 - `types.ts` - TypeScript type definitions
+- `userData.ts` / `userDataInit.ts` - The user-data folder is `<app data>/loom` (`~/.config/loom`, `~/Library/Application Support/loom`, `%APPDATA%\loom`; account data under `data/`). `userDataInit.ts` is `main.ts`'s first import, because modules read `userData` while loading; on first launch it moves an older `anytype` folder's contents across, entry by entry, never over an existing entry, and keeps using the old folder if the account data could not be moved
 
 ### Libraries (`ts/lib/`)
 - `installNativeMessagingHost.ts` - Installs native messaging host manifest for the Chrome/Firefox Web Clipper extension. Registers `com.anytype.desktop` on macOS, Linux, and Windows.

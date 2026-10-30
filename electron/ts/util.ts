@@ -8,6 +8,7 @@ import ConfigManager from './config';
 import Constant from '../json/constant.json';
 import { AppWindow, TabView } from './types';
 import { isTrustedUrl } from './lib/trustedUrl';
+import { USER_DATA_NAME } from './userData';
 
 const protocol = 'anytype';
 
@@ -320,7 +321,7 @@ class Util {
 	};
 
 	defaultUserDataPath (): string {
-		return path.join(app.getPath('appData'), app.getName());
+		return path.join(app.getPath('appData'), USER_DATA_NAME);
 	};
 
 	registerLinuxProtocolHandler (): void {

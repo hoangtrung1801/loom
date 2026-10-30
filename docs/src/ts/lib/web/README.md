@@ -32,9 +32,9 @@ ANYTYPE_USE_SIDE_SERVER=http://127.0.0.1:31008 bun run start:web
 | `WEB_DATA_PATH`            | Data storage path for backend      | OS app data (see below)           |
 
 **Default data paths by OS:**
-- **macOS**: `~/Library/Application Support/anytype/data`
-- **Windows**: `%APPDATA%/anytype/data`
-- **Linux**: `~/.config/anytype/data`
+- **macOS**: `~/Library/Application Support/loom/data`
+- **Windows**: `%APPDATA%/loom/data`
+- **Linux**: `~/.config/loom/data`
 
 ## Key Files
 

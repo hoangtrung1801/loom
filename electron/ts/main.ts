@@ -10,6 +10,7 @@ process.stdout?.on?.('error', () => {});
 process.stderr?.on?.('error', () => {});
 
 import { app, BrowserWindow, session, nativeTheme, ipcMain, powerMonitor, dialog, contentTracing, globalShortcut } from 'electron';
+import './userDataInit'; // first: sets the user-data folder before any module below reads it
 import { is, fixPathForAsarUnpack } from 'electron-util';
 import path from 'path';
 import storage from 'electron-json-storage';
