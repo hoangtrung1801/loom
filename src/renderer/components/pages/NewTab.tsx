@@ -13,6 +13,8 @@ const START: { label: string; icon: IconName; run(): void }[] = [
   { label: "Today's journal", icon: 'journal', run: () => void openJournal() },
   { label: 'New whiteboard', icon: 'board', run: () => void newBoard() },
   { label: 'Search…', icon: 'search', run: () => useUi.getState().setSearch(true) },
+  { label: 'Save a link', icon: 'link', run: () => useUi.getState().setClip(true, 'link') },
+  { label: 'Clip a web page', icon: 'globe', run: () => useUi.getState().setClip(true, 'page') },
 ];
 
 /** The blank tab: quick starts plus what you touched last. */
