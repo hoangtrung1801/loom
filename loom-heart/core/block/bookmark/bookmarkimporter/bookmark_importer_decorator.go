@@ -1,0 +1,74 @@
+package bookmarkimporter
+
+/*
+AI generated
+
+Name: Bookmark Creation with Web Import Fallback
+Scope: global
+
+## Responsibility
+- Decorates bookmark.Service to prefer web import when creating bookmark objects
+- Falls back to standard CreateBookmarkObject if web import fails
+*/
+
+import (
+	"context"
+
+	"github.com/anyproto/any-sync/app"
+
+	bookmarksvc "github.com/hoangtrung1801/loom/loom-heart/core/block/bookmark"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/import"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/logging"
+)
+
+const CName = "bookmark-importer"
+
+var log = logging.Logger("bookmark-importer")
+
+type Importer interface {
+	ImportWeb(ctx context.Context, req *importer.ImportRequest) (string, *domain.Details, error)
+}
+
+type BookmarkImporterDecorator struct {
+	Importer
+	bookmarksvc.Service
+	app.Component
+}
+
+func New() *BookmarkImporterDecorator {
+	return &BookmarkImporterDecorator{}
+}
+
+func (bd *BookmarkImporterDecorator) Init(a *app.App) (err error) {
+	bd.Service = a.MustComponent(bookmarksvc.CName).(bookmarksvc.Service)
+	bd.Importer = a.MustComponent(importer.CName).(importer.Importer)
+	return nil
+}
+
+func (bd *BookmarkImporterDecorator) CreateBookmarkObject(ctx context.Context, spaceID, templateId string, details *domain.Details, getContent bookmarksvc.ContentFuture) (objectId string, newDetails *domain.Details, err error) {
+	url := details.GetString(bundle.RelationKeySource)
+	if objectId, newDetails, err = bd.Importer.ImportWeb(nil, &importer.ImportRequest{
+		RpcObjectImportRequest: &pb.RpcObjectImportRequest{
+			Params:                &pb.RpcObjectImportRequestParamsOfBookmarksParams{BookmarksParams: &pb.RpcObjectImportRequestBookmarksParams{Url: url}},
+			UpdateExistingObjects: true,
+		},
+	}); err != nil {
+		log.With(
+			"function", "BookmarkFetch",
+			"message", "failed to import bookmark",
+		).Error(err)
+		return bd.Service.CreateBookmarkObject(ctx, spaceID, templateId, details, getContent)
+	}
+	err = bd.Service.UpdateObject(objectId, getContent())
+	if err != nil {
+		return "", nil, err
+	}
+	return objectId, newDetails, nil
+}
+
+func (bd *BookmarkImporterDecorator) Name() (name string) {
+	return CName
+}

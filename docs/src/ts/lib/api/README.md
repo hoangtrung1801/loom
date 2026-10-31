@@ -1,6 +1,6 @@
 # api/ - gRPC Communication Layer
 
-Handles all communication between the React frontend and the Go middleware (anytype-heart) via gRPC.
+Handles all communication between the React frontend and the Go middleware (loom-heart) via gRPC.
 
 ## Files
 

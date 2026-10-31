@@ -1,0 +1,103 @@
+package syncer
+
+import (
+	"context"
+	"testing"
+
+	"github.com/anyproto/any-sync/util/cidutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
+	block2 "github.com/hoangtrung1801/loom/loom-heart/core/block"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/import/common/syncer/mock_syncer"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject/mock_fileobject"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/addr"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
+)
+
+func TestFileRelationSyncer_Sync(t *testing.T) {
+	spaceId := "spaceId"
+	fileId := "fileId"
+	objectId := "contextObjectId"
+	t.Run("relation file is missing", func(t *testing.T) {
+		// given
+		syncer := NewFileRelationSyncer(nil, nil)
+
+		// when
+		newFileId := syncer.Sync(spaceId, addr.MissingObject, nil, objectorigin.Import(model.Import_Pb), objectId)
+
+		// then
+		assert.Equal(t, addr.MissingObject, newFileId)
+	})
+	t.Run("relation fil is existing file object", func(t *testing.T) {
+		// given
+		syncer := NewFileRelationSyncer(nil, nil)
+		newFileIds := map[string]struct{}{fileId: {}}
+
+		// when
+		newFileId := syncer.Sync(spaceId, fileId, newFileIds, objectorigin.Import(model.Import_Pb), objectId)
+
+		// then
+		assert.Equal(t, fileId, newFileId)
+	})
+	t.Run("relation file is not presented in import archive", func(t *testing.T) {
+		// given
+		rawCid, err := cidutil.NewCidFromBytes([]byte("test"))
+		assert.Nil(t, err)
+
+		service := mock_fileobject.NewMockService(t)
+		fullFileId := domain.FullFileId{FileId: domain.FileId(rawCid), SpaceId: spaceId}
+		service.EXPECT().CreateFromImport(fullFileId, objectorigin.Import(model.Import_Pb), mock.MatchedBy(func(d *domain.Details) bool {
+			return d.GetString(bundle.RelationKeyCreatedInContext) == objectId
+		})).Return("newFileObjectId", nil)
+		syncer := NewFileRelationSyncer(nil, service)
+		newFileIds := map[string]struct{}{}
+
+		// when
+		newFileId := syncer.Sync(spaceId, rawCid, newFileIds, objectorigin.Import(model.Import_Pb), objectId)
+
+		// then
+		assert.Equal(t, "newFileObjectId", newFileId)
+	})
+	t.Run("relation is url", func(t *testing.T) {
+		// given
+		fileUploader := mock_syncer.NewMockBlockService(t)
+		fileUploader.EXPECT().UploadFile(context.Background(), spaceId, block2.FileUploadRequest{
+			RpcFileUploadRequest: pb.RpcFileUploadRequest{
+				Url:              "http://url.com",
+				CreatedInContext: objectId,
+			},
+			ObjectOrigin: objectorigin.Import(model.Import_Pb),
+		}).Return("newFileObjectId", model.BlockContentFile_File, nil, nil)
+		syncer := NewFileRelationSyncer(fileUploader, nil)
+
+		// when
+		newFileId := syncer.Sync(spaceId, "http://url.com", nil, objectorigin.Import(model.Import_Pb), objectId)
+
+		// then
+		assert.Equal(t, "newFileObjectId", newFileId)
+	})
+
+	t.Run("relation is local path", func(t *testing.T) {
+		// given
+		fileUploader := mock_syncer.NewMockBlockService(t)
+		fileUploader.EXPECT().UploadFile(context.Background(), spaceId, block2.FileUploadRequest{
+			RpcFileUploadRequest: pb.RpcFileUploadRequest{
+				LocalPath:        "local path",
+				CreatedInContext: objectId,
+			},
+			ObjectOrigin: objectorigin.Import(model.Import_Pb),
+		}).Return("newFileObjectId", model.BlockContentFile_File, nil, nil)
+		syncer := NewFileRelationSyncer(fileUploader, nil)
+
+		// when
+		newFileId := syncer.Sync(spaceId, "local path", nil, objectorigin.Import(model.Import_Pb), objectId)
+
+		// then
+		assert.Equal(t, "newFileObjectId", newFileId)
+	})
+}

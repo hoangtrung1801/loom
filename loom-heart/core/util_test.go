@@ -1,0 +1,77 @@
+package core
+
+import (
+	"errors"
+	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/chatobject"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/object/idresolver"
+)
+
+type testErrorType struct {
+	payload int
+}
+
+func (t testErrorType) Error() string {
+	return "error type!"
+}
+
+type testCode int32
+
+func TestErrorCodeMapping(t *testing.T) {
+	err1 := errors.New("err1")
+	err2 := errors.New("err2")
+	err3 := errors.New("err3")
+	err4 := testErrorType{}
+
+	wrapped1 := errors.Join(err1, fmt.Errorf("description of error"))
+	wrapped2 := fmt.Errorf("description of error: %w", err2)
+
+	mapper := func(err error) testCode {
+		return mapErrorCode(err,
+			errToCode(err1, testCode(2)),
+			errToCode(err2, testCode(3)),
+			errToCode(err3, testCode(4)),
+			errTypeToCode(&testErrorType{}, testCode(5)),
+		)
+	}
+
+	assert.Equal(t, testCode(0), mapper(nil))
+	assert.Equal(t, testCode(1), mapper(errors.New("unknown error")))
+	assert.Equal(t, testCode(2), mapper(wrapped1))
+	assert.Equal(t, testCode(3), mapper(wrapped2))
+	assert.Equal(t, testCode(4), mapper(err3))
+	assert.Equal(t, testCode(5), mapper(err4))
+}
+
+func TestErrorCodeMappingUniversalBadInput(t *testing.T) {
+	mapper := func(err error) testCode {
+		return mapErrorCode[testCode](err)
+	}
+
+	assert.Equal(t, testCode(universalBadInputCode), mapper(idresolver.ErrEmptyObjectId))
+	assert.Equal(t, testCode(universalBadInputCode), mapper(fmt.Errorf("wrap: %w", idresolver.ErrEmptyObjectId)))
+}
+
+func TestErrorCodeMappingChatMessageRefusals(t *testing.T) {
+	mapper := func(err error) testCode {
+		return mapErrorCode[testCode](err)
+	}
+
+	for _, err := range []error{chatobject.ErrMessageDeleted, chatobject.ErrReplyToDeletedMessage, chatobject.ErrMessageNotFound} {
+		assert.Equal(t, testCode(universalBadInputCode), mapper(fmt.Errorf("check message: %w", err)), err.Error())
+	}
+}
+
+func TestErrorCodeMappingWithPayload(t *testing.T) {
+	errPrototype := &testErrorType{}
+
+	err := &testErrorType{payload: 42}
+	code := mapErrorCode(err, errTypeToCode(&errPrototype, testCode(123)))
+
+	assert.Equal(t, 42, errPrototype.payload)
+	assert.Equal(t, testCode(123), code)
+}

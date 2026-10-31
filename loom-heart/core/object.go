@@ -1,0 +1,1034 @@
+package core
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/gogo/protobuf/types"
+	"github.com/hashicorp/go-multierror"
+	"github.com/samber/lo"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/deletionaudit"
+	importer "github.com/hoangtrung1801/loom/loom-heart/core/block/import"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/import/common"
+	importv2adapter "github.com/hoangtrung1801/loom/loom-heart/core/block/importv2/adapter"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/object/objectgraph"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/objectgc"
+	"github.com/hoangtrung1801/loom/loom-heart/core/date"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
+	"github.com/hoangtrung1801/loom/loom-heart/core/indexer"
+	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
+	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/crossspacesub"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/database"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
+	"github.com/hoangtrung1801/loom/loom-heart/space"
+	"github.com/hoangtrung1801/loom/loom-heart/util/builtinobjects"
+	"github.com/hoangtrung1801/loom/loom-heart/util/slice"
+)
+
+func (mw *Middleware) ObjectDuplicate(cctx context.Context, req *pb.RpcObjectDuplicateRequest) *pb.RpcObjectDuplicateResponse {
+	response := func(templateId string, err error) *pb.RpcObjectDuplicateResponse {
+		m := &pb.RpcObjectDuplicateResponse{
+			Error: &pb.RpcObjectDuplicateResponseError{Code: pb.RpcObjectDuplicateResponseError_NULL},
+			Id:    templateId,
+		}
+		if err != nil {
+			m.Error.Code = pb.RpcObjectDuplicateResponseError_UNKNOWN_ERROR
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+	var objectIds []string
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		objectIds, err = bs.ObjectsDuplicate(cctx, []string{req.ContextId})
+		return
+	})
+	if len(objectIds) == 0 {
+		return response("", err)
+	}
+	return response(objectIds[0], err)
+}
+
+func (mw *Middleware) ObjectListDuplicate(cctx context.Context, req *pb.RpcObjectListDuplicateRequest) *pb.RpcObjectListDuplicateResponse {
+	response := func(objectIds []string, err error) *pb.RpcObjectListDuplicateResponse {
+		m := &pb.RpcObjectListDuplicateResponse{
+			Error: &pb.RpcObjectListDuplicateResponseError{Code: pb.RpcObjectListDuplicateResponseError_NULL},
+			Ids:   objectIds,
+		}
+		if err != nil {
+			m.Error.Code = pb.RpcObjectListDuplicateResponseError_UNKNOWN_ERROR
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+	var objectIds []string
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		objectIds, err = bs.ObjectsDuplicate(cctx, req.ObjectIds)
+		return
+	})
+	return response(objectIds, err)
+}
+
+func (mw *Middleware) ObjectSearch(cctx context.Context, req *pb.RpcObjectSearchRequest) *pb.RpcObjectSearchResponse {
+	var total int64
+	response := func(code pb.RpcObjectSearchResponseErrorCode, records []*types.Struct, err error) *pb.RpcObjectSearchResponse {
+		m := &pb.RpcObjectSearchResponse{Error: &pb.RpcObjectSearchResponseError{Code: code}, Records: records, Total: total}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+
+		return m
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return response(pb.RpcObjectSearchResponseError_BAD_INPUT, nil, fmt.Errorf("account must be started"))
+	}
+
+	if req.FullText != "" {
+		mw.applicationService.GetApp().MustComponent(indexer.CName).(indexer.Indexer).ForceFTIndex()
+	}
+
+	ds := mw.applicationService.GetApp().MustComponent(objectstore.CName).(objectstore.ObjectStore)
+	spaceIndex := ds.SpaceIndex(req.SpaceId)
+	query := database.Query{
+		Filters:         database.FiltersFromProto(req.Filters),
+		SpaceId:         req.SpaceId,
+		Sorts:           database.SortsFromProto(req.Sorts),
+		Offset:          int(req.Offset),
+		Limit:           int(req.Limit),
+		TextQuery:       req.FullText,
+		PrefixNameQuery: true,
+	}
+
+	var (
+		records []database.Record
+		err     error
+	)
+	// When the caller needs the total count, fetch the page and count the full result set in a single
+	// call so the filters are compiled only once. Fulltext counting is not supported, so fall back to a
+	// plain query in that case.
+	if req.NeedTotal && req.FullText == "" {
+		var count int
+		records, count, err = spaceIndex.QueryAndCount(query)
+		total = int64(count)
+	} else {
+		records, err = spaceIndex.Query(query)
+	}
+	if err != nil {
+		return response(pb.RpcObjectSearchResponseError_UNKNOWN_ERROR, nil, err)
+	}
+
+	// Add dates only to the first page of search results
+	if req.Offset == 0 {
+		records, err = date.EnrichRecordsWithDateSuggestions(cctx, req.SpaceId, req.FullText, records, req.Filters, ds, mustService[space.Service](mw))
+		if err != nil {
+			return response(pb.RpcObjectSearchResponseError_UNKNOWN_ERROR, nil, err)
+		}
+	}
+
+	var records2 = make([]*domain.Details, 0, len(records))
+	for _, rec := range records {
+		if len(req.Keys) == 0 {
+			records2 = append(records2, rec.Details)
+		} else {
+			records2 = append(records2, rec.Details.CopyOnlyKeys(slice.StringsInto[domain.RelationKey](req.Keys)...))
+		}
+	}
+
+	protoRecords := lo.Map(records2, func(item *domain.Details, _ int) *types.Struct {
+		return item.ToProto()
+	})
+	return response(pb.RpcObjectSearchResponseError_NULL, protoRecords, nil)
+}
+
+func (mw *Middleware) ObjectSearchWithMeta(cctx context.Context, req *pb.RpcObjectSearchWithMetaRequest) *pb.RpcObjectSearchWithMetaResponse {
+	response := func(code pb.RpcObjectSearchWithMetaResponseErrorCode, results []*model.SearchResult, err error) *pb.RpcObjectSearchWithMetaResponse {
+		m := &pb.RpcObjectSearchWithMetaResponse{Error: &pb.RpcObjectSearchWithMetaResponseError{Code: code}, Results: results}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+
+		return m
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return response(pb.RpcObjectSearchWithMetaResponseError_BAD_INPUT, nil, fmt.Errorf("account must be started"))
+	}
+
+	if req.FullText != "" {
+		mw.applicationService.GetApp().MustComponent(indexer.CName).(indexer.Indexer).ForceFTIndex()
+	}
+
+	ds := mw.applicationService.GetApp().MustComponent(objectstore.CName).(objectstore.ObjectStore)
+	results, err := ds.SpaceIndex(req.SpaceId).Query(database.Query{
+		Filters:   database.FiltersFromProto(req.Filters),
+		Sorts:     database.SortsFromProto(req.Sorts),
+		Offset:    int(req.Offset),
+		Limit:     int(req.Limit),
+		TextQuery: req.FullText,
+		SpaceId:   req.SpaceId,
+	})
+
+	// Add dates only to the first page of search results
+	if req.Offset == 0 {
+		results, err = date.EnrichRecordsWithDateSuggestions(cctx, req.SpaceId, req.FullText, results, req.Filters, ds, mustService[space.Service](mw))
+		if err != nil {
+			return response(pb.RpcObjectSearchWithMetaResponseError_UNKNOWN_ERROR, nil, err)
+		}
+	}
+
+	var resultsModels = make([]*model.SearchResult, 0, len(results))
+	for i, rec := range results {
+		if len(req.Keys) > 0 {
+			rec.Details = rec.Details.CopyOnlyKeys(slice.StringsInto[domain.RelationKey](req.Keys)...)
+		}
+		resultsModels = append(resultsModels, &model.SearchResult{
+
+			ObjectId: rec.Details.GetString(bundle.RelationKeyId),
+			Details:  rec.Details.ToProto(),
+			Meta:     []*model.SearchMeta{&(results[i].Meta)},
+		})
+	}
+	if err != nil {
+		return response(pb.RpcObjectSearchWithMetaResponseError_UNKNOWN_ERROR, nil, err)
+	}
+
+	return response(pb.RpcObjectSearchWithMetaResponseError_NULL, resultsModels, nil)
+}
+
+func (mw *Middleware) ObjectCrossSpaceSearch(cctx context.Context, req *pb.RpcObjectCrossSpaceSearchRequest) *pb.RpcObjectCrossSpaceSearchResponse {
+	response := func(code pb.RpcObjectCrossSpaceSearchResponseErrorCode, records []*types.Struct, allStoresLoaded bool, err error) *pb.RpcObjectCrossSpaceSearchResponse {
+		m := &pb.RpcObjectCrossSpaceSearchResponse{
+			Error:           &pb.RpcObjectCrossSpaceSearchResponseError{Code: code},
+			Records:         records,
+			AllStoresLoaded: allStoresLoaded,
+		}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return response(pb.RpcObjectCrossSpaceSearchResponseError_BAD_INPUT, nil, false, fmt.Errorf("account must be started"))
+	}
+
+	if req.FullText != "" {
+		mw.applicationService.GetApp().MustComponent(indexer.CName).(indexer.Indexer).ForceFTIndex()
+	}
+
+	ds := mw.applicationService.GetApp().MustComponent(objectstore.CName).(objectstore.ObjectStore)
+	// one-shot snapshot of the currently-loaded spaces: unlike QueryCrossSpace
+	// this does not wait for the store warm-up; AllStoresLoaded tells the
+	// caller whether the view was complete
+	var spaceIds []string
+	if len(req.SpaceIds) > 0 {
+		spaceIds = req.SpaceIds
+	}
+	records, allStoresLoaded, err := ds.QueryCrossSpaceNoWait(cctx, database.Query{
+		SpaceIds:  spaceIds,
+		Filters:   database.FiltersFromProto(req.Filters),
+		Sorts:     database.SortsFromProto(req.Sorts),
+		Offset:    int(req.Offset),
+		Limit:     int(req.Limit),
+		TextQuery: req.FullText,
+	})
+	if err != nil {
+		return response(pb.RpcObjectCrossSpaceSearchResponseError_UNKNOWN_ERROR, nil, allStoresLoaded, err)
+	}
+
+	protoRecords := make([]*types.Struct, 0, len(records))
+	for _, rec := range records {
+		details := rec.Details
+		if len(req.Keys) > 0 {
+			details = details.CopyOnlyKeys(slice.StringsInto[domain.RelationKey](req.Keys)...)
+		}
+		protoRecords = append(protoRecords, details.ToProto())
+	}
+	return response(pb.RpcObjectCrossSpaceSearchResponseError_NULL, protoRecords, allStoresLoaded, nil)
+}
+
+func (mw *Middleware) ObjectSearchSubscribe(cctx context.Context, req *pb.RpcObjectSearchSubscribeRequest) *pb.RpcObjectSearchSubscribeResponse {
+	errResponse := func(err error) *pb.RpcObjectSearchSubscribeResponse {
+		r := &pb.RpcObjectSearchSubscribeResponse{
+			Error: &pb.RpcObjectSearchSubscribeResponseError{
+				Code: pb.RpcObjectSearchSubscribeResponseError_UNKNOWN_ERROR,
+			},
+		}
+		if err != nil {
+			r.Error.Description = getErrorDescription(err)
+		}
+		return r
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return errResponse(fmt.Errorf("account must be started"))
+	}
+
+	subService := mw.applicationService.GetApp().MustComponent(subscription.CName).(subscription.Service)
+
+	resp, err := subService.Search(subscription.SubscribeRequest{
+		SpaceId:           req.SpaceId,
+		SubId:             req.SubId,
+		Filters:           database.FiltersFromProto(req.Filters),
+		Sorts:             database.SortsFromProto(req.Sorts),
+		Limit:             req.Limit,
+		Offset:            req.Offset,
+		Keys:              req.Keys,
+		AfterId:           req.AfterId,
+		BeforeId:          req.BeforeId,
+		Source:            req.Source,
+		NoDepSubscription: req.NoDepSubscription,
+		CollectionId:      req.CollectionId,
+	})
+	if err != nil {
+		return errResponse(err)
+	}
+
+	return &pb.RpcObjectSearchSubscribeResponse{
+		SubId:        resp.SubId,
+		Records:      domain.DetailsListToProtos(resp.Records),
+		Dependencies: domain.DetailsListToProtos(resp.Dependencies),
+		Counters:     resp.Counters,
+	}
+}
+
+func (mw *Middleware) ObjectCrossSpaceSearchSubscribe(cctx context.Context, req *pb.RpcObjectCrossSpaceSearchSubscribeRequest) *pb.RpcObjectCrossSpaceSearchSubscribeResponse {
+	subService := mustService[crossspacesub.Service](mw)
+	resp, err := subService.Subscribe(subscription.SubscribeRequest{
+		SubId:             req.SubId,
+		Filters:           database.FiltersFromProto(req.Filters),
+		Sorts:             database.SortsFromProto(req.Sorts),
+		Keys:              req.Keys,
+		Source:            req.Source,
+		NoDepSubscription: req.NoDepSubscription,
+		CollectionId:      req.CollectionId,
+	}, crossspacesub.NoOpPredicate())
+	if err != nil {
+		return &pb.RpcObjectCrossSpaceSearchSubscribeResponse{
+			Error: &pb.RpcObjectCrossSpaceSearchSubscribeResponseError{
+				Code:        pb.RpcObjectCrossSpaceSearchSubscribeResponseError_UNKNOWN_ERROR,
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+
+	return &pb.RpcObjectCrossSpaceSearchSubscribeResponse{
+		SubId:        resp.SubId,
+		Records:      domain.DetailsListToProtos(resp.Records),
+		Dependencies: domain.DetailsListToProtos(resp.Dependencies),
+		Counters:     resp.Counters,
+	}
+}
+
+func (mw *Middleware) ObjectCrossSpaceSearchUnsubscribe(cctx context.Context, req *pb.RpcObjectCrossSpaceSearchUnsubscribeRequest) *pb.RpcObjectCrossSpaceSearchUnsubscribeResponse {
+	subService := mustService[crossspacesub.Service](mw)
+	err := subService.Unsubscribe(req.SubId)
+	if err != nil {
+		return &pb.RpcObjectCrossSpaceSearchUnsubscribeResponse{
+			Error: &pb.RpcObjectCrossSpaceSearchUnsubscribeResponseError{
+				Code:        pb.RpcObjectCrossSpaceSearchUnsubscribeResponseError_UNKNOWN_ERROR,
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+	return &pb.RpcObjectCrossSpaceSearchUnsubscribeResponse{}
+}
+
+func (mw *Middleware) ObjectGroupsSubscribe(_ context.Context, req *pb.RpcObjectGroupsSubscribeRequest) *pb.RpcObjectGroupsSubscribeResponse {
+	errResponse := func(err error) *pb.RpcObjectGroupsSubscribeResponse {
+		r := &pb.RpcObjectGroupsSubscribeResponse{
+			Error: &pb.RpcObjectGroupsSubscribeResponseError{
+				Code: pb.RpcObjectGroupsSubscribeResponseError_UNKNOWN_ERROR,
+			},
+		}
+		if err != nil {
+			r.Error.Description = getErrorDescription(err)
+		}
+		return r
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return errResponse(errors.New("app must be started"))
+	}
+
+	subService := mw.applicationService.GetApp().MustComponent(subscription.CName).(subscription.Service)
+
+	resp, err := subService.SubscribeGroups(subscription.SubscribeGroupsRequest{
+		SpaceId:      req.SpaceId,
+		SubId:        req.SubId,
+		RelationKey:  req.RelationKey,
+		Filters:      database.FiltersFromProto(req.Filters),
+		Source:       req.Source,
+		CollectionId: req.CollectionId,
+	})
+	if err != nil {
+		return errResponse(err)
+	}
+
+	return resp
+}
+
+func (mw *Middleware) ObjectSubscribeIds(_ context.Context, req *pb.RpcObjectSubscribeIdsRequest) *pb.RpcObjectSubscribeIdsResponse {
+	errResponse := func(err error) *pb.RpcObjectSubscribeIdsResponse {
+		r := &pb.RpcObjectSubscribeIdsResponse{
+			Error: &pb.RpcObjectSubscribeIdsResponseError{
+				Code: pb.RpcObjectSubscribeIdsResponseError_UNKNOWN_ERROR,
+			},
+		}
+		if err != nil {
+			r.Error.Description = getErrorDescription(err)
+		}
+		return r
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return errResponse(fmt.Errorf("account must be started"))
+	}
+
+	subService := mw.applicationService.GetApp().MustComponent(subscription.CName).(subscription.Service)
+
+	resp, err := subService.SubscribeIdsReq(*req)
+	if err != nil {
+		return errResponse(err)
+	}
+
+	return resp
+}
+
+func (mw *Middleware) ObjectSearchUnsubscribe(cctx context.Context, req *pb.RpcObjectSearchUnsubscribeRequest) *pb.RpcObjectSearchUnsubscribeResponse {
+	response := func(err error) *pb.RpcObjectSearchUnsubscribeResponse {
+		r := &pb.RpcObjectSearchUnsubscribeResponse{
+			Error: &pb.RpcObjectSearchUnsubscribeResponseError{
+				Code: pb.RpcObjectSearchUnsubscribeResponseError_NULL,
+			},
+		}
+		if err != nil {
+			r.Error.Code = pb.RpcObjectSearchUnsubscribeResponseError_UNKNOWN_ERROR
+			r.Error.Description = getErrorDescription(err)
+		}
+		return r
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return response(fmt.Errorf("account must be started"))
+	}
+
+	subService := mw.applicationService.GetApp().MustComponent(subscription.CName).(subscription.Service)
+
+	err := subService.Unsubscribe(req.SubIds...)
+	if err != nil {
+		return response(err)
+	}
+	return response(nil)
+}
+
+func (mw *Middleware) ObjectGraph(cctx context.Context, req *pb.RpcObjectGraphRequest) *pb.RpcObjectGraphResponse {
+	if mw.applicationService.GetApp() == nil {
+		return objectResponse(
+			pb.RpcObjectGraphResponseError_BAD_INPUT,
+			nil,
+			nil,
+			fmt.Errorf("account must be started"),
+		)
+	}
+
+	nodes, edges, err := mustService[objectgraph.Service](mw).ObjectGraph(objectgraph.ObjectGraphRequest{
+		Filters:          database.FiltersFromProto(req.Filters),
+		Limit:            req.Limit,
+		ObjectTypeFilter: req.ObjectTypeFilter,
+		Keys:             req.Keys,
+		SpaceId:          req.SpaceId,
+		CollectionId:     req.CollectionId,
+		SetSource:        req.SetSource,
+		IncludeTypeEdges: req.IncludeTypeEdges,
+	})
+	if err != nil {
+		return unknownError(err)
+	}
+	return objectResponse(pb.RpcObjectGraphResponseError_NULL, domain.DetailsListToProtos(nodes), edges, nil)
+}
+
+func unknownError(err error) *pb.RpcObjectGraphResponse {
+	return objectResponse(pb.RpcObjectGraphResponseError_UNKNOWN_ERROR, nil, nil, err)
+}
+
+func objectResponse(
+	code pb.RpcObjectGraphResponseErrorCode,
+	nodes []*types.Struct,
+	edges []*pb.RpcObjectGraphEdge,
+	err error,
+) *pb.RpcObjectGraphResponse {
+	response := &pb.RpcObjectGraphResponse{
+		Error: &pb.RpcObjectGraphResponseError{
+			Code: code,
+		},
+		Nodes: nodes,
+		Edges: edges,
+	}
+
+	if err != nil {
+		response.Error.Description = err.Error()
+	}
+
+	return response
+}
+
+func (mw *Middleware) ObjectRelationDelete(cctx context.Context, req *pb.RpcObjectRelationDeleteRequest) *pb.RpcObjectRelationDeleteResponse {
+	ctx := mw.newContext(cctx)
+	response := func(code pb.RpcObjectRelationDeleteResponseErrorCode, err error) *pb.RpcObjectRelationDeleteResponse {
+		m := &pb.RpcObjectRelationDeleteResponse{Error: &pb.RpcObjectRelationDeleteResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		} else {
+			m.Event = mw.getResponseEvent(ctx)
+		}
+		return m
+	}
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		return bs.RemoveRelations(ctx, req.ContextId, req.RelationKeys)
+	})
+	if err != nil {
+		return response(pb.RpcObjectRelationDeleteResponseError_BAD_INPUT, err)
+	}
+	return response(pb.RpcObjectRelationDeleteResponseError_NULL, nil)
+}
+
+func (mw *Middleware) ObjectRelationListAvailable(cctx context.Context, req *pb.RpcObjectRelationListAvailableRequest) *pb.RpcObjectRelationListAvailableResponse {
+	ctx := mw.newContext(cctx)
+	response := func(code pb.RpcObjectRelationListAvailableResponseErrorCode, relations []*model.Relation, err error) *pb.RpcObjectRelationListAvailableResponse {
+		m := &pb.RpcObjectRelationListAvailableResponse{Relations: relations, Error: &pb.RpcObjectRelationListAvailableResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+	var rels []*model.Relation
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		rels, err = bs.ListAvailableRelations(ctx, req.ContextId)
+		return
+	})
+
+	if err != nil {
+		return response(pb.RpcObjectRelationListAvailableResponseError_UNKNOWN_ERROR, nil, err)
+	}
+
+	return response(pb.RpcObjectRelationListAvailableResponseError_NULL, rels, nil)
+}
+
+func (mw *Middleware) ObjectSetObjectType(cctx context.Context, req *pb.RpcObjectSetObjectTypeRequest) *pb.RpcObjectSetObjectTypeResponse {
+	ctx := mw.newContext(cctx)
+	response := func(code pb.RpcObjectSetObjectTypeResponseErrorCode, err error) *pb.RpcObjectSetObjectTypeResponse {
+		m := &pb.RpcObjectSetObjectTypeResponse{Error: &pb.RpcObjectSetObjectTypeResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		} else {
+			m.Event = mw.getResponseEvent(ctx)
+		}
+		return m
+	}
+
+	if err := mw.doBlockService(func(bs *block.Service) (err error) {
+		return bs.SetObjectTypes(ctx, req.ContextId, []string{req.ObjectTypeUniqueKey})
+	}); err != nil {
+		return response(pb.RpcObjectSetObjectTypeResponseError_UNKNOWN_ERROR, err)
+	}
+
+	return response(pb.RpcObjectSetObjectTypeResponseError_NULL, nil)
+}
+
+func (mw *Middleware) ObjectListSetObjectType(cctx context.Context, req *pb.RpcObjectListSetObjectTypeRequest) *pb.RpcObjectListSetObjectTypeResponse {
+	ctx := mw.newContext(cctx)
+	response := func(code pb.RpcObjectListSetObjectTypeResponseErrorCode, err error) *pb.RpcObjectListSetObjectTypeResponse {
+		m := &pb.RpcObjectListSetObjectTypeResponse{Error: &pb.RpcObjectListSetObjectTypeResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		} else {
+			m.Event = mw.getResponseEvent(ctx)
+		}
+		return m
+	}
+
+	if err := mw.doBlockService(func(bs *block.Service) (err error) {
+		var (
+			mErr       multierror.Error
+			anySucceed bool
+		)
+		for _, objID := range req.ObjectIds {
+			if err = bs.SetObjectTypes(ctx, objID, []string{req.ObjectTypeUniqueKey}); err != nil {
+				log.With("objectID", objID).Errorf("failed to set object type to object '%s': %v", objID, err)
+				mErr.Errors = append(mErr.Errors, err)
+			} else {
+				anySucceed = true
+			}
+		}
+		if anySucceed {
+			return nil
+		}
+		return mErr.ErrorOrNil()
+	}); err != nil {
+		return response(pb.RpcObjectListSetObjectTypeResponseError_UNKNOWN_ERROR, err)
+	}
+
+	return response(pb.RpcObjectListSetObjectTypeResponseError_NULL, nil)
+}
+
+func (mw *Middleware) ObjectSetLayout(cctx context.Context, req *pb.RpcObjectSetLayoutRequest) *pb.RpcObjectSetLayoutResponse {
+	ctx := mw.newContext(cctx)
+	response := func(code pb.RpcObjectSetLayoutResponseErrorCode, err error) *pb.RpcObjectSetLayoutResponse {
+		m := &pb.RpcObjectSetLayoutResponse{Error: &pb.RpcObjectSetLayoutResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		} else {
+			m.Event = mw.getResponseEvent(ctx)
+		}
+		return m
+	}
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		return bs.SetLayout(ctx, req.ContextId, req.Layout)
+	})
+	if err != nil {
+		return response(pb.RpcObjectSetLayoutResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(pb.RpcObjectSetLayoutResponseError_NULL, nil)
+}
+
+// ObjectRelationAddFeatured used to set featuredRelations value, that is now outdated and is used only for storing 'description' value
+func (mw *Middleware) ObjectRelationAddFeatured(cctx context.Context, req *pb.RpcObjectRelationAddFeaturedRequest) *pb.RpcObjectRelationAddFeaturedResponse {
+	ctx := mw.newContext(cctx)
+	response := func(code pb.RpcObjectRelationAddFeaturedResponseErrorCode, err error) *pb.RpcObjectRelationAddFeaturedResponse {
+		m := &pb.RpcObjectRelationAddFeaturedResponse{Error: &pb.RpcObjectRelationAddFeaturedResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		} else {
+			m.Event = mw.getResponseEvent(ctx)
+		}
+		return m
+	}
+	for _, r := range req.Relations {
+		if r != bundle.RelationKeyDescription.String() {
+			return response(pb.RpcObjectRelationAddFeaturedResponseError_UNKNOWN_ERROR, fmt.Errorf("only description relation is supported"))
+		}
+	}
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		return bs.DescriptionShow(ctx, req.ContextId)
+	})
+	if err != nil {
+		return response(pb.RpcObjectRelationAddFeaturedResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(pb.RpcObjectRelationAddFeaturedResponseError_NULL, nil)
+}
+
+// ObjectRelationRemoveFeatured is used only to remove 'description' value. See comment on ObjectRelationRemoveFeatured
+func (mw *Middleware) ObjectRelationRemoveFeatured(cctx context.Context, req *pb.RpcObjectRelationRemoveFeaturedRequest) *pb.RpcObjectRelationRemoveFeaturedResponse {
+	ctx := mw.newContext(cctx)
+	response := func(code pb.RpcObjectRelationRemoveFeaturedResponseErrorCode, err error) *pb.RpcObjectRelationRemoveFeaturedResponse {
+		m := &pb.RpcObjectRelationRemoveFeaturedResponse{Error: &pb.RpcObjectRelationRemoveFeaturedResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		} else {
+			m.Event = mw.getResponseEvent(ctx)
+		}
+		return m
+	}
+	for _, r := range req.Relations {
+		if r != bundle.RelationKeyDescription.String() {
+			return response(pb.RpcObjectRelationRemoveFeaturedResponseError_UNKNOWN_ERROR, fmt.Errorf("only description relation is supported"))
+		}
+	}
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		return bs.DescriptionHide(ctx, req.ContextId)
+	})
+	if err != nil {
+		return response(pb.RpcObjectRelationRemoveFeaturedResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(pb.RpcObjectRelationRemoveFeaturedResponseError_NULL, nil)
+}
+
+func (mw *Middleware) ObjectToSet(cctx context.Context, req *pb.RpcObjectToSetRequest) *pb.RpcObjectToSetResponse {
+	response := func(err error) *pb.RpcObjectToSetResponse {
+		resp := &pb.RpcObjectToSetResponse{
+			Error: &pb.RpcObjectToSetResponseError{
+				Code: pb.RpcObjectToSetResponseError_NULL,
+			},
+		}
+		if err != nil {
+			resp.Error.Code = pb.RpcObjectToSetResponseError_UNKNOWN_ERROR
+			resp.Error.Description = getErrorDescription(err)
+		}
+		return resp
+	}
+	err := mw.doBlockService(func(bs *block.Service) error {
+		return bs.ObjectToSet(req.ContextId, req.Source)
+	})
+	return response(err)
+}
+
+func (mw *Middleware) ObjectBookmarkFetch(cctx context.Context, req *pb.RpcObjectBookmarkFetchRequest) *pb.RpcObjectBookmarkFetchResponse {
+	response := func(code pb.RpcObjectBookmarkFetchResponseErrorCode, err error) *pb.RpcObjectBookmarkFetchResponse {
+		m := &pb.RpcObjectBookmarkFetchResponse{Error: &pb.RpcObjectBookmarkFetchResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+
+	err := mw.doBlockService(func(bs *block.Service) error {
+		return bs.ObjectBookmarkFetch(*req)
+	})
+
+	if err != nil {
+		return response(pb.RpcObjectBookmarkFetchResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(pb.RpcObjectBookmarkFetchResponseError_NULL, nil)
+}
+
+func (mw *Middleware) ObjectImport(cctx context.Context, req *pb.RpcObjectImportRequest) *pb.RpcObjectImportResponse {
+	if v2 := mustService[importv2adapter.Importer](mw); v2.Handles(req.Type) {
+		v2.Import(req)
+		return &pb.RpcObjectImportResponse{}
+	}
+
+	importRequest := &importer.ImportRequest{
+		RpcObjectImportRequest: req,
+		Origin:                 objectorigin.Import(req.Type),
+		Progress:               nil,
+		SendNotification:       true,
+		IsSync:                 false,
+	}
+
+	mustService[importer.Importer](mw).Import(cctx, importRequest)
+	return &pb.RpcObjectImportResponse{}
+}
+
+func (mw *Middleware) ObjectImportList(cctx context.Context, req *pb.RpcObjectImportListRequest) *pb.RpcObjectImportListResponse {
+	response := func(res []*pb.RpcObjectImportListImportResponse, code pb.RpcObjectImportListResponseErrorCode, err error) *pb.RpcObjectImportListResponse {
+		m := &pb.RpcObjectImportListResponse{Response: res, Error: &pb.RpcObjectImportListResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+
+	importer := mw.applicationService.GetApp().MustComponent(importer.CName).(importer.Importer)
+	res, err := importer.ListImports(req)
+
+	if err != nil {
+		return response(res, pb.RpcObjectImportListResponseError_INTERNAL_ERROR, err)
+	}
+	return response(res, pb.RpcObjectImportListResponseError_NULL, nil)
+}
+
+func (mw *Middleware) ObjectImportNotionValidateToken(ctx context.Context,
+	request *pb.RpcObjectImportNotionValidateTokenRequest) *pb.RpcObjectImportNotionValidateTokenResponse {
+	// nolint: lll
+	response := func(code pb.RpcObjectImportNotionValidateTokenResponseErrorCode, e error) *pb.RpcObjectImportNotionValidateTokenResponse {
+		err := &pb.RpcObjectImportNotionValidateTokenResponseError{Code: code}
+		switch code {
+		case pb.RpcObjectImportNotionValidateTokenResponseError_UNAUTHORIZED:
+			err.Description = "Sorry, token not found. Please check Notion integrations."
+		case pb.RpcObjectImportNotionValidateTokenResponseError_FORBIDDEN:
+			err.Description = "Unable to access user information, check capabilities in Notion (requires reading user information)."
+		case pb.RpcObjectImportNotionValidateTokenResponseError_SERVICE_UNAVAILABLE:
+			err.Description = "Notion is currently unavailable."
+		case pb.RpcObjectImportNotionValidateTokenResponseError_NULL:
+			err.Description = ""
+		case pb.RpcObjectImportNotionValidateTokenResponseError_INTERNAL_ERROR:
+			err.Description = e.Error()
+		case pb.RpcObjectImportNotionValidateTokenResponseError_ACCOUNT_IS_NOT_RUNNING:
+			err.Description = "User didn't log in"
+		default:
+			err.Description = "Unknown internal error"
+		}
+		return &pb.RpcObjectImportNotionValidateTokenResponse{Error: err}
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return response(pb.RpcObjectImportNotionValidateTokenResponseError_ACCOUNT_IS_NOT_RUNNING, nil)
+	}
+
+	if v2 := mustService[importv2adapter.Importer](mw); v2.Handles(model.Import_Notion) {
+		return response(v2.ValidateNotionToken(ctx, request), nil)
+	}
+
+	importer := mw.applicationService.GetApp().MustComponent(importer.CName).(importer.Importer)
+	errCode, err := importer.ValidateNotionToken(ctx, request)
+	return response(errCode, err)
+}
+
+// ObjectImportRunStatus reports one importv2 run by its durable importId —
+// live runs from the running engine's store, dormant runs (a crashed
+// process's dir awaiting the sweep, a suspended run) from manifest+ledger
+// alone, which is what makes polling restart-proof.
+func (mw *Middleware) ObjectImportRunStatus(cctx context.Context, req *pb.RpcObjectImportRunStatusRequest) *pb.RpcObjectImportRunStatusResponse {
+	response := func(run *pb.RpcObjectImportRunStatusRun, code pb.RpcObjectImportRunStatusResponseErrorCode, err error) *pb.RpcObjectImportRunStatusResponse {
+		m := &pb.RpcObjectImportRunStatusResponse{Run: run, Error: &pb.RpcObjectImportRunStatusResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+	if req.ImportId == "" {
+		return response(nil, pb.RpcObjectImportRunStatusResponseError_BAD_INPUT, errors.New("importId is required"))
+	}
+	run, err := mustService[importv2adapter.Importer](mw).RunStatus(cctx, req.ImportId)
+	switch {
+	case errors.Is(err, importv2adapter.ErrRunNotFound):
+		return response(nil, pb.RpcObjectImportRunStatusResponseError_NOT_FOUND, err)
+	case err != nil:
+		return response(nil, pb.RpcObjectImportRunStatusResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(run, pb.RpcObjectImportRunStatusResponseError_NULL, nil)
+}
+
+// ObjectImportRunList enumerates every known importv2 run — live and
+// dormant. A sibling RPC rather than an empty-id status overload by design.
+func (mw *Middleware) ObjectImportRunList(cctx context.Context, req *pb.RpcObjectImportRunListRequest) *pb.RpcObjectImportRunListResponse {
+	response := func(runs []*pb.RpcObjectImportRunStatusRun, code pb.RpcObjectImportRunListResponseErrorCode, err error) *pb.RpcObjectImportRunListResponse {
+		m := &pb.RpcObjectImportRunListResponse{Runs: runs, Error: &pb.RpcObjectImportRunListResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+	runs, err := mustService[importv2adapter.Importer](mw).RunList(cctx)
+	if err != nil {
+		return response(runs, pb.RpcObjectImportRunListResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(runs, pb.RpcObjectImportRunListResponseError_NULL, nil)
+}
+
+func (mw *Middleware) ObjectImportUseCase(cctx context.Context, req *pb.RpcObjectImportUseCaseRequest) *pb.RpcObjectImportUseCaseResponse {
+	ctx := mw.newContext(cctx)
+
+	response := func(startingPageId string, code pb.RpcObjectImportUseCaseResponseErrorCode, err error) *pb.RpcObjectImportUseCaseResponse {
+		resp := &pb.RpcObjectImportUseCaseResponse{
+			StartingObjectId: startingPageId,
+			Error: &pb.RpcObjectImportUseCaseResponseError{
+				Code: code,
+			},
+		}
+		if err != nil {
+			resp.Error.Description = getErrorDescription(err)
+		} else {
+			resp.Event = ctx.GetResponseEvent()
+		}
+		return resp
+	}
+
+	objCreator := mustService[builtinobjects.BuiltinObjects](mw)
+	return response(objCreator.CreateObjectsForUseCase(ctx, req.SpaceId, req.UseCase))
+}
+
+func (mw *Middleware) ObjectImportExperience(ctx context.Context, req *pb.RpcObjectImportExperienceRequest) *pb.RpcObjectImportExperienceResponse {
+	response := func(code pb.RpcObjectImportExperienceResponseErrorCode, err error) *pb.RpcObjectImportExperienceResponse {
+		resp := &pb.RpcObjectImportExperienceResponse{
+			Error: &pb.RpcObjectImportExperienceResponseError{
+				Code: code,
+			},
+		}
+		if err != nil {
+			resp.Error.Description = getErrorDescription(err)
+		}
+		return resp
+	}
+
+	objCreator := mustService[builtinobjects.BuiltinObjects](mw)
+	err := objCreator.CreateObjectsForExperience(ctx, req.SpaceId, req.Url, req.Title, req.IsNewSpace, req.IsAi)
+	return response(common.GetGalleryResponseCode(err), err)
+}
+
+func (mw *Middleware) ObjectDateByTimestamp(ctx context.Context, req *pb.RpcObjectDateByTimestampRequest) *pb.RpcObjectDateByTimestampResponse {
+	spaceService := mustService[space.Service](mw)
+	details, err := date.BuildDetailsFromTimestamp(ctx, spaceService, req.SpaceId, req.Timestamp)
+
+	if err != nil {
+		return &pb.RpcObjectDateByTimestampResponse{
+			Error: &pb.RpcObjectDateByTimestampResponseError{
+				Code:        pb.RpcObjectDateByTimestampResponseError_UNKNOWN_ERROR,
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+
+	return &pb.RpcObjectDateByTimestampResponse{
+		Details: details.ToProto(),
+	}
+}
+
+// defaultCleanupKeys is returned when the caller passes no keys.
+var defaultCleanupKeys = []domain.RelationKey{
+	bundle.RelationKeyName,
+	bundle.RelationKeyType,
+	bundle.RelationKeyCreator,
+	bundle.RelationKeyCreatedDate,
+	bundle.RelationKeySnippet,
+	bundle.RelationKeyIconEmoji,
+	bundle.RelationKeyIconImage,
+}
+
+// forcedCleanupKeys are always returned: the client cannot render the forest without them.
+var forcedCleanupKeys = []domain.RelationKey{
+	bundle.RelationKeyId,
+	bundle.RelationKeyCreatedInContext,
+	bundle.RelationKeyResolvedLayout,
+}
+
+func orphanReasonToProto(r objectgc.OrphanReason) pb.RpcObjectCleanupSuggestionsResponseItemReason {
+	switch r {
+	case objectgc.OrphanReasonContextArchived:
+		return pb.RpcObjectCleanupSuggestionsResponseItem_contextArchived
+	case objectgc.OrphanReasonContextDeleted:
+		return pb.RpcObjectCleanupSuggestionsResponseItem_contextDeleted
+	case objectgc.OrphanReasonContextUnlinked:
+		return pb.RpcObjectCleanupSuggestionsResponseItem_contextUnlinked
+	default:
+		return pb.RpcObjectCleanupSuggestionsResponseItem_none
+	}
+}
+
+// cleanupKeys resolves the relation keys to project: the caller's keys (or the default set when the
+// caller passes none), always unioned with the forced keys.
+func cleanupKeys(reqKeys []string) []domain.RelationKey {
+	keys := defaultCleanupKeys
+	if len(reqKeys) > 0 {
+		keys = slice.StringsInto[domain.RelationKey](reqKeys)
+	}
+	keys = append(append([]domain.RelationKey{}, keys...), forcedCleanupKeys...)
+	return lo.Uniq(keys)
+}
+
+func (mw *Middleware) ObjectCleanupSuggestions(cctx context.Context, req *pb.RpcObjectCleanupSuggestionsRequest) *pb.RpcObjectCleanupSuggestionsResponse {
+	response := func(code pb.RpcObjectCleanupSuggestionsResponseErrorCode, items []*pb.RpcObjectCleanupSuggestionsResponseItem, err error) *pb.RpcObjectCleanupSuggestionsResponse {
+		m := &pb.RpcObjectCleanupSuggestionsResponse{Error: &pb.RpcObjectCleanupSuggestionsResponseError{Code: code}, Items: items}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+
+	if req.SpaceId == "" {
+		return response(pb.RpcObjectCleanupSuggestionsResponseError_BAD_INPUT, nil, fmt.Errorf("spaceId is required"))
+	}
+
+	orphans, err := mustService[objectgc.ObjectGC](mw).ListOrphans(req.SpaceId)
+	if err != nil {
+		return response(pb.RpcObjectCleanupSuggestionsResponseError_UNKNOWN_ERROR, nil, err)
+	}
+
+	keys := cleanupKeys(req.Keys)
+
+	items := lo.Map(orphans, func(it objectgc.OrphanItem, _ int) *pb.RpcObjectCleanupSuggestionsResponseItem {
+		return &pb.RpcObjectCleanupSuggestionsResponseItem{
+			Details: it.Details.CopyOnlyKeys(keys...).ToProto(),
+			IsRoot:  it.IsRoot,
+			Reason:  orphanReasonToProto(it.Reason),
+		}
+	})
+	return response(pb.RpcObjectCleanupSuggestionsResponseError_NULL, items, nil)
+}
+
+// defaultDeletionAuditKeys is returned when the caller passes no keys. Which of them are actually
+// populated depends on the record: an object deleted before tombstone preservation shipped carries
+// only the forced keys, and name only ever survives an uninstall. A sparse record is a normal result,
+// not an error.
+var defaultDeletionAuditKeys = []domain.RelationKey{
+	bundle.RelationKeyName,
+	bundle.RelationKeyCreator,
+	bundle.RelationKeyCreatedDate,
+	bundle.RelationKeyAddedDate,
+	bundle.RelationKeyCreatedInContext,
+	bundle.RelationKeyCreatedInContextRef,
+	bundle.RelationKeyLastModifiedBy,
+	bundle.RelationKeyLastModifiedDate,
+	bundle.RelationKeyType,
+	bundle.RelationKeyResolvedLayout,
+	bundle.RelationKeySizeInBytes,
+	bundle.RelationKeyFileId,
+	bundle.RelationKeySourceObject,
+	bundle.RelationKeyDeletionChangeId,
+}
+
+// forcedDeletionAuditKeys are always returned: without them a record is not an audit record.
+//
+// isUninstalled is forced because it is what the two kinds of record mean. True is a type, property,
+// relation option or template that was uninstalled — reversible, its tree intact, its name still
+// readable. Absent is an object destroyed outright, unrecoverable and permanently nameless. Reading a
+// record without knowing which it is gets the story wrong in both directions.
+var forcedDeletionAuditKeys = []domain.RelationKey{
+	bundle.RelationKeyId,
+	bundle.RelationKeyDeletedBy,
+	bundle.RelationKeyDeletedDate,
+	bundle.RelationKeyIsUninstalled,
+}
+
+// deletionAuditKeys resolves the relation keys to project: the caller's keys (or the default set
+// when the caller passes none), always unioned with the forced keys.
+func deletionAuditKeys(reqKeys []string) []domain.RelationKey {
+	keys := defaultDeletionAuditKeys
+	if len(reqKeys) > 0 {
+		keys = slice.StringsInto[domain.RelationKey](reqKeys)
+	}
+	keys = append(append([]domain.RelationKey{}, keys...), forcedDeletionAuditKeys...)
+	return lo.Uniq(keys)
+}
+
+func (mw *Middleware) ObjectDeletionAudit(cctx context.Context, req *pb.RpcObjectDeletionAuditRequest) *pb.RpcObjectDeletionAuditResponse {
+	response := func(code pb.RpcObjectDeletionAuditResponseErrorCode, records []*types.Struct, total int64, err error) *pb.RpcObjectDeletionAuditResponse {
+		m := &pb.RpcObjectDeletionAuditResponse{
+			Error:   &pb.RpcObjectDeletionAuditResponseError{Code: code},
+			Records: records,
+			Total:   total,
+		}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+
+	if req.SpaceId == "" {
+		return response(pb.RpcObjectDeletionAuditResponseError_BAD_INPUT, nil, 0, fmt.Errorf("spaceId is required"))
+	}
+	if req.Limit < 0 || req.Offset < 0 {
+		return response(pb.RpcObjectDeletionAuditResponseError_BAD_INPUT, nil, 0, fmt.Errorf("limit and offset must not be negative"))
+	}
+
+	details, total, err := mustService[deletionaudit.Service](mw).
+		List(cctx, req.SpaceId, int(req.Limit), int(req.Offset))
+	if err != nil {
+		return response(pb.RpcObjectDeletionAuditResponseError_UNKNOWN_ERROR, nil, 0, err)
+	}
+
+	keys := deletionAuditKeys(req.Keys)
+	records := lo.Map(details, func(d *domain.Details, _ int) *types.Struct {
+		return flattenDeletedSnapshot(d).CopyOnlyKeys(keys...).ToProto()
+	})
+	return response(pb.RpcObjectDeletionAuditResponseError_NULL, records, int64(total), nil)
+}
+
+// flattenDeletedSnapshot lifts the tombstone's deletedSnapshot map up to the top level, so the wire
+// record reads as a flat object (creator, type, resolvedLayout, …) and the caller's keys project it.
+//
+// The nesting exists only to keep those relation keys out of the objectstore indexes; a response
+// Struct has no indexes, so there is no reason to make the client dig through it. Top-level keys win:
+// nothing sets both, and the live value is the more trustworthy of the two.
+func flattenDeletedSnapshot(details *domain.Details) *domain.Details {
+	snapshot, ok := details.TryMapValue(bundle.RelationKeyDeletedSnapshot)
+	if !ok {
+		return details
+	}
+	flat := details.Copy()
+	flat.Delete(bundle.RelationKeyDeletedSnapshot)
+	for key, value := range snapshot.Iterate() {
+		if !flat.Has(domain.RelationKey(key)) {
+			flat.Set(domain.RelationKey(key), value)
+		}
+	}
+	return flat
+}

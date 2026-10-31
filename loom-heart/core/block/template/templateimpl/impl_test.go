@@ -1,0 +1,1382 @@
+package templateimpl
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/anyproto/any-sync/app"
+	"github.com/anyproto/any-sync/commonspace/spacestorage"
+	"github.com/gogo/protobuf/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/converter"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock/smarttest"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/state"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/template"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/simple"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/simple/text"
+	templateSvc "github.com/hoangtrung1801/loom/loom-heart/core/block/template"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
+	"github.com/hoangtrung1801/loom/loom-heart/space/clientspace/mock_clientspace"
+	"github.com/hoangtrung1801/loom/loom-heart/space/mock_space"
+	"github.com/hoangtrung1801/loom/loom-heart/util/pbtypes"
+)
+
+const (
+	deletedTemplateId  = "iamdeleted"
+	archivedTemplateId = "iamarchived"
+)
+
+type testPicker struct {
+	sb smartblock.SmartBlock
+}
+
+func (t *testPicker) GetObject(_ context.Context, id string) (sb smartblock.SmartBlock, err error) {
+	if id == deletedTemplateId {
+		return nil, spacestorage.ErrTreeStorageAlreadyDeleted
+	}
+	return t.sb, nil
+}
+
+func (t *testPicker) GetObjectByFullID(_ context.Context, id domain.FullID) (sb smartblock.SmartBlock, err error) {
+	return t.sb, nil
+}
+
+func (t *testPicker) Init(_ *app.App) error { return nil }
+
+func (t *testPicker) Name() string { return "" }
+
+func newTemplateTest(templateName, typeKey string) smartblock.SmartBlock {
+	sb := smarttest.New(templateName)
+	details := []domain.Detail{
+		{
+			Key:   bundle.RelationKeyName,
+			Value: domain.String(templateName),
+		},
+		{
+			Key:   bundle.RelationKeyDescription,
+			Value: domain.String(templateName),
+		},
+	}
+	if templateName == archivedTemplateId {
+		details = append(details, domain.Detail{
+			Key:   bundle.RelationKeyIsArchived,
+			Value: domain.Bool(true),
+		})
+	}
+	_ = sb.SetDetails(nil, details, false)
+	sb.Doc.(*state.State).SetObjectTypeKeys([]domain.TypeKey{bundle.TypeKeyTemplate, domain.TypeKey(typeKey)})
+	sb.AddBlock(simple.New(&model.Block{Id: templateName, ChildrenIds: []string{template.TitleBlockId, template.DescriptionBlockId}}))
+	sb.AddBlock(text.NewDetails(&model.Block{
+		Id: template.TitleBlockId,
+		Content: &model.BlockContentOfText{
+			Text: &model.BlockContentText{},
+		},
+		Fields: &types.Struct{
+			Fields: map[string]*types.Value{
+				text.DetailsKeyFieldName: pbtypes.String("name"),
+			},
+		}}, text.DetailsKeys{
+		Text:    "name",
+		Checked: "done",
+	}))
+	sb.AddBlock(text.NewDetails(&model.Block{
+		Id: template.DescriptionBlockId,
+		Content: &model.BlockContentOfText{
+			Text: &model.BlockContentText{},
+		},
+		Fields: &types.Struct{
+			Fields: map[string]*types.Value{
+				text.DetailsKeyFieldName: pbtypes.String(template.DescriptionBlockId),
+			},
+		},
+	}, text.DetailsKeys{
+		Text:    template.DescriptionBlockId,
+		Checked: "done",
+	}))
+	return sb
+}
+
+func TestService_CreateTemplateStateWithDetails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	templateName := "template"
+
+	t.Run("empty page name should remain empty after template apply", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, "")
+		s := service{picker: &testPicker{sb: tmpl}}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.NoError(t, err)
+		assert.Empty(t, st.Details().GetString(bundle.RelationKeyName))
+		assert.Empty(t, st.Get(template.TitleBlockId).Model().GetText().Text)
+	})
+
+	for _, nameToAdd := range []string{"custom", ""} {
+		for _, nameInTemplate := range []string{templateName, "", blankTemplateId} {
+			t.Run(fmt.Sprintf("must apply custom page name and description - "+
+				"when template is %s and target detail is %s", nameInTemplate, nameToAdd), func(t *testing.T) {
+				// given
+				tmpl := newTemplateTest(nameInTemplate, "")
+				s := service{picker: &testPicker{sb: tmpl}, converter: converter.NewLayoutConverter()}
+				details := domain.NewDetails()
+				details.Set(bundle.RelationKeyName, domain.String(nameToAdd))
+				details.Set(bundle.RelationKeyDescription, domain.String(nameToAdd))
+
+				// when
+				st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: nameInTemplate, Details: details})
+
+				// then
+				assert.NoError(t, err)
+				assert.Equal(t, nameToAdd, st.Details().GetString(bundle.RelationKeyName))
+				assert.Equal(t, nameToAdd, st.Details().GetString(bundle.RelationKeyDescription))
+				assert.Equal(t, nameToAdd, st.Get(template.TitleBlockId).Model().GetText().Text)
+			})
+		}
+	}
+
+	for _, testCase := range [][]string{
+		{"templateId is empty", ""},
+		{"templateId is blank", blankTemplateId},
+		{"target template is deleted", deletedTemplateId},
+		{"target template is archived", archivedTemplateId},
+	} {
+		t.Run("create blank template in case "+testCase[0], func(t *testing.T) {
+			// given
+			tmpl := newTemplateTest(testCase[1], "")
+			s := service{picker: &testPicker{sb: tmpl}, converter: converter.NewLayoutConverter()}
+
+			// when
+			st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: testCase[1]})
+
+			// then
+			assert.NoError(t, err)
+			assert.Equal(t, blankTemplateId, st.RootId())
+			assert.True(t, st.Details().Has(bundle.RelationKeyTag))
+		})
+	}
+
+	t.Run("requested smartblock is not a template", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, "")
+		tmpl.(*smarttest.SmartTest).Doc.(*state.State).SetObjectTypeKey(bundle.TypeKeyBook)
+		s := service{picker: &testPicker{}}
+
+		// when
+		_, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.Error(t, err)
+	})
+
+	t.Run("discussionId is removed from template state", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, "")
+		_ = tmpl.(*smarttest.SmartTest).SetDetails(nil, []domain.Detail{
+			{Key: bundle.RelationKeyDiscussionId, Value: domain.String("disc1")},
+		}, false)
+		s := service{picker: &testPicker{sb: tmpl}}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.NoError(t, err)
+		assert.False(t, st.Details().Has(bundle.RelationKeyDiscussionId))
+	})
+
+	t.Run("template typeKey is removed", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, bundle.TypeKeyGoal.String())
+		s := service{picker: &testPicker{sb: tmpl}}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, bundle.TypeKeyGoal, st.ObjectTypeKey())
+	})
+
+	for _, layout := range []model.ObjectTypeLayout{
+		model.ObjectType_note,
+		model.ObjectType_basic,
+		model.ObjectType_profile,
+		model.ObjectType_todo,
+		model.ObjectType_date,
+		model.ObjectType_bookmark,
+	} {
+		t.Run("blank template should correspond "+model.ObjectTypeLayout_name[int32(layout)]+" layout", func(t *testing.T) {
+			// given
+			s := service{converter: converter.NewLayoutConverter()}
+
+			// when
+			st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: blankTemplateId, Layout: layout})
+
+			// then
+			assert.NoError(t, err)
+			assertLayoutBlocks(t, st, layout)
+		})
+	}
+
+	t.Run("do not inherit addedDate and creationDate", func(t *testing.T) {
+		// given
+		sometime := time.Now().Unix()
+
+		tmpl := smarttest.New(templateName)
+		tmpl.Doc.(*state.State).SetObjectTypeKeys([]domain.TypeKey{bundle.TypeKeyTemplate, bundle.TypeKeyBook})
+		tmpl.Doc.(*state.State).SetOriginalCreatedTimestamp(sometime)
+		err := tmpl.SetDetails(nil, []domain.Detail{{Key: bundle.RelationKeyAddedDate, Value: domain.Int64(sometime)}}, false)
+		require.NoError(t, err)
+
+		s := service{picker: &testPicker{tmpl}}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.NoError(t, err)
+		assert.Zero(t, st.OriginalCreatedTimestamp())
+		assert.Zero(t, st.Details().GetInt64(bundle.RelationKeyAddedDate))
+		assert.Zero(t, st.Details().GetInt64(bundle.RelationKeyCreatedDate))
+	})
+}
+
+func TestCreateTemplateStateFromSmartBlock(t *testing.T) {
+	t.Run("if failed to build state -> return blank template", func(t *testing.T) {
+		// given
+		s := service{converter: converter.NewLayoutConverter()}
+
+		// when
+		st := s.CreateTemplateStateFromSmartBlock(nil, templateSvc.CreateTemplateRequest{Layout: model.ObjectType_todo})
+
+		// then
+		assert.Equal(t, blankTemplateId, st.RootId())
+		assert.True(t, st.Details().Has(bundle.RelationKeyTag))
+	})
+
+	t.Run("create state from template smartblock", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest("template", bundle.TypeKeyProject.String())
+		s := service{}
+
+		// when
+		st := s.CreateTemplateStateFromSmartBlock(tmpl, templateSvc.CreateTemplateRequest{})
+
+		// then
+		assert.Empty(t, st.Details().GetString(bundle.RelationKeyName))
+		assert.Equal(t, "template", st.Details().GetString(bundle.RelationKeyDescription))
+	})
+}
+
+func TestService_resolveValidTemplateId(t *testing.T) {
+	var (
+		spaceId     = "cosmos"
+		templateId1 = "template1"
+		templateId2 = "template2"
+		templateId3 = "template3"
+	)
+
+	store := objectstore.NewStoreFixture(t)
+	store.AddObjects(t, spaceId, []objectstore.TestObject{
+		{
+			bundle.RelationKeyId:               domain.String(templateId1),
+			bundle.RelationKeyType:             domain.String(bundle.TypeKeyTemplate.URL()),
+			bundle.RelationKeyTargetObjectType: domain.String(bundle.TypeKeyTask.URL()),
+		},
+		{
+			bundle.RelationKeyId:               domain.String(templateId2),
+			bundle.RelationKeyType:             domain.String(bundle.TypeKeyTemplate.URL()),
+			bundle.RelationKeyTargetObjectType: domain.String(bundle.TypeKeyTask.URL()),
+		},
+		{
+			bundle.RelationKeyId:               domain.String(templateId3),
+			bundle.RelationKeyType:             domain.String(bundle.TypeKeyTemplate.URL()),
+			bundle.RelationKeyTargetObjectType: domain.String(bundle.TypeKeyTask.URL()),
+			bundle.RelationKeyIsDeleted:        domain.Bool(true),
+		},
+	})
+
+	spaceService := mock_space.NewMockService(t)
+	spc := mock_clientspace.NewMockSpace(t)
+	spaceService.EXPECT().Get(mock.Anything, mock.Anything).Return(spc, nil)
+	spc.EXPECT().GetTypeIdByKey(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, key domain.TypeKey) (string, error) {
+		return key.URL(), nil
+	})
+
+	s := &service{
+		store:        store,
+		spaceService: spaceService,
+	}
+
+	for _, tc := range []struct {
+		name                string
+		typeKey             domain.TypeKey
+		requestedTemplateId string
+		expectedTemplateId  string
+	}{
+		{"requested template is valid", bundle.TypeKeyTask, templateId2, templateId2},
+		{"requested template is invalid", bundle.TypeKeyTask, "invalid", ""},
+		{"requested template is deleted", bundle.TypeKeyTask, templateId3, ""},
+		{"requested template is empty", bundle.TypeKeyTask, "", ""},
+		{"no valid template exists", bundle.TypeKeyBook, "templateId", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// when
+			templateId, err := s.resolveValidTemplateId(spaceId, tc.requestedTemplateId, tc.typeKey.URL())
+
+			// then
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedTemplateId, templateId)
+		})
+	}
+}
+
+func assertLayoutBlocks(t *testing.T, st *state.State, layout model.ObjectTypeLayout) {
+	switch layout {
+	case model.ObjectType_bookmark:
+		foundDescription, foundTag, foundSource := false, false, false
+		st.Iterate(func(b simple.Block) (isContinue bool) {
+			switch b.Model().Id {
+			case template.DescriptionBlockId:
+				foundDescription = true
+			case bundle.RelationKeyTag.String():
+				foundTag = true
+			case bundle.RelationKeySource.String():
+				foundSource = true
+			}
+			return true
+		})
+		// Source and Tag are now featured relations, not content blocks (GO-7018)
+		assert.True(t, foundDescription)
+		assert.False(t, foundTag)
+		assert.False(t, foundSource)
+	case model.ObjectType_note:
+		foundTitle, foundDescription := false, false
+		st.Iterate(func(b simple.Block) (isContinue bool) {
+			switch b.Model().Id {
+			case template.DescriptionBlockId:
+				foundDescription = true
+				return false
+			case template.TitleBlockId:
+				foundTitle = true
+				return false
+			}
+			return true
+		})
+		assert.False(t, foundTitle || foundDescription)
+	default:
+		foundTitle, foundDescription := false, false
+		st.Iterate(func(b simple.Block) (isContinue bool) {
+			switch b.Model().Id {
+			case template.DescriptionBlockId:
+				foundDescription = true
+				return false
+			case template.TitleBlockId:
+				foundTitle = true
+			}
+			return true
+		})
+		assert.True(t, foundTitle)
+		assert.False(t, foundDescription)
+	}
+}
+
+func TestBuildTemplateStateFromObject(t *testing.T) {
+	t.Run("discussionId is removed from template state built from object", func(t *testing.T) {
+		// given
+		obj := smarttest.New("object")
+		err := obj.SetDetails(nil, []domain.Detail{
+			{Key: bundle.RelationKeyDiscussionId, Value: domain.String("disc1")},
+		}, false)
+		assert.NoError(t, err)
+
+		obj.SetObjectTypes([]domain.TypeKey{bundle.TypeKeyNote})
+
+		sp := mock_clientspace.NewMockSpace(t)
+		sp.EXPECT().GetTypeIdByKey(mock.Anything, mock.Anything).Times(1).Return(bundle.TypeKeyNote.String(), nil)
+		obj.SetSpace(sp)
+		obj.SetSpaceId("space1")
+
+		s := service{
+			store: objectstore.NewStoreFixture(t),
+		}
+
+		// when
+		st, err := s.buildTemplateStateFromObject(obj)
+
+		// then
+		assert.NoError(t, err)
+		assert.Empty(t, st.Details().GetString(bundle.RelationKeyDiscussionId))
+	})
+
+	t.Run("building state for new template", func(t *testing.T) {
+		// given
+		obj := smarttest.New("object")
+		err := obj.SetDetails(nil, []domain.Detail{{
+			Key:   bundle.RelationKeyInternalFlags,
+			Value: domain.Int64List([]int64{0, 1, 2, 3}),
+		}}, false)
+		assert.NoError(t, err)
+
+		obj.SetObjectTypes([]domain.TypeKey{bundle.TypeKeyNote})
+
+		sp := mock_clientspace.NewMockSpace(t)
+		sp.EXPECT().GetTypeIdByKey(mock.Anything, mock.Anything).Times(1).Return(bundle.TypeKeyNote.String(), nil)
+		obj.SetSpace(sp)
+		obj.SetSpaceId("space1")
+
+		s := service{
+			store: objectstore.NewStoreFixture(t),
+		}
+
+		// when
+		st, err := s.buildTemplateStateFromObject(obj)
+
+		// then
+		assert.NoError(t, err)
+		assert.NotContains(t, st.Details().GetInt64List(bundle.RelationKeyInternalFlags), model.InternalFlag_editorDeleteEmpty)
+		assert.Equal(t, []domain.TypeKey{bundle.TypeKeyTemplate, bundle.TypeKeyNote}, st.ObjectTypeKeys())
+		assert.Equal(t, bundle.TypeKeyNote.String(), st.Details().GetString(bundle.RelationKeyTargetObjectType))
+		assert.Nil(t, st.LocalDetails())
+	})
+}
+
+func newTemplateTestWithPrefillType(templateName, typeKey string, prefillType model.TemplateNamePrefillType) smartblock.SmartBlock {
+	sb := smarttest.New(templateName)
+	details := []domain.Detail{
+		{
+			Key:   bundle.RelationKeyName,
+			Value: domain.String(templateName),
+		},
+		{
+			Key:   bundle.RelationKeyDescription,
+			Value: domain.String(templateName),
+		},
+		{
+			Key:   bundle.RelationKeyTemplateNamePrefillType,
+			Value: domain.Int64(int64(prefillType)),
+		},
+	}
+	_ = sb.SetDetails(nil, details, false)
+	sb.Doc.(*state.State).SetObjectTypeKeys([]domain.TypeKey{bundle.TypeKeyTemplate, domain.TypeKey(typeKey)})
+	sb.AddBlock(simple.New(&model.Block{Id: templateName, ChildrenIds: []string{template.TitleBlockId, template.DescriptionBlockId}}))
+	sb.AddBlock(text.NewDetails(&model.Block{
+		Id: template.TitleBlockId,
+		Content: &model.BlockContentOfText{
+			Text: &model.BlockContentText{},
+		},
+		Fields: &types.Struct{
+			Fields: map[string]*types.Value{
+				text.DetailsKeyFieldName: pbtypes.String("name"),
+			},
+		}}, text.DetailsKeys{
+		Text:    "name",
+		Checked: "done",
+	}))
+	sb.AddBlock(text.NewDetails(&model.Block{
+		Id: template.DescriptionBlockId,
+		Content: &model.BlockContentOfText{
+			Text: &model.BlockContentText{},
+		},
+		Fields: &types.Struct{
+			Fields: map[string]*types.Value{
+				text.DetailsKeyFieldName: pbtypes.String(template.DescriptionBlockId),
+			},
+		},
+	}, text.DetailsKeys{
+		Text:    template.DescriptionBlockId,
+		Checked: "done",
+	}))
+	return sb
+}
+
+func TestService_TemplateNamePrefill(t *testing.T) {
+	const templateName = "My Template Name"
+
+	t.Run("prefill type Empty - name should not be inherited from template", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPrefillType(templateName, bundle.TypeKeyTask.String(), model.TemplateNamePrefillType_Empty)
+		s := service{picker: &testPicker{sb: tmpl}}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.NoError(t, err)
+		assert.Empty(t, st.Details().GetString(bundle.RelationKeyName), "name should be empty when prefill type is Empty")
+	})
+
+	t.Run("prefill type FromTemplateName - name should be inherited from template", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPrefillType(templateName, bundle.TypeKeyTask.String(), model.TemplateNamePrefillType_FromTemplateName)
+		s := service{picker: &testPicker{sb: tmpl}}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, templateName, st.Details().GetString(bundle.RelationKeyName), "name should be inherited when prefill type is FromTemplateName")
+	})
+
+	t.Run("prefill type not set (default) - name should not be inherited from template", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, bundle.TypeKeyTask.String())
+		s := service{picker: &testPicker{sb: tmpl}}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName})
+
+		// then
+		assert.NoError(t, err)
+		assert.Empty(t, st.Details().GetString(bundle.RelationKeyName), "name should be empty when prefill type is not set (defaults to Empty)")
+	})
+
+	t.Run("prefill type FromTemplateName with custom details - custom name takes precedence", func(t *testing.T) {
+		// given
+		customName := "Custom Object Name"
+		tmpl := newTemplateTestWithPrefillType(templateName, bundle.TypeKeyTask.String(), model.TemplateNamePrefillType_FromTemplateName)
+		s := service{picker: &testPicker{sb: tmpl}}
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyName, domain.String(customName))
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName, Details: details})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, customName, st.Details().GetString(bundle.RelationKeyName), "custom name should take precedence over template name")
+		assert.True(t, st.PickRelationLinks().Has(bundle.RelationKeyName.String()), "Name relation link should exist")
+	})
+
+	t.Run("prefill type Empty with custom details - custom name is applied", func(t *testing.T) {
+		// given
+		customName := "Custom Object Name"
+		tmpl := newTemplateTestWithPrefillType(templateName, bundle.TypeKeyTask.String(), model.TemplateNamePrefillType_Empty)
+		s := service{picker: &testPicker{sb: tmpl}}
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyName, domain.String(customName))
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName, Details: details})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, customName, st.Details().GetString(bundle.RelationKeyName), "custom name should be applied when prefill type is Empty")
+		assert.True(t, st.PickRelationLinks().Has(bundle.RelationKeyName.String()), "Name relation link should exist")
+	})
+
+	t.Run("prefill type FromTemplateName with empty name in details - template name should be preserved", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPrefillType(templateName, bundle.TypeKeyTask.String(), model.TemplateNamePrefillType_FromTemplateName)
+		s := service{picker: &testPicker{sb: tmpl}}
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyName, domain.String(""))
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: templateName, Details: details})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, templateName, st.Details().GetString(bundle.RelationKeyName), "template name should be preserved when details has empty name")
+	})
+
+	t.Run("blank template without custom name - name should be empty", func(t *testing.T) {
+		// given
+		s := service{converter: converter.NewLayoutConverter()}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: blankTemplateId})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, blankTemplateId, st.RootId())
+		assert.Empty(t, st.Details().GetString(bundle.RelationKeyName), "blank template should have empty name")
+	})
+
+	t.Run("blank template with custom name - custom name should be applied", func(t *testing.T) {
+		// given
+		customName := "Custom Object Name"
+		s := service{converter: converter.NewLayoutConverter()}
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyName, domain.String(customName))
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: blankTemplateId, Details: details})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, blankTemplateId, st.RootId())
+		assert.Equal(t, customName, st.Details().GetString(bundle.RelationKeyName), "custom name should be applied to blank template")
+		assert.True(t, st.PickRelationLinks().Has(bundle.RelationKeyName.String()), "Name relation link should exist")
+	})
+
+	t.Run("blank template with empty name in details - name should remain empty", func(t *testing.T) {
+		// given
+		s := service{converter: converter.NewLayoutConverter()}
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyName, domain.String(""))
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{TemplateId: blankTemplateId, Details: details})
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, blankTemplateId, st.RootId())
+		assert.Empty(t, st.Details().GetString(bundle.RelationKeyName), "blank template should have empty name when details has empty name")
+	})
+}
+
+type accountServiceStub struct {
+	accountId string
+}
+
+func (a accountServiceStub) AccountID() string { return a.accountId }
+
+// storageShortcut creates a placeholder storage entry for a shortcut type (Today, CurrentUser).
+// Stored as a MapList with a single entry, matching the current storage format.
+func storageShortcut(t model.PlaceholderType) domain.Value {
+	return domain.MapList([]domain.ValueMap{
+		domain.NewValueMap(map[string]domain.Value{
+			"type": domain.Float64(float64(t)),
+		}).MapValue(),
+	})
+}
+
+func newTemplateTestWithPlaceholders(templateName, typeKey string, placeholders map[string]domain.Value) smartblock.SmartBlock {
+	sb := newTemplateTest(templateName, typeKey).(*smarttest.SmartTest)
+	_ = sb.SetDetails(nil, []domain.Detail{
+		{Key: bundle.RelationKeyTemplatePlaceholders, Value: domain.NewValueMap(placeholders)},
+	}, false)
+	return sb
+}
+
+func TestService_ResolveTemplatePlaceholders(t *testing.T) {
+	const (
+		testSpaceId  = "space1"
+		testAccount  = "accountABC"
+		templateName = "template"
+	)
+
+	t.Run("template with _today placeholder resolves to current date", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateName, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"dueDate": storageShortcut(model.Placeholder_PlaceholderToday),
+		})
+		s := service{
+			picker:         &testPicker{sb: tmpl},
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, map[string]model.RelationFormat{"dueDate": model.RelationFormat_date}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+		})
+
+		// then
+		require.NoError(t, err)
+		dueDateVal := st.Details().GetFloat64(domain.RelationKey("dueDate"))
+		assert.NotZero(t, dueDateVal, "dueDate should be resolved to a timestamp")
+		assert.False(t, st.Details().Has(bundle.RelationKeyTemplatePlaceholders), "templatePlaceholders should be removed from new object")
+	})
+
+	t.Run("template with _current_user placeholder resolves to participant ID", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateName, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"assignee": storageShortcut(model.Placeholder_PlaceholderCurrentUser),
+		})
+		s := service{
+			picker:         &testPicker{sb: tmpl},
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, map[string]model.RelationFormat{"assignee": model.RelationFormat_object}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+		})
+
+		// then
+		require.NoError(t, err)
+		assigneeList := st.Details().GetStringList(domain.RelationKey("assignee"))
+		expectedParticipantId := domain.NewParticipantId(testSpaceId, testAccount)
+		require.Len(t, assigneeList, 1)
+		assert.Equal(t, expectedParticipantId, assigneeList[0])
+		assert.False(t, st.Details().Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+
+	t.Run("template with no placeholders - no changes", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, bundle.TypeKeyTask.String())
+		s := service{
+			picker:         &testPicker{sb: tmpl},
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, nil),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.False(t, st.Details().Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+
+	t.Run("concrete value placeholder resolves to that value", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateName, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"priority": domain.MapList([]domain.ValueMap{
+				domain.NewValueMap(map[string]domain.Value{
+					"type":  domain.Float64(float64(model.Placeholder_PlaceholderValue)),
+					"value": domain.Float64(42),
+				}).MapValue(),
+			}),
+		})
+		s := service{
+			picker:         &testPicker{sb: tmpl},
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, map[string]model.RelationFormat{"priority": model.RelationFormat_number}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, float64(42), st.Details().GetFloat64(domain.RelationKey("priority")))
+		assert.False(t, st.Details().Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+
+	t.Run("combined concrete and shortcut placeholder merges into string list", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateName, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"assignee": domain.MapList([]domain.ValueMap{
+				domain.NewValueMap(map[string]domain.Value{
+					"type":  domain.Float64(float64(model.Placeholder_PlaceholderValue)),
+					"value": domain.String("obj1"),
+				}).MapValue(),
+				domain.NewValueMap(map[string]domain.Value{
+					"type": domain.Float64(float64(model.Placeholder_PlaceholderCurrentUser)),
+				}).MapValue(),
+			}),
+		})
+		s := service{
+			picker:         &testPicker{sb: tmpl},
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, map[string]model.RelationFormat{"assignee": model.RelationFormat_object}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+		})
+
+		// then
+		require.NoError(t, err)
+		assigneeList := st.Details().GetStringList(domain.RelationKey("assignee"))
+		expectedParticipantId := domain.NewParticipantId(testSpaceId, testAccount)
+		require.Len(t, assigneeList, 2)
+		assert.Contains(t, assigneeList, "obj1")
+		assert.Contains(t, assigneeList, expectedParticipantId)
+		assert.False(t, st.Details().Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+
+	t.Run("CreateTemplateStateFromSmartBlock also resolves placeholders", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateName, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"assignee": storageShortcut(model.Placeholder_PlaceholderCurrentUser),
+		})
+		s := service{
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, map[string]model.RelationFormat{"assignee": model.RelationFormat_object}),
+		}
+
+		// when
+		st := s.CreateTemplateStateFromSmartBlock(tmpl, templateSvc.CreateTemplateRequest{
+			SpaceId: testSpaceId,
+		})
+
+		// then
+		assigneeList := st.Details().GetStringList(domain.RelationKey("assignee"))
+		expectedParticipantId := domain.NewParticipantId(testSpaceId, testAccount)
+		require.Len(t, assigneeList, 1)
+		assert.Equal(t, expectedParticipantId, assigneeList[0])
+		assert.False(t, st.Details().Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+}
+
+type multiPicker struct {
+	objects map[string]smartblock.SmartBlock
+}
+
+func (p *multiPicker) GetObject(_ context.Context, id string) (smartblock.SmartBlock, error) {
+	sb, ok := p.objects[id]
+	if !ok {
+		return nil, fmt.Errorf("object %s not found", id)
+	}
+	return sb, nil
+}
+
+func (p *multiPicker) GetObjectByFullID(_ context.Context, id domain.FullID) (smartblock.SmartBlock, error) {
+	return p.GetObject(nil, id.ObjectID)
+}
+
+func (p *multiPicker) Init(_ *app.App) error { return nil }
+func (p *multiPicker) Name() string          { return "" }
+
+func TestService_ObjectApplyTemplate(t *testing.T) {
+	const (
+		testSpaceId = "space1"
+		testAccount = "accountABC"
+		objectId    = "targetObject"
+		templateId  = "myTemplate"
+	)
+
+	t.Run("applying template with _today placeholder resolves it on the target object", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateId, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"dueDate": storageShortcut(model.Placeholder_PlaceholderToday),
+		})
+
+		targetObj := smarttest.New(objectId)
+		targetObj.SetSpaceId(testSpaceId)
+		targetObj.Doc.(*state.State).SetLocalDetails(domain.NewDetailsFromMap(map[domain.RelationKey]domain.Value{
+			bundle.RelationKeySpaceId:        domain.String(testSpaceId),
+			bundle.RelationKeyType:           domain.String("ot-task"),
+			bundle.RelationKeyResolvedLayout: domain.Int64(int64(model.ObjectType_todo)),
+		}))
+		targetObj.Doc.(*state.State).SetObjectTypeKeys([]domain.TypeKey{bundle.TypeKeyTask})
+
+		picker := &multiPicker{objects: map[string]smartblock.SmartBlock{
+			objectId:   targetObj,
+			templateId: tmpl,
+		}}
+
+		s := service{
+			picker:         picker,
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, map[string]model.RelationFormat{"dueDate": model.RelationFormat_date}),
+		}
+
+		// when
+		err := s.ObjectApplyTemplate(objectId, templateId)
+
+		// then
+		require.NoError(t, err)
+		dueDateVal := targetObj.NewState().Details().GetFloat64(domain.RelationKey("dueDate"))
+		assert.NotZero(t, dueDateVal, "dueDate should be resolved to a timestamp")
+		assert.False(t, targetObj.NewState().Details().Has(bundle.RelationKeyTemplatePlaceholders),
+			"templatePlaceholders should not be present on the target object")
+	})
+
+	t.Run("applying template with _current_user placeholder resolves to participant ID", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateId, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"assignee": storageShortcut(model.Placeholder_PlaceholderCurrentUser),
+		})
+
+		targetObj := smarttest.New(objectId)
+		targetObj.SetSpaceId(testSpaceId)
+		targetObj.Doc.(*state.State).SetLocalDetails(domain.NewDetailsFromMap(map[domain.RelationKey]domain.Value{
+			bundle.RelationKeySpaceId:        domain.String(testSpaceId),
+			bundle.RelationKeyType:           domain.String("ot-task"),
+			bundle.RelationKeyResolvedLayout: domain.Int64(int64(model.ObjectType_todo)),
+		}))
+		targetObj.Doc.(*state.State).SetObjectTypeKeys([]domain.TypeKey{bundle.TypeKeyTask})
+
+		picker := &multiPicker{objects: map[string]smartblock.SmartBlock{
+			objectId:   targetObj,
+			templateId: tmpl,
+		}}
+
+		s := service{
+			picker:         picker,
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, map[string]model.RelationFormat{"assignee": model.RelationFormat_object}),
+		}
+
+		// when
+		err := s.ObjectApplyTemplate(objectId, templateId)
+
+		// then
+		require.NoError(t, err)
+		assigneeList := targetObj.NewState().Details().GetStringList(domain.RelationKey("assignee"))
+		expectedParticipantId := domain.NewParticipantId(testSpaceId, testAccount)
+		require.Len(t, assigneeList, 1)
+		assert.Equal(t, expectedParticipantId, assigneeList[0])
+		assert.False(t, targetObj.NewState().Details().Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+
+	t.Run("applying template with multiple placeholders resolves all of them", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithPlaceholders(templateId, bundle.TypeKeyTask.String(), map[string]domain.Value{
+			"dueDate":  storageShortcut(model.Placeholder_PlaceholderToday),
+			"assignee": storageShortcut(model.Placeholder_PlaceholderCurrentUser),
+		})
+
+		targetObj := smarttest.New(objectId)
+		targetObj.SetSpaceId(testSpaceId)
+		targetObj.Doc.(*state.State).SetLocalDetails(domain.NewDetailsFromMap(map[domain.RelationKey]domain.Value{
+			bundle.RelationKeySpaceId:        domain.String(testSpaceId),
+			bundle.RelationKeyType:           domain.String("ot-task"),
+			bundle.RelationKeyResolvedLayout: domain.Int64(int64(model.ObjectType_todo)),
+		}))
+		targetObj.Doc.(*state.State).SetObjectTypeKeys([]domain.TypeKey{bundle.TypeKeyTask})
+
+		picker := &multiPicker{objects: map[string]smartblock.SmartBlock{
+			objectId:   targetObj,
+			templateId: tmpl,
+		}}
+
+		s := service{
+			picker:         picker,
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher: newFormatFetcher(t, map[string]model.RelationFormat{
+				"dueDate":  model.RelationFormat_date,
+				"assignee": model.RelationFormat_object,
+			}),
+		}
+
+		// when
+		err := s.ObjectApplyTemplate(objectId, templateId)
+
+		// then
+		require.NoError(t, err)
+
+		details := targetObj.NewState().Details()
+		dueDateVal := details.GetFloat64(domain.RelationKey("dueDate"))
+		assert.NotZero(t, dueDateVal, "dueDate should be resolved")
+
+		assigneeList := details.GetStringList(domain.RelationKey("assignee"))
+		expectedParticipantId := domain.NewParticipantId(testSpaceId, testAccount)
+		require.Len(t, assigneeList, 1)
+		assert.Equal(t, expectedParticipantId, assigneeList[0])
+
+		assert.False(t, details.Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+
+	t.Run("applying template without placeholders does not set placeholder-related details", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateId, bundle.TypeKeyTask.String())
+
+		targetObj := smarttest.New(objectId)
+		targetObj.SetSpaceId(testSpaceId)
+		targetObj.Doc.(*state.State).SetLocalDetails(domain.NewDetailsFromMap(map[domain.RelationKey]domain.Value{
+			bundle.RelationKeySpaceId:        domain.String(testSpaceId),
+			bundle.RelationKeyType:           domain.String("ot-task"),
+			bundle.RelationKeyResolvedLayout: domain.Int64(int64(model.ObjectType_todo)),
+		}))
+		targetObj.Doc.(*state.State).SetObjectTypeKeys([]domain.TypeKey{bundle.TypeKeyTask})
+
+		picker := &multiPicker{objects: map[string]smartblock.SmartBlock{
+			objectId:   targetObj,
+			templateId: tmpl,
+		}}
+
+		s := service{
+			picker:         picker,
+			store:          objectstore.NewStoreFixture(t),
+			accountService: accountServiceStub{accountId: testAccount},
+			formatFetcher:  newFormatFetcher(t, nil),
+		}
+
+		// when
+		err := s.ObjectApplyTemplate(objectId, templateId)
+
+		// then
+		require.NoError(t, err)
+		assert.False(t, targetObj.NewState().Details().Has(bundle.RelationKeyTemplatePlaceholders))
+	})
+}
+
+func TestService_collectOriginalDetails(t *testing.T) {
+	const (
+		spaceId          = "space1"
+		sourceTemplateId = "template1"
+		templateEmoji    = "🚂"
+		customEmoji      = "🎉"
+		customObjectName = "Custom Name"
+		coverIdValue     = "Sunset"
+	)
+
+	t.Run("removes Layout, SourceObject and empty values", func(t *testing.T) {
+		// given
+		store := objectstore.NewStoreFixture(t)
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyName, domain.String(customObjectName))
+		st.SetDetail(bundle.RelationKeyDescription, domain.String(""))
+		st.SetDetail(bundle.RelationKeyIconEmoji, domain.String(""))
+		st.SetDetail(bundle.RelationKeyCoverId, domain.String(coverIdValue))
+		st.SetDetail(bundle.RelationKeySourceObject, domain.String(sourceTemplateId))
+		st.SetDetail(bundle.RelationKeyLayout, domain.Int64(int64(model.ObjectType_basic)))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.Equal(t, customObjectName, result.GetString(bundle.RelationKeyName))
+		assert.False(t, result.Has(bundle.RelationKeyDescription), "empty description should be removed")
+		assert.False(t, result.Has(bundle.RelationKeyIconEmoji), "empty icon should be removed")
+		assert.Equal(t, coverIdValue, result.GetString(bundle.RelationKeyCoverId))
+		assert.False(t, result.Has(bundle.RelationKeySourceObject), "SourceObject should be removed")
+		assert.False(t, result.Has(bundle.RelationKeyLayout), "Layout should be removed")
+	})
+
+	t.Run("removes emoji when it matches previous template emoji", func(t *testing.T) {
+		// given
+		store := objectstore.NewStoreFixture(t)
+		store.AddObjects(t, spaceId, []objectstore.TestObject{
+			{
+				bundle.RelationKeyId:        domain.String(sourceTemplateId),
+				bundle.RelationKeyIconEmoji: domain.String(templateEmoji),
+			},
+		})
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyIconEmoji, domain.String(templateEmoji))
+		st.SetDetail(bundle.RelationKeySourceObject, domain.String(sourceTemplateId))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.False(t, result.Has(bundle.RelationKeyIconEmoji), "Name should be removed when it matches template name")
+		assert.False(t, result.Has(bundle.RelationKeySourceObject), "SourceObject should always be removed")
+	})
+
+	t.Run("keeps emoji when it differs from previous template emoji", func(t *testing.T) {
+		// given
+		store := objectstore.NewStoreFixture(t)
+		store.AddObjects(t, spaceId, []objectstore.TestObject{
+			{
+				bundle.RelationKeyId:        domain.String(sourceTemplateId),
+				bundle.RelationKeyIconEmoji: domain.String(templateEmoji),
+			},
+		})
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyIconEmoji, domain.String(customEmoji))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.Equal(t, customEmoji, result.GetString(bundle.RelationKeyIconEmoji))
+	})
+
+	t.Run("keeps emoji when sourceObject is empty", func(t *testing.T) {
+		// given
+		store := objectstore.NewStoreFixture(t)
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyIconEmoji, domain.String(customEmoji))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.Equal(t, customEmoji, result.GetString(bundle.RelationKeyIconEmoji))
+	})
+
+	t.Run("keeps empty name when no previous template", func(t *testing.T) {
+		// given
+		s := service{store: objectstore.NewStoreFixture(t)}
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyName, domain.String(""))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.True(t, result.Has(bundle.RelationKeyName))
+	})
+
+	t.Run("removes name when it matches previous template name", func(t *testing.T) {
+		// given
+		templateName := "Template Name"
+		store := objectstore.NewStoreFixture(t)
+		store.AddObjects(t, spaceId, []objectstore.TestObject{
+			{
+				bundle.RelationKeyId:   domain.String(sourceTemplateId),
+				bundle.RelationKeyName: domain.String(templateName),
+			},
+		})
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyName, domain.String(templateName))
+		st.SetDetail(bundle.RelationKeySourceObject, domain.String(sourceTemplateId))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.False(t, result.Has(bundle.RelationKeyName), "Name should be removed when it matches template name")
+		assert.False(t, result.Has(bundle.RelationKeySourceObject), "SourceObject should always be removed")
+	})
+
+	t.Run("keeps name when it differs from previous template name", func(t *testing.T) {
+		// given
+		templateName := "Template Name"
+		customName := "My Custom Name"
+		store := objectstore.NewStoreFixture(t)
+		store.AddObjects(t, spaceId, []objectstore.TestObject{
+			{
+				bundle.RelationKeyId:   domain.String(sourceTemplateId),
+				bundle.RelationKeyName: domain.String(templateName),
+			},
+		})
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyName, domain.String(customName))
+		st.SetDetail(bundle.RelationKeySourceObject, domain.String(sourceTemplateId))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.Equal(t, customName, result.GetString(bundle.RelationKeyName), "Custom name should be preserved")
+	})
+
+	t.Run("keeps name when sourceObject is empty", func(t *testing.T) {
+		// given
+		store := objectstore.NewStoreFixture(t)
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyName, domain.String(customObjectName))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.Equal(t, customObjectName, result.GetString(bundle.RelationKeyName))
+	})
+
+	t.Run("removes empty name when previous template also had empty name", func(t *testing.T) {
+		// given
+		store := objectstore.NewStoreFixture(t)
+		store.AddObjects(t, spaceId, []objectstore.TestObject{
+			{
+				bundle.RelationKeyId:   domain.String(sourceTemplateId),
+				bundle.RelationKeyName: domain.String(""),
+			},
+		})
+		s := service{store: store}
+
+		st := state.NewDoc("test", nil).NewState()
+		st.SetDetail(bundle.RelationKeyName, domain.String(""))
+		st.SetDetail(bundle.RelationKeySourceObject, domain.String(sourceTemplateId))
+
+		// when
+		result := s.collectOriginalDetails(spaceId, st)
+
+		// then
+		assert.False(t, result.Has(bundle.RelationKeyName), "Empty name should be removed when previous template also had empty name")
+	})
+}
+
+func newTemplateTestWithTags(templateName, typeKey string, tags []string) smartblock.SmartBlock {
+	sb := newTemplateTest(templateName, typeKey).(*smarttest.SmartTest)
+	_ = sb.SetDetails(nil, []domain.Detail{
+		{Key: bundle.RelationKeyTag, Value: domain.StringList(tags)},
+	}, false)
+	return sb
+}
+
+func TestService_MultiValueRelationMerging(t *testing.T) {
+	const (
+		testSpaceId  = "space1"
+		templateName = "template"
+	)
+
+	t.Run("template tags are preserved when incoming details has empty tag list", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithTags(templateName, bundle.TypeKeyTask.String(), []string{"tag1", "tag2"})
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyTag, domain.StringList(nil))
+
+		s := service{
+			picker:        &testPicker{sb: tmpl},
+			formatFetcher: newFormatFetcher(t, map[string]model.RelationFormat{bundle.RelationKeyTag.String(): model.RelationFormat_tag}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+			Details:    details,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, []string{"tag1", "tag2"}, st.Details().GetStringList(bundle.RelationKeyTag))
+	})
+
+	t.Run("template tags are merged with incoming tag values", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTestWithTags(templateName, bundle.TypeKeyTask.String(), []string{"tag1", "tag2"})
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyTag, domain.StringList([]string{"tag2", "tag3"}))
+
+		s := service{
+			picker:        &testPicker{sb: tmpl},
+			formatFetcher: newFormatFetcher(t, map[string]model.RelationFormat{bundle.RelationKeyTag.String(): model.RelationFormat_tag}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+			Details:    details,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, []string{"tag1", "tag2", "tag3"}, st.Details().GetStringList(bundle.RelationKeyTag))
+	})
+
+	t.Run("single-value relations still overwrite correctly", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, bundle.TypeKeyTask.String())
+		details := domain.NewDetails()
+		details.Set(bundle.RelationKeyDescription, domain.String("new description"))
+
+		s := service{
+			picker:        &testPicker{sb: tmpl},
+			formatFetcher: newFormatFetcher(t, map[string]model.RelationFormat{bundle.RelationKeyDescription.String(): model.RelationFormat_longtext}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+			Details:    details,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, "new description", st.Details().GetString(bundle.RelationKeyDescription))
+	})
+
+	t.Run("object relations are merged", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, bundle.TypeKeyTask.String()).(*smarttest.SmartTest)
+		_ = tmpl.SetDetails(nil, []domain.Detail{
+			{Key: domain.RelationKey("assignee"), Value: domain.StringList([]string{"user1", "user2"})},
+		}, false)
+
+		details := domain.NewDetails()
+		details.Set(domain.RelationKey("assignee"), domain.StringList([]string{"user2", "user3"}))
+
+		s := service{
+			picker:        &testPicker{sb: tmpl},
+			formatFetcher: newFormatFetcher(t, map[string]model.RelationFormat{"assignee": model.RelationFormat_object}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+			Details:    details,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, []string{"user1", "user2", "user3"}, st.Details().GetStringList(domain.RelationKey("assignee")))
+	})
+
+	t.Run("file relations are merged", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, bundle.TypeKeyTask.String()).(*smarttest.SmartTest)
+		_ = tmpl.SetDetails(nil, []domain.Detail{
+			{Key: domain.RelationKey("attachments"), Value: domain.StringList([]string{"file1"})},
+		}, false)
+
+		details := domain.NewDetails()
+		details.Set(domain.RelationKey("attachments"), domain.StringList([]string{"file2"}))
+
+		s := service{
+			picker:        &testPicker{sb: tmpl},
+			formatFetcher: newFormatFetcher(t, map[string]model.RelationFormat{"attachments": model.RelationFormat_file}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+			Details:    details,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, []string{"file1", "file2"}, st.Details().GetStringList(domain.RelationKey("attachments")))
+	})
+
+	t.Run("status relations are not merged - incoming overwrites", func(t *testing.T) {
+		// given
+		tmpl := newTemplateTest(templateName, bundle.TypeKeyTask.String()).(*smarttest.SmartTest)
+		_ = tmpl.SetDetails(nil, []domain.Detail{
+			{Key: domain.RelationKey("status"), Value: domain.StringList([]string{"status1"})},
+		}, false)
+
+		details := domain.NewDetails()
+		details.Set(domain.RelationKey("status"), domain.StringList([]string{"status2"}))
+
+		s := service{
+			picker:        &testPicker{sb: tmpl},
+			formatFetcher: newFormatFetcher(t, map[string]model.RelationFormat{"status": model.RelationFormat_status}),
+		}
+
+		// when
+		st, err := s.CreateTemplateStateWithDetails(templateSvc.CreateTemplateRequest{
+			SpaceId:    testSpaceId,
+			TemplateId: templateName,
+			Details:    details,
+		})
+
+		// then
+		require.NoError(t, err)
+		assert.Equal(t, []string{"status2"}, st.Details().GetStringList(domain.RelationKey("status")))
+	})
+}

@@ -1,0 +1,45 @@
+package core
+
+import (
+	"context"
+	"errors"
+
+	"github.com/hoangtrung1801/loom/loom-heart/metrics"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/initialparams"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/logging"
+)
+
+func (mw *Middleware) InitialSetParameters(cctx context.Context, req *pb.RpcInitialSetParametersRequest) *pb.RpcInitialSetParametersResponse {
+	response := func(code pb.RpcInitialSetParametersResponseErrorCode, err error) *pb.RpcInitialSetParametersResponse {
+		m := &pb.RpcInitialSetParametersResponse{Error: &pb.RpcInitialSetParametersResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+
+		return m
+	}
+	if req.Version == "" {
+		return response(pb.RpcInitialSetParametersResponseError_BAD_INPUT,
+			errors.New("version is empty. Version must be in format: 1.0.0-optional-commit-hash-for-dev-builds"))
+	}
+
+	params, created, err := initialparams.Init(req)
+	if err != nil {
+		return response(pb.RpcInitialSetParametersResponseError_BAD_INPUT, err)
+	}
+	// An idempotent retry (same params) is treated as success: the client
+	// may re-send InitialSetParameters on a reload and startup side effects
+	// are not safe to run twice (logging.Init would re-register the sink).
+	if !created {
+		return response(pb.RpcInitialSetParametersResponseError_NULL, nil)
+	}
+
+	mw.applicationService.SetClientVersion(params.Platform, params.Version)
+	metrics.Service.SetPlatform(params.Platform)
+	metrics.Service.SetStartVersion(params.Version)
+	metrics.Service.SetEnabled(params.SendTelemetry)
+	logging.Init(params.LogLevel, params.SaveLogs)
+
+	return response(pb.RpcInitialSetParametersResponseError_NULL, nil)
+}

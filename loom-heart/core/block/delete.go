@@ -1,0 +1,270 @@
+package block
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/anyproto/any-sync/commonspace/spacestorage"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/event"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject/filemodels"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
+	coresb "github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core/smartblock"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/database"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
+	"github.com/hoangtrung1801/loom/loom-heart/space/clientspace"
+)
+
+func (s *Service) DeleteObjectByFullID(id domain.FullID) error {
+	var sbType coresb.SmartBlockType
+	spc, err := s.spaceService.Get(context.Background(), id.SpaceID)
+	if err != nil {
+		return err
+	}
+	err = spc.Do(id.ObjectID, func(b smartblock.SmartBlock) error {
+		if err = b.Restrictions().Object.Check(model.Restrictions_Delete); err != nil {
+			return err
+		}
+		sbType = b.Type()
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	entry, err := spc.Storage().HeadStorage().GetEntry(s.componentCtx, id.ObjectID)
+	if err != nil {
+		return fmt.Errorf("get head entry: %w", err)
+	}
+
+	if sbType != coresb.SmartBlockTypeFileObject {
+		// in case client skips archiving, lets still call objectGC
+		res, err := s.objectGC.CheckObjectsOnObjectArchived(id.SpaceID, id.ObjectID, true)
+		if err != nil {
+			log.With("objectId", id.ObjectID).Warnf("failed to check objects on context deletion: %v", err)
+		} else {
+			if len(res.Files) > 0 {
+				if err := s.detailsService.SetListIsArchivedNoGC(context.Background(), res.Files, true); err != nil {
+					log.With("objectId", id.ObjectID).Warnf("failed to archive children on context deletion: %v", err)
+				}
+			}
+			if len(res.Candidates) > 0 {
+				// no session context here — broadcast so the initiating client can prompt the user
+				s.eventSender.Broadcast(event.NewEventSingleMessage(id.SpaceID, &pb.EventMessageValueOfObjectCleanupSuggestion{
+					ObjectCleanupSuggestion: &pb.EventObjectCleanupSuggestion{
+						ObjectIds: res.Candidates,
+						ContextId: id.ObjectID,
+						Trigger:   pb.EventObjectCleanupSuggestion_delete,
+					},
+				}))
+			}
+		}
+	}
+
+	switch sbType {
+	case coresb.SmartBlockTypeObjectType,
+		coresb.SmartBlockTypeRelation,
+		coresb.SmartBlockTypeRelationOption,
+		coresb.SmartBlockTypeTemplate:
+		err = s.deleteDerivedObject(id, sbType, spc)
+	case coresb.SmartBlockTypeSubObject:
+		return fmt.Errorf("subobjects deprecated")
+	case coresb.SmartBlockTypeFileObject:
+		err = s.fileObjectService.DeleteFileData(id.SpaceID, id.ObjectID)
+		if err != nil && !errors.Is(err, filemodels.ErrEmptyFileId) {
+			return fmt.Errorf("delete file data: %w", err)
+		}
+		// BeforeDelete tears down the spaceindex row, closes open sessions
+		// and marks the smartblock as deleted. Without this the CID→object
+		// dedup lookup keeps returning the stale id, so re-uploads of the
+		// same bytes resurrect a broken object instead of creating a new one.
+		if err = s.BeforeDelete(id, nil); err != nil {
+			return fmt.Errorf("before delete: %w", err)
+		}
+		err = spc.DeleteTree(context.Background(), id.ObjectID)
+		// Tolerate a concurrent deletion that already removed the tree.
+		if errors.Is(err, spacestorage.ErrTreeStorageAlreadyDeleted) {
+			err = nil
+		}
+	default:
+		if entry.IsDerived {
+			err = s.deleteDerivedObject(id, sbType, spc)
+		} else {
+			err = spc.DeleteTree(context.Background(), id.ObjectID)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	s.unsetHomepageIfNeeded(id, spc)
+	s.sendOnRemoveEvent(id.SpaceID, id.ObjectID)
+	// Remove from cache
+	err = spc.Remove(context.Background(), id.ObjectID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) deleteDerivedObject(id domain.FullID, sbType coresb.SmartBlockType, spc clientspace.Space) (err error) {
+	var relationKey, targetTypeId string
+	err = spc.Do(id.ObjectID, func(b smartblock.SmartBlock) error {
+		st := b.NewState()
+		st.SetDetailAndBundledRelation(bundle.RelationKeyIsUninstalled, domain.Bool(true))
+		switch sbType {
+		case coresb.SmartBlockTypeRelation:
+			relationKey = st.Details().GetString(bundle.RelationKeyRelationKey)
+		case coresb.SmartBlockTypeTemplate:
+			targetTypeId = st.Details().GetString(bundle.RelationKeyTargetObjectType)
+		}
+		return b.Apply(st)
+	})
+	if err != nil {
+		return fmt.Errorf("set isUninstalled flag: %w", err)
+	}
+	// NOT BeforeDelete: a derived object's index row is left as the full
+	// corpse the Apply above just indexed (isUninstalled, and isDeleted from
+	// the smartblock's details injection) — the row every other device holds
+	// and the row this device would hold again after a restart, when the
+	// outdated-object reindex rebuilt it from the surviving tree. Stripping
+	// it to a tombstone gave the deleting device a second shape for one
+	// session that nothing else ever had; the API's removed-type and
+	// removed-property lookups read the corpse row.
+	s.closeAndMarkDeleted(id, nil)
+	switch sbType {
+	case coresb.SmartBlockTypeRelation:
+		if err = s.deleteRelationOptions(id.SpaceID, relationKey); err != nil {
+			return fmt.Errorf("failed to delete relation options of deleted relation: %w", err)
+		}
+	case coresb.SmartBlockTypeTemplate:
+		if err = s.unsetDefaultTemplateId(id.ObjectID, targetTypeId, spc); err != nil {
+			return fmt.Errorf("failed to reset default template id: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) deleteRelationOptions(spaceId string, relationKey string) error {
+	relationOptions, _, err := s.objectStore.SpaceIndex(spaceId).QueryObjectIds(database.Query{
+		Filters: []database.FilterRequest{
+			{
+				RelationKey: bundle.RelationKeyResolvedLayout,
+				Condition:   model.BlockContentDataviewFilter_Equal,
+				Value:       domain.Int64(model.ObjectType_relationOption),
+			},
+			{
+				RelationKey: bundle.RelationKeyRelationKey,
+				Condition:   model.BlockContentDataviewFilter_Equal,
+				Value:       domain.String(relationKey),
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	// every option is attempted: a relation that is already uninstalled
+	// keeps its index row and its heads hash, so nothing re-runs this on
+	// the next load — one failing option must not strand the ones after it
+	var errs []error
+	for _, id := range relationOptions {
+		if err := s.DeleteObject(id); err != nil {
+			errs = append(errs, fmt.Errorf("delete option %s: %w", id, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (s *Service) unsetDefaultTemplateId(templateId, typeId string, spc clientspace.Space) error {
+	records, err := s.objectStore.SpaceIndex(spc.Id()).QueryByIds([]string{typeId})
+	if err != nil {
+		return fmt.Errorf("failed to query type object: %w", err)
+	}
+	if len(records) != 1 {
+		return fmt.Errorf("failed to query type object: 1 record expected")
+	}
+	if records[0].Details.GetString(bundle.RelationKeyDefaultTemplateId) != templateId {
+		// template that is about to be deleted was not set as default for type, so we do nothing
+		return nil
+	}
+
+	return spc.Do(typeId, func(sb smartblock.SmartBlock) error {
+		st := sb.NewState()
+		st.SetDetail(bundle.RelationKeyDefaultTemplateId, domain.String(""))
+		st.SetChangeType(domain.ChangeTypeLayoutSync)
+		return sb.Apply(st)
+	})
+}
+
+func (s *Service) DeleteObject(objectId string) (err error) {
+	spaceId, err := s.resolver.ResolveSpaceID(objectId)
+	if err != nil {
+		return fmt.Errorf("resolve spaceID: %w", err)
+	}
+	return s.DeleteObjectByFullID(domain.FullID{SpaceID: spaceId, ObjectID: objectId})
+}
+
+// closeAndMarkDeleted is the in-memory half of a delete: the sessions
+// close and the smartblock is marked deleted, so no further Apply lands on
+// it. Failures are logged, never returned — the delete proceeds.
+// workspaceRemove, when not nil, runs inside the same lock.
+func (s *Service) closeAndMarkDeleted(id domain.FullID, workspaceRemove func() error) {
+	err := s.DoFullId(id, func(b smartblock.SmartBlock) error {
+		b.ObjectCloseAllSessions()
+		st := b.NewState()
+		isFavorite := st.LocalDetails().GetBool(bundle.RelationKeyIsFavorite)
+		if err := s.detailsService.SetIsFavorite(id.ObjectID, isFavorite); err != nil {
+			log.With("objectId", id).Errorf("failed to favorite object: %v", err)
+		}
+		b.SetIsDeleted()
+		if workspaceRemove != nil {
+			return workspaceRemove()
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, spacestorage.ErrTreeStorageAlreadyDeleted) {
+		log.With("error", err, "objectId", id.ObjectID).Error("failed to perform delete operation on object")
+	}
+}
+
+// BeforeDelete prepares the delete of an object whose TREE goes away: the
+// in-memory half (sessions, the favourite, the deleted flag — all
+// best-effort, logged), then the index row stripped to a tombstone by the
+// store's DeleteObject, whose failure IS returned. It does not delete the
+// tree itself. A derived object — whose tree stays — takes
+// deleteDerivedObject instead, which keeps its index row.
+func (s *Service) BeforeDelete(id domain.FullID, workspaceRemove func() error) error {
+	s.closeAndMarkDeleted(id, workspaceRemove)
+	if err := s.objectStore.SpaceIndex(id.SpaceID).DeleteObject(id.ObjectID); err != nil {
+		return fmt.Errorf("delete object from local store: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) unsetHomepageIfNeeded(id domain.FullID, spc clientspace.Space) {
+	workspaceId := spc.DerivedIDs().Workspace
+	details, err := s.objectStore.SpaceIndex(id.SpaceID).GetDetails(workspaceId)
+	if err != nil {
+		log.With("objectId", id.ObjectID).Warnf("failed to get workspace details for dashboard check: %v", err)
+		return
+	}
+	homepage := details.GetString(bundle.RelationKeyHomepage)
+	if homepage == id.ObjectID {
+		if err = s.detailsService.SetSpaceInfo(spc.Id(), domain.NewDetailsFromMap(map[domain.RelationKey]domain.Value{
+			bundle.RelationKeyHomepage: domain.String(domain.HomepageWidgets),
+		})); err != nil {
+			log.With("objectId", id.ObjectID).Warnf("failed to reset homepage to widgets: %v", err)
+		}
+	}
+}
+
+func (s *Service) sendOnRemoveEvent(spaceId string, id string) {
+	s.eventSender.Broadcast(event.NewEventSingleMessage(spaceId, &pb.EventMessageValueOfObjectRemove{
+		ObjectRemove: &pb.EventObjectRemove{
+			Ids: []string{id},
+		},
+	}))
+}
