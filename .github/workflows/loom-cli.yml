@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-linux:
     name: build (linux-${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -102,10 +102,157 @@ jobs:
             loom-heart/loom-linux-${{ matrix.arch }}.tar.gz
             loom-heart/loom-linux-${{ matrix.arch }}.tar.gz.sha256
 
+  build-macos:
+    name: build (darwin-${{ matrix.arch }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+          - arch: amd64
+    defaults:
+      run:
+        working-directory: loom-heart
+    env:
+      GOPRIVATE: github.com/anyproto
+      GOTOOLCHAIN: local
+    steps:
+      - name: git config
+        working-directory: .
+        env:
+          ANYTYPE_PAT: ${{ secrets.ANYTYPE_PAT }}
+        run: |
+          if [ -n "$ANYTYPE_PAT" ]; then
+            git config --global url."https://${ANYTYPE_PAT}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: loom-heart/go.mod
+
+      - name: Fetch tantivy lib
+        run: scripts/fetch-tantivy.sh darwin-${{ matrix.arch }}
+
+      # One arm64 runner builds both: clang cross-compiles the amd64 binary
+      # (same as makefiles/ci-cross-compile-library.mk).
+      - name: Build loom
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "1"
+          CGO_CFLAGS: -mmacosx-version-min=11
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          GOFLAGS: -buildvcs=false
+        run: |
+          go build \
+            -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
+            -o loom ./cmd/loom
+
+      - name: Smoke test
+        run: |
+          file loom
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            ./loom --help
+          else
+            # The runner is arm64; only check the architecture of the amd64 binary.
+            file loom | grep -q x86_64
+          fi
+
+      - name: Package
+        run: |
+          name=loom-darwin-${{ matrix.arch }}
+          tar -czf "$name.tar.gz" loom
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loom-darwin-${{ matrix.arch }}
+          path: |
+            loom-heart/loom-darwin-${{ matrix.arch }}.tar.gz
+            loom-heart/loom-darwin-${{ matrix.arch }}.tar.gz.sha256
+
+  build-windows:
+    name: build (windows-amd64)
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: loom-heart
+    env:
+      GOPRIVATE: github.com/anyproto
+      GOTOOLCHAIN: local
+    steps:
+      - name: git config
+        shell: bash
+        working-directory: .
+        env:
+          ANYTYPE_PAT: ${{ secrets.ANYTYPE_PAT }}
+        run: |
+          if [ -n "$ANYTYPE_PAT" ]; then
+            git config --global url."https://${ANYTYPE_PAT}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: loom-heart/go.mod
+
+      - name: Fetch tantivy lib
+        shell: bash
+        run: scripts/fetch-tantivy.sh windows-amd64
+
+      # The prebuilt tantivy lib is a mingw (x86_64-pc-windows-gnu) static lib.
+      - name: Install mingw-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          install: mingw-w64-x86_64-gcc
+
+      - name: Build loom
+        shell: msys2 {0}
+        env:
+          CGO_ENABLED: "1"
+          CC: x86_64-w64-mingw32-gcc
+          CXX: x86_64-w64-mingw32-g++
+          GOFLAGS: -buildvcs=false
+        run: |
+          go build \
+            -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
+            -ldflags="-linkmode external -extldflags=-static" \
+            -o loom.exe ./cmd/loom
+
+      - name: Smoke test
+        shell: bash
+        run: ./loom.exe --help
+
+      - name: Package
+        shell: bash
+        run: |
+          name=loom-windows-amd64
+          powershell -NoProfile -Command "Compress-Archive -Path loom.exe -DestinationPath $name.zip"
+          sha256sum "$name.zip" > "$name.zip.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loom-windows-amd64
+          path: |
+            loom-heart/loom-windows-amd64.zip
+            loom-heart/loom-windows-amd64.zip.sha256
+
   release:
     name: release
     if: startsWith(github.ref, 'refs/tags/loom-v')
-    needs: build
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
