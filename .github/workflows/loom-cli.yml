@@ -53,28 +53,32 @@ jobs:
         with:
           go-version-file: anytype-heart/go.mod
 
-      - name: Install musl toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
-
       # tantivy-go links prebuilt Rust static libs (cgo), so a plain
       # CGO_ENABLED=0 cross-compile is impossible. Fetch + sha256-verify them.
       - name: Fetch tantivy libs
         run: make check-tantivy-version
 
+      # Build inside Alpine: its gcc and libgcc are musl-native, which the
+      # prebuilt musl tantivy libs need for a static link. (Ubuntu's musl-gcc
+      # wrapper pulls in glibc's libgcc_eh and fails with _dl_find_object.)
+      # The container is arch-native on each runner, so no cross toolchain.
       - name: Build loom
-        env:
-          CGO_ENABLED: '1'
-          CC: musl-gcc
-          # The tantivy-go "remote" cgo variant has no -L; point it at the musl lib.
-          CGO_LDFLAGS: -L${{ github.workspace }}/anytype-heart/deps/libs/${{ matrix.tantivy }}
+        working-directory: .
         run: |
-          # Tags/flags mirror makefiles/ci-cross-compile-library.mk (linux targets).
-          go build \
-            -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
-            -ldflags="-linkmode external -extldflags '-static -Wl,-z stack-size=1000000'" \
-            -o loom ./cmd/loom
+          docker run --rm \
+            -v "$PWD":/src -w /src/anytype-heart \
+            -e CGO_ENABLED=1 -e GOTOOLCHAIN=auto -e GOPRIVATE=github.com/anyproto \
+            -e CGO_LDFLAGS="-L/src/anytype-heart/deps/libs/${{ matrix.tantivy }}" \
+            -e GOFLAGS=-buildvcs=false \
+            golang:1.26-alpine sh -ec '
+              apk add --no-cache build-base git
+              # Tags/flags mirror makefiles/ci-cross-compile-library.mk (linux targets).
+              go build \
+                -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
+                -ldflags="-linkmode external -extldflags \"-static -Wl,-z stack-size=1000000\"" \
+                -o loom ./cmd/loom
+              chown '"$(id -u):$(id -g)"' loom
+            '
 
       - name: Smoke test
         run: |
