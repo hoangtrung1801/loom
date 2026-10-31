@@ -17,14 +17,14 @@ import (
 // TestReplayTreeDumpShadow replays a debugtree JSON dump (the files logged by
 // the parentIndex shadow sweep / debugtree export) in shadow-verification mode
 // and asserts zero index mismatches, plus structural equality between the
-// indexed and plain replays. Skipped unless ANYTYPE_TREE_DUMP points to a
+// indexed and plain replays. Skipped unless LOOM_TREE_DUMP points to a
 // dump file:
 //
-//	ANYTYPE_TREE_DUMP=/path/tree_XXX.json go test ./core/block/editor/state/ -run TestReplayTreeDumpShadow -v
+//	LOOM_TREE_DUMP=/path/tree_XXX.json go test ./core/block/editor/state/ -run TestReplayTreeDumpShadow -v
 func TestReplayTreeDumpShadow(t *testing.T) {
-	dumpPath := os.Getenv("ANYTYPE_TREE_DUMP")
+	dumpPath := os.Getenv("LOOM_TREE_DUMP")
 	if dumpPath == "" {
-		t.Skip("set ANYTYPE_TREE_DUMP to a debugtree json dump to run")
+		t.Skip("set LOOM_TREE_DUMP to a debugtree json dump to run")
 	}
 	raw, err := os.ReadFile(dumpPath)
 	require.NoError(t, err)

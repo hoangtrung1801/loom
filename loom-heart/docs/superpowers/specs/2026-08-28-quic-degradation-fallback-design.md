@@ -159,7 +159,7 @@ threshold covers the rest).
   globally; `EnableQuicDemotion` is then not called (moot).
 - Auto-demotion is **on by default** for clients: config calls
   `EnableQuicDemotion()` next to `PreferQuic(true)`. Escape hatch for
-  debugging: `ANYTYPE_QUIC_AUTO_DEMOTION=0` skips both the enable call and
+  debugging: `LOOM_QUIC_AUTO_DEMOTION=0` skips both the enable call and
   the persistence component's seeding/saving.
 
 **Observability**: Info-level log on degraded deaths (peerId, cause,

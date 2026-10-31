@@ -544,7 +544,7 @@ func (u *uploader) SetUrl(url string) Uploader {
 			fileName = uri.GetFileNameFromURLAndContentType(resp.Request.URL, resp.Header.Get("Content-Type"))
 		}
 
-		tmpFile, err := ioutil.TempFile(u.tempDirProvider.TempDir(), "anytype_downloaded_file_*")
+		tmpFile, err := ioutil.TempFile(u.tempDirProvider.TempDir(), "loom_downloaded_file_*")
 		if err != nil {
 			return nil, err
 		}

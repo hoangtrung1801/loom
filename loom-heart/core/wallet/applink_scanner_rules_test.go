@@ -63,7 +63,7 @@ func TestSecretScannerRules(t *testing.T) {
 			mintedKey,
 			fmt.Sprintf(`"apiKey": "%s"`, mintedKey),               // MCP/CLI JSON config
 			"Authorization: Bearer " + mintedKey,                   // a pasted curl trace
-			"ANYTYPE_API_KEY=" + mintedKey,                         // a dotenv line
+			"LOOM_API_KEY=" + mintedKey,                         // a dotenv line
 			fmt.Sprintf("the key (%s) stopped working", mintedKey), // prose
 		} {
 			assert.Equal(t, mintedKey, rule.FindString(leak), "must recover the key from %q", leak)

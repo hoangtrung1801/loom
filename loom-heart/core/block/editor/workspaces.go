@@ -3,7 +3,6 @@ package editor
 import (
 	"github.com/anyproto/any-sync/commonspace/object/acl/list"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/basic"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/dataview"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
@@ -12,6 +11,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/template"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/migration"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/database"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore/spaceindex"

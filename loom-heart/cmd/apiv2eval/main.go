@@ -14,7 +14,7 @@
 //	apiv2eval -models gemma4:e2b -arms ops  # one cell
 //	apiv2eval -list                         # print the matrix and exit
 //
-// Configuration comes from the repo's .env: ANYTYPE_API_URL, ANYTYPE_API_KEY
+// Configuration comes from the repo's .env: LOOM_API_URL, LOOM_API_KEY
 // and OLLAMA_BASE_URL (the OpenAI-compatible model endpoint). The API must
 // be running; the harness refuses to start otherwise, naming which of the
 // two failures it hit — server down, or key rejected.
@@ -92,7 +92,7 @@ type options struct {
 
 func run() error {
 	var opt options
-	flag.StringVar(&opt.envFile, "env", ".env", "file holding ANYTYPE_API_URL / ANYTYPE_API_KEY / OLLAMA_BASE_URL")
+	flag.StringVar(&opt.envFile, "env", ".env", "file holding LOOM_API_URL / LOOM_API_KEY / OLLAMA_BASE_URL")
 	flag.StringVar(&opt.models, "models", "gemma4:e2b,gemma4:e4b", "comma-separated model ids to evaluate")
 	flag.StringVar(&opt.arms, "arms", strings.Join(defaultArms, ","),
 		"comma-separated surfaces: "+strings.Join(allArms, ", "))
@@ -119,7 +119,7 @@ func run() error {
 	flag.BoolVar(&opt.replayReasoning, "replay-reasoning", false,
 		"feed each turn's reasoning back into the next turn — the A/B for whether a model's own thinking helps or breaks the loop")
 	flag.BoolVar(&opt.freshAccount, "fresh-account", false,
-		"start a headless heart on a throwaway account instead of using ANYTYPE_API_URL/ANYTYPE_API_KEY — the only way one run's spaces cannot confuse the next one's model")
+		"start a headless heart on a throwaway account instead of using LOOM_API_URL/LOOM_API_KEY — the only way one run's spaces cannot confuse the next one's model")
 	flag.BoolVar(&opt.keepAccount, "keep-account", false,
 		"-fresh-account only: leave the temp data dir (and the heart log) behind — a failed run is unreadable without the account it failed against")
 	flag.StringVar(&opt.heartBinary, "heart-binary", "",
@@ -138,8 +138,8 @@ func run() error {
 	// the file is the default, an explicit `VAR=… apiv2eval …` is the override.
 	// (Reversed, a stale host in .env silently beat the command line — which is
 	// how a run went to a LAN address after the host moved to Tailscale.)
-	apiURL := firstNonEmpty(os.Getenv("ANYTYPE_API_URL"), env["ANYTYPE_API_URL"], wrapper.DefaultBaseURL)
-	apiKey := firstNonEmpty(os.Getenv("ANYTYPE_API_KEY"), env["ANYTYPE_API_KEY"])
+	apiURL := firstNonEmpty(os.Getenv("LOOM_API_URL"), env["LOOM_API_URL"], wrapper.DefaultBaseURL)
+	apiKey := firstNonEmpty(os.Getenv("LOOM_API_KEY"), env["LOOM_API_KEY"])
 	modelURL := firstNonEmpty(os.Getenv("OLLAMA_BASE_URL"), env["OLLAMA_BASE_URL"], "http://127.0.0.1:11434/v1")
 	modelKey := firstNonEmpty(os.Getenv("OPENAI_API_KEY"), env["OPENAI_API_KEY"], "ollama")
 
@@ -205,7 +205,7 @@ func run() error {
 
 	// preflight — both halves fail fast, and they fail differently
 	if apiKey == "" {
-		return fmt.Errorf("no ANYTYPE_API_KEY in %s or the environment — the API refuses every call without one", opt.envFile)
+		return fmt.Errorf("no LOOM_API_KEY in %s or the environment — the API refuses every call without one", opt.envFile)
 	}
 	if err := api.whoami(ctx); err != nil {
 		if opt.freshAccount {

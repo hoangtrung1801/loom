@@ -32,11 +32,11 @@ import (
 	"github.com/ipfs/go-cid"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileacl"
 	"github.com/hoangtrung1801/loom/loom-heart/core/invitestore"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
 	"github.com/hoangtrung1801/loom/loom-heart/space"
 	"github.com/hoangtrung1801/loom/loom-heart/space/spaceinfo"

@@ -13,8 +13,8 @@ import (
 	"github.com/anyproto/any-sync/nodeconf"
 	"golang.org/x/exp/slices"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/util/slice"
 )
 

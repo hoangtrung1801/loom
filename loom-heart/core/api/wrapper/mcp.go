@@ -549,7 +549,7 @@ func (s *MCPServer) errorText(err error) string {
 	var te *ToolError
 	if errors.As(err, &te) {
 		if te.Status == 401 {
-			return te.Text + "\nfix: the API key was rejected — ask the user to check ANYTYPE_API_KEY (Anytype app → Settings → API keys); no change to the call will help"
+			return te.Text + "\nfix: the API key was rejected — ask the user to check LOOM_API_KEY (Anytype app → Settings → API keys); no change to the call will help"
 		}
 		return te.Text
 	}

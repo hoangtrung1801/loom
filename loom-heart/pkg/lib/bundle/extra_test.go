@@ -251,8 +251,8 @@ func TestLoadExtraRelations(t *testing.T) {
 }
 
 // envInitChildMarker tells a subprocess that it is the child of TestExtraRelationsInit, so package
-// init has already run with ANYTYPE_EXTRA_RELATIONS set.
-const envInitChildMarker = "ANYTYPE_EXTRA_RELATIONS_INIT_CHILD"
+// init has already run with LOOM_EXTRA_RELATIONS set.
+const envInitChildMarker = "LOOM_EXTRA_RELATIONS_INIT_CHILD"
 
 const extraInitTestRelation = domain.RelationKey("extraInitTestRelation")
 

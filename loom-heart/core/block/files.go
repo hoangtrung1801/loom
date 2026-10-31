@@ -93,7 +93,7 @@ func (s *Service) DownloadFile(ctx context.Context, req *pb.RpcFileDownloadReque
 // caller is the app itself — so it carries no scope and its path is honored.
 func (s *Service) downloadTargetDir(reqPath string) (string, error) {
 	if reqPath == "" {
-		reqPath = filepath.Join(s.tempDirProvider.TempDir(), "anytype-download")
+		reqPath = filepath.Join(s.tempDirProvider.TempDir(), "loom-download")
 	}
 	if s.downloadScopeDir == "" {
 		return reqPath, nil

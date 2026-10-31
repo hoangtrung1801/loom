@@ -26,6 +26,6 @@ RUN apt update && apt install -y curl
 COPY --from=builder /anytype/server .
 EXPOSE 31007
 EXPOSE 31008
-ENV ANYTYPE_GRPC_ADDR=:31007
-ENV ANYTYPE_GRPCWEB_ADDR=:31008
+ENV LOOM_GRPC_ADDR=:31007
+ENV LOOM_GRPCWEB_ADDR=:31008
 CMD ["./server"]

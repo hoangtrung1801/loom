@@ -251,7 +251,7 @@ func TestParseInviteUrl(t *testing.T) {
 		},
 		{
 			name:      "Valid anytype scheme with cid and key",
-			inviteUrl: "anytype://invite/?cid=123&key=abc",
+			inviteUrl: "loom://invite/?cid=123&key=abc",
 			inviteId:  "123",
 			inviteKey: "abc",
 			spaceId:   "",
@@ -259,7 +259,7 @@ func TestParseInviteUrl(t *testing.T) {
 		},
 		{
 			name:      "Valid anytype scheme with all params",
-			inviteUrl: "anytype://invite/?cid=123&key=abc&spaceId=space1&networkId=net1",
+			inviteUrl: "loom://invite/?cid=123&key=abc&spaceId=space1&networkId=net1",
 			inviteId:  "123",
 			inviteKey: "abc",
 			spaceId:   "space1",

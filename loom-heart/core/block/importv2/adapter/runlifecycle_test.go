@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/importv2"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/importv2/runstore"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/process"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
 )

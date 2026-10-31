@@ -19,7 +19,7 @@ import (
 	"github.com/hbagdi/go-unsplash/unsplash"
 	"golang.org/x/oauth2"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config/loadenv"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config/loadenv"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/logging"
 	"github.com/hoangtrung1801/loom/loom-heart/util/uri"

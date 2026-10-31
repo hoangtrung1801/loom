@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/source/mock_source"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/addr"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"
 	"github.com/hoangtrung1801/loom/loom-heart/space/clientspace/mock_clientspace"

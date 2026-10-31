@@ -11,7 +11,7 @@ import (
 // runs the old whole-tree scan, the SCAN answer is used (replay behavior stays
 // bit-for-bit pre-index), and disagreements are logged. Meant for sweeping a
 // real account: rebuild every object with this on and grep the logs.
-var parentIndexDebug = os.Getenv("ANYTYPE_PARENT_INDEX_DEBUG") == "1"
+var parentIndexDebug = os.Getenv("LOOM_PARENT_INDEX_DEBUG") == "1"
 
 // parentIndex is a childId→parentId map that lets PickParentOf and UnlinkAll
 // skip whole-tree Iterate walks during change replay. Replay cost is dominated

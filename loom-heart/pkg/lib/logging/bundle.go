@@ -27,9 +27,9 @@ const bundleChunkSize = 1024 * 1024
 // input is available. The result is always a valid single-stream gzip file
 // regardless of where the input was truncated.
 //
-// logsDir is expected to contain lumberjack-style entries (anytype.log plus
-// rotated anytype-*.log / anytype-*.log.gz). Files that aren't prefixed with
-// "anytype" are ignored. If logsDir doesn't exist or has no matching files,
+// logsDir is expected to contain lumberjack-style entries (loom.log plus
+// rotated loom-*.log / loom-*.log.gz). Files that aren't prefixed with
+// "loom" are ignored. If logsDir doesn't exist or has no matching files,
 // the destination is created but empty (valid empty gzip stream).
 func WriteLogBundle(logsDir, destPath string, maxBytes int64) error {
 	if maxBytes <= 0 {
@@ -138,7 +138,7 @@ func sortedLogFiles(logsDir string) ([]string, error) {
 			continue
 		}
 		name := e.Name()
-		if !strings.HasPrefix(name, "anytype") {
+		if !strings.HasPrefix(name, "loom") {
 			continue
 		}
 		info, err := e.Info()

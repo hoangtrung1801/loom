@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config/loadenv"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config/loadenv"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/logging"
 )
 
@@ -157,7 +157,7 @@ func init() {
 		DefaultInHouseKey = loadenv.Get("INHOUSE_KEY")
 	}
 
-	if addr := os.Getenv("ANYTYPE_PROM"); addr != "" {
+	if addr := os.Getenv("LOOM_PROM"); addr != "" {
 		runPrometheusHttp(addr)
 	}
 }

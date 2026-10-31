@@ -12,8 +12,6 @@ import (
 
 	"github.com/anyproto/any-sync/app"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	apicore "github.com/hoangtrung1801/loom/loom-heart/core/api/core"
 	"github.com/hoangtrung1801/loom/loom-heart/core/api/server"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache"
@@ -23,6 +21,8 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/template"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/crossspacesub"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"

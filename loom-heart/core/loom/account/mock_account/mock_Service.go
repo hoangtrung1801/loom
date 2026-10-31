@@ -4,7 +4,7 @@ package mock_account
 
 import (
 	accountdata "github.com/anyproto/any-sync/commonspace/object/accountdata"
-	account "github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
+	account "github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 
 	app "github.com/anyproto/any-sync/app"
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/configfetcher"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
 	"github.com/hoangtrung1801/loom/loom-heart/space/spacecore"
 )

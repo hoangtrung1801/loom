@@ -10,7 +10,6 @@ import (
 	"github.com/samber/lo"
 	"golang.org/x/exp/slices"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/converter"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
@@ -21,6 +20,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/object/objectcreator"
 	templateSvc "github.com/hoangtrung1801/loom/loom-heart/core/block/template"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"

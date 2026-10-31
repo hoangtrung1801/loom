@@ -282,10 +282,10 @@ func TestGatewayAddr(t *testing.T) {
 		assert.Nil(t, fx.listener)
 	})
 
-	t.Run("honours ANYTYPE_GATEWAY_ADDR without persisting it", func(t *testing.T) {
+	t.Run("honours LOOM_GATEWAY_ADDR without persisting it", func(t *testing.T) {
 		// given
 		want := freeAddr(t)
-		t.Setenv("ANYTYPE_GATEWAY_ADDR", want)
+		t.Setenv("LOOM_GATEWAY_ADDR", want)
 
 		// when
 		fx := newFixtureWithConfig(t, &fakeConfig{}, portOf(t, freeAddr(t)))

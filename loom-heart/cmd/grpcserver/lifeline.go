@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	parentLifelineEnv       = "ANYTYPE_PARENT_LIFELINE"
+	parentLifelineEnv       = "LOOM_PARENT_LIFELINE"
 	parentLifelineStdin     = "stdin"
 	gracefulShutdownTimeout = 10 * time.Second
 
@@ -258,7 +258,7 @@ func registerParentLocalAPISecret(mw *core.Middleware, monitor *parentLifelineMo
 // parent channel at all, and the legacy Windows stdin protocol reads the same
 // pipe without opting in, so stalling their startup would buy nothing. The
 // background watch still runs for them, which is what keeps a Windows client
-// that sends a secret without setting ANYTYPE_PARENT_LIFELINE from being
+// that sends a secret without setting LOOM_PARENT_LIFELINE from being
 // silently unprotected.
 func watchParentLocalAPISecret(
 	monitor *parentLifelineMonitor,

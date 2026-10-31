@@ -26,8 +26,6 @@ import (
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sys/unix"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account/mock_account"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache/mock_cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/fileobject"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/fileobject/mock_fileobject"
@@ -43,6 +41,8 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/identity/mock_identity"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inviteservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inviteservice/mock_inviteservice"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account/mock_account"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/notifications/mock_notifications"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils/mock_relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"

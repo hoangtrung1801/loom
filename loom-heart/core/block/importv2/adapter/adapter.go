@@ -19,7 +19,6 @@ import (
 
 	"github.com/anyproto/any-sync/app"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/collection"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/importv2"
@@ -38,6 +37,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filesync"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/notifications"
 	"github.com/hoangtrung1801/loom/loom-heart/core/session"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"

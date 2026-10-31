@@ -12,7 +12,7 @@ import (
 
 const (
 	workersNumber          = 5
-	anytypeNotionImportDir = "anytype_notion_import"
+	anytypeNotionImportDir = "loom_notion_import"
 )
 
 type Downloader interface {

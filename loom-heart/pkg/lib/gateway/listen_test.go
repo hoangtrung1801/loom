@@ -12,7 +12,7 @@ import (
 
 func TestMain(m *testing.M) {
 	// an ambient override would send every fixture to the same address, and the second bind loses
-	_ = os.Unsetenv("ANYTYPE_GATEWAY_ADDR")
+	_ = os.Unsetenv("LOOM_GATEWAY_ADDR")
 	os.Exit(m.Run())
 }
 

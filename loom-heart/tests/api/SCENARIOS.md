@@ -61,7 +61,7 @@ tests, a Bruno/Postman collection, or `hurl` files.
 | 0.4.2 | Burst of 60 requests in <1 s | 60 of them 200, rest 429 |
 | 0.4.3 | After 429, wait 2 s, retry | 200 |
 | 0.4.4 | Rate limit applied per-token (two tokens, each at limit) | each gets its own bucket — or document shared if shared |
-| 0.4.5 | `ANYTYPE_API_DISABLE_RATE_LIMIT=1` | no 429 even under burst |
+| 0.4.5 | `LOOM_API_DISABLE_RATE_LIMIT=1` | no 429 even under burst |
 
 ### 0.5 Routing & method
 | # | Scenario | Expected |

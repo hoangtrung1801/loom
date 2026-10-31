@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	lifelineTestRoleEnv = "ANYTYPE_LIFELINE_TEST_ROLE"
+	lifelineTestRoleEnv = "LOOM_LIFELINE_TEST_ROLE"
 	lifelineTestPIDLine = "LIFELINE_CHILD_PID="
 	lifelineTestTimeout = 5 * time.Second
 )

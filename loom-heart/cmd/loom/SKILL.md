@@ -9,16 +9,16 @@ Twelve verbs over the local Anytype API. Everything composes through a
 session: `find` numbers its results (1, 2, …) and sets the working space;
 every other verb takes `--object <number>`.
 
-Setup: the local Anytype app must be running; `ANYTYPE_API_KEY` holds an
+Setup: the local Anytype app must be running; `LOOM_API_KEY` holds an
 API key from the app's settings, or run `loom auth` to pair and save one
-(`ANYTYPE_API_URL` defaults to `http://127.0.0.1:31009`).
+(`LOOM_API_URL` defaults to `http://127.0.0.1:31009`).
 
 ## Setup
 
 1. Run `loom auth`. The app shows a 4-digit code; enter it when asked (or
    pass `--code 1234`). The key is saved to `config.json` under the user
    config dir (`LOOM_CONFIG` overrides) and every verb uses it;
-   `ANYTYPE_API_KEY`, when set, takes precedence. `loom auth status`
+   `LOOM_API_KEY`, when set, takes precedence. `loom auth status`
    shows which key is in use, `loom auth logout` removes it.
 2. Add the MCP server to your client:
 

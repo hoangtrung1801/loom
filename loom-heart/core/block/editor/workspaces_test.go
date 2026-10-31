@@ -7,12 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock/smarttest"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/state"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/migration"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 )
 

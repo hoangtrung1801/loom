@@ -10,9 +10,9 @@ import (
 	"github.com/anyproto/any-sync/app"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/application/accountdirlock"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/util/vcs"
 )
@@ -69,16 +69,16 @@ func (s *Service) migrate(ctx context.Context, rootPath, id, lang string) (err e
 	defer func() {
 		err = errors.Join(err, lease.Release())
 	}()
-	cfg := anytype.BootstrapConfig(false, "")
+	cfg := loom.BootstrapConfig(false, "")
 	cfg.PeferYamuxTransport = true
 	cfg.DisableNetworkIdCheck = true
 	comps := []app.Component{
 		cfg,
-		anytype.BootstrapWallet(rootPath, *s.derivedKeys, lang),
+		loom.BootstrapWallet(rootPath, *s.derivedKeys, lang),
 		s.eventSender,
 	}
 	a := &app.App{}
-	anytype.BootstrapMigration(a, comps...)
+	loom.BootstrapMigration(a, comps...)
 	err = a.Start(ctx)
 	if err != nil {
 		return err

@@ -144,7 +144,7 @@ type Heart struct {
 	// APIURL is the base URL of the JSON API, e.g. http://127.0.0.1:52341.
 	APIURL string
 	// APIKey is a JSON-API-scoped app key for the fresh account — the value
-	// the harness otherwise reads from ANYTYPE_API_KEY.
+	// the harness otherwise reads from LOOM_API_KEY.
 	APIKey string
 	// AccountId is the created account's identity.
 	AccountId string
@@ -308,7 +308,7 @@ func (h *Heart) bootstrapAccount(ctx context.Context, client service.ClientComma
 		Platform:           clientPlatform,
 		Version:            clientVersion,
 		Workdir:            dataDir,
-		LogLevel:           os.Getenv("ANYTYPE_LOG_LEVEL"),
+		LogLevel:           os.Getenv("LOOM_LOG_LEVEL"),
 		DoNotSendLogs:      true,
 		DoNotSendTelemetry: true,
 	})

@@ -266,5 +266,5 @@ one message the user needs (`AccountDeleted`, `IncompatibleVersion`, …).
 
 ## 11. Debugging
 
-`ANYTYPE_LOG_LEVEL=core.recovery=debug` logs every published update as `id:Kind` (ids and kinds
+`LOOM_LOG_LEVEL=core.recovery=debug` logs every published update as `id:Kind` (ids and kinds
 only, never content). The snapshot RPC is safe to poll while `AccountSelect` blocks.

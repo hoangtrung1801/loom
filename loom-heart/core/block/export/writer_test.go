@@ -133,7 +133,7 @@ func TestDeepLinkNamer(t *testing.T) {
 
 		// Test markdown link
 		result := namer.Get("", "bafyreiblv65o2t64yownuweyf6rvgd7cyosxkhd7hg4zzhpqjhaerlqxbi", "Meeting Notes", ".md")
-		expected := "anytype://object?objectId=bafyreiblv65o2t64yownuweyf6rvgd7cyosxkhd7hg4zzhpqjhaerlqxbi&spaceId=bafyreieorkzqmzegus55jn5ptho4bp6jtrzc7anfbd54fo3g5wrbp3j3fu.scoxzd7vu6rz"
+		expected := "loom://object?objectId=bafyreiblv65o2t64yownuweyf6rvgd7cyosxkhd7hg4zzhpqjhaerlqxbi&spaceId=bafyreieorkzqmzegus55jn5ptho4bp6jtrzc7anfbd54fo3g5wrbp3j3fu.scoxzd7vu6rz"
 		assert.Equal(t, expected, result)
 	})
 
@@ -155,15 +155,15 @@ func TestDeepLinkNamer(t *testing.T) {
 		assert.Equal(t, expected, result)
 	})
 
-	t.Run("fallback to anytype:// when no gateway", func(t *testing.T) {
+	t.Run("fallback to loom:// when no gateway", func(t *testing.T) {
 		namer := &deepLinkNamer{
 			gatewayUrl: url.URL{}, // empty URL
 			spaceId:    "bafyreieorkzqmzegus55jn5ptho4bp6jtrzc7anfbd54fo3g5wrbp3j3fu.scoxzd7vu6rz",
 		}
 
-		// Should fallback to anytype:// scheme with spaceId
+		// Should fallback to loom:// scheme with spaceId
 		result := namer.Get("files", "fileHash789", "backup", ".txt")
-		expected := "anytype://object?objectId=fileHash789&spaceId=bafyreieorkzqmzegus55jn5ptho4bp6jtrzc7anfbd54fo3g5wrbp3j3fu.scoxzd7vu6rz"
+		expected := "loom://object?objectId=fileHash789&spaceId=bafyreieorkzqmzegus55jn5ptho4bp6jtrzc7anfbd54fo3g5wrbp3j3fu.scoxzd7vu6rz"
 		assert.Equal(t, expected, result)
 	})
 }

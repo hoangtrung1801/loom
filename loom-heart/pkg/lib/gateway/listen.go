@@ -8,7 +8,7 @@ import (
 
 // listenConfig describes how the gateway picks the address it listens on.
 type listenConfig struct {
-	// override is an explicit address (ANYTYPE_GATEWAY_ADDR). It is honoured or reported as a
+	// override is an explicit address (LOOM_GATEWAY_ADDR). It is honoured or reported as a
 	// failure, never quietly substituted: a caller that names an address needs that one.
 	override string
 	// candidates are the ports to try, in order, before asking the OS for one. Only ports travel

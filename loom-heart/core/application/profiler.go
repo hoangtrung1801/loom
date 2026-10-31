@@ -31,11 +31,11 @@ import (
 var ErrNoFolder = fmt.Errorf("no folder provided")
 
 // startupTraceEnabled gates the login (AccountSelect) flight recorder behind
-// ANYTYPE_STARTUP_TRACE=1. The recorder continuously captures a runtime
+// LOOM_STARTUP_TRACE=1. The recorder continuously captures a runtime
 // execution trace, so it is off by default and enabled only when explicitly
 // debugging startup performance. When off, DebugAccountSelectTrace returns an
 // error because nothing was recorded.
-var startupTraceEnabled = os.Getenv("ANYTYPE_STARTUP_TRACE") == "1"
+var startupTraceEnabled = os.Getenv("LOOM_STARTUP_TRACE") == "1"
 
 func (s *Service) profilesDir() string {
 	return initialparams.Get().Paths.ProfilesDir
@@ -281,7 +281,7 @@ func (s *Service) runTimedProfiler(ctx context.Context, profilesDir string, seco
 	// Pack into zip, streaming each temp file from disk. The zip path and
 	// zip writer are both managed through defers: on any error before
 	// zipSuccess flips, the partial archive is removed.
-	zipPath := filepath.Join(profilesDir, fmt.Sprintf("anytype_profile_%s.zip", time.Now().Format("20060102_150405")))
+	zipPath := filepath.Join(profilesDir, fmt.Sprintf("loom_profile_%s.zip", time.Now().Format("20060102_150405")))
 	zipF, err := os.Create(zipPath)
 	if err != nil {
 		return "", fmt.Errorf("create zip: %w", err)
@@ -381,7 +381,7 @@ func (s *Service) buildPartialLogBundle(logsDir string) (string, time.Time, erro
 		return "", time.Time{}, fmt.Errorf("read logs dir: %w", err)
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), "anytype") {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), "loom") {
 			continue
 		}
 		info, err := e.Info()
@@ -395,7 +395,7 @@ func (s *Service) buildPartialLogBundle(logsDir string) (string, time.Time, erro
 	if newest.IsZero() {
 		return "", time.Time{}, nil
 	}
-	tmp, err := os.CreateTemp("", "anytype-logs-*.log.gz")
+	tmp, err := os.CreateTemp("", "loom-logs-*.log.gz")
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("create tmp bundle: %w", err)
 	}
@@ -479,7 +479,7 @@ func (s *Service) SaveReport(destDir string, full bool) (string, string, int64, 
 
 	if full {
 		logFiles, err := collectDir(logsDir, func(name string) bool {
-			return strings.HasPrefix(name, "anytype")
+			return strings.HasPrefix(name, "loom")
 		})
 		if err != nil {
 			return "", "", 0, fmt.Errorf("error while walking logs directory: %w", err)
@@ -607,7 +607,7 @@ func (s *Service) CleanupReport(ts int64) error {
 	}
 
 	if err := removeOld(paths.LogsDir, func(name string) bool {
-		return strings.HasPrefix(name, "anytype")
+		return strings.HasPrefix(name, "loom")
 	}); err != nil {
 		return err
 	}

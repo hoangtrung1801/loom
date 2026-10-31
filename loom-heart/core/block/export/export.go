@@ -54,7 +54,6 @@ import (
 	"github.com/gosimple/slug"
 	"github.com/samber/lo"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/fileobject"
 	sb "github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
@@ -72,6 +71,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/converter/pbjson"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/notifications"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
@@ -91,7 +91,7 @@ import (
 const CName = "export"
 
 const (
-	tempFileName   = "temp_anytype_backup"
+	tempFileName   = "temp_loom_backup"
 	spaceDirectory = "spaces"
 
 	TypesDirectory            = "types"

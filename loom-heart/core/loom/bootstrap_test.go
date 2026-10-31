@@ -1,4 +1,4 @@
-package anytype
+package loom
 
 import (
 	"slices"
@@ -50,7 +50,7 @@ func TestBootstrap_QuicDemotionWiring(t *testing.T) {
 		// (reverse order), guards the hook before the monitor's last recoveries
 		assert.Less(t, network, penalties, "networkState must be registered before transportpenalty")
 	})
-	t.Run("kill switch: ANYTYPE_QUIC_AUTO_DEMOTION=0 leaves quicdemotion out", func(t *testing.T) {
+	t.Run("kill switch: LOOM_QUIC_AUTO_DEMOTION=0 leaves quicdemotion out", func(t *testing.T) {
 		// given
 		t.Setenv(transportpenalty.DisableEnv, "0")
 

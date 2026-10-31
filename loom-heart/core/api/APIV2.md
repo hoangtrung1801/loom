@@ -1056,7 +1056,7 @@ with no positional/index/offset addressing anywhere (§3.1–3.2). It is:
   single fragment can see (row→column containment, the document-wide id
   domain, the absolute nesting bound). The refusal message is `the ops would
   produce an invalid document — no op was applied`.
-  `ANYTYPE_API_V2_SKIP_EDIT_VALIDATE=1` disables it for debugging a suspected
+  `LOOM_API_V2_SKIP_EDIT_VALIDATE=1` disables it for debugging a suspected
   false rejection; there is no log-only mode
   (`core/api/v2/service/stateops.go:51`).
 - **One PATCH may bring at most 64 new select/multi_select options into
@@ -2251,7 +2251,7 @@ write would silently ignore (`core/api/wrapper/describe.go:52`).
   the listing, `tools --tier full` and `mcp --tier full` also read the op
   schemas. `loom auth` pairs the CLI with the app through
   `POST /v2/auth/challenges` and `POST /v2/auth/api_keys` and saves the key
-  to a 0600 config file that every verb falls back to when `ANYTYPE_API_KEY`
+  to a 0600 config file that every verb falls back to when `LOOM_API_KEY`
   is unset; `auth status` calls `GET /v2/auth/whoami`. A server test pins
   every route the CLI depends on.
 - **Tool failures are returned IN BAND** (`isError: true` plus text) so the

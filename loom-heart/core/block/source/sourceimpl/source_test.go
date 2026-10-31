@@ -14,7 +14,7 @@ import (
 )
 
 func Test_snapshotChance(t *testing.T) {
-	if os.Getenv("ANYTYPE_TEST_SNAPSHOT_CHANCE") == "" {
+	if os.Getenv("LOOM_TEST_SNAPSHOT_CHANCE") == "" {
 		t.Skip()
 		return
 	}
@@ -32,7 +32,7 @@ func Test_snapshotChance(t *testing.T) {
 }
 
 func Test_snapshotChance2(t *testing.T) {
-	if os.Getenv("ANYTYPE_TEST_SNAPSHOT_CHANCE") == "" {
+	if os.Getenv("LOOM_TEST_SNAPSHOT_CHANCE") == "" {
 		t.Skip()
 		return
 	}

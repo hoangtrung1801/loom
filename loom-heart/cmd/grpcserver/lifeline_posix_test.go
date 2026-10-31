@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const lifelineSIGPIPEChildEnv = "ANYTYPE_LIFELINE_SIGPIPE_TEST_CHILD"
+const lifelineSIGPIPEChildEnv = "LOOM_LIFELINE_SIGPIPE_TEST_CHILD"
 
 func TestIgnoreBrokenPipeSignal(t *testing.T) {
 	if os.Getenv(lifelineSIGPIPEChildEnv) == "1" {

@@ -46,9 +46,9 @@ import (
 	ppclient2 "github.com/anyproto/any-sync/paymentservice/paymentserviceclient2"
 	proto "github.com/anyproto/any-sync/paymentservice/paymentserviceproto"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filesync"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/nameservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/payments/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/payments/emailcollector"

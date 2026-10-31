@@ -400,7 +400,7 @@ the currently undocumented `INSUFFICIENT_PERMISSIONS`).
 
 - New component `importv2` (own CName), registered in `bootstrap.go` next to v1.
 - Gating via `Config` bools (envconfig auto-binds): `ImportV2Markdown`, `ImportV2Notion`
-  (`ANYTYPE_IMPORTV2MARKDOWN=1`, …). Default **off**.
+  (`LOOM_IMPORTV2MARKDOWN=1`, …). Default **off**.
 - One small guarded branch in the `ObjectImport` handler (`core/object.go`): if the request type is
   Markdown/Obsidian (or Notion) *and* the flag is on → `importv2`; else v1, exactly as today.
   `ObjectImportNotionValidateToken` routes the same way when Notion-v2 is on. `ObjectImportList`,
@@ -796,9 +796,9 @@ These are settled and load-bearing; a change to any of them is a design change, 
 ## 14. Coexistence with v1
 
 **v2 is the default engine** for Markdown, Obsidian and Notion: `ImportV2Markdown` and `ImportV2Notion`
-both default to `true` (`core/anytype/config/config.go:272-273`) and `adapter.Handles`
+both default to `true` (`core/loom/config/config.go:272-273`) and `adapter.Handles`
 (`importv2/adapter/adapter.go:216-224`) routes those three types to the engine. The kill switches are
-`ANYTYPE_IMPORTV2MARKDOWN=false` and `ANYTYPE_IMPORTV2NOTION=false` — env-only, no build needed.
+`LOOM_IMPORTV2MARKDOWN=false` and `LOOM_IMPORTV2NOTION=false` — env-only, no build needed.
 
 **v1 still serves** PB, CSV, HTML, TXT, Web and External, plus `builtinobjects` (the Pb and
 AI-experience markdown paths) and `bookmarkimporter`.

@@ -55,7 +55,7 @@ func TestService_RealQuicDemotion(t *testing.T) {
 	t.Run("registered before quicdemotion: Start panics", func(t *testing.T) {
 		// Init runs in registration order and app.MustComponent resolves by
 		// type regardless of it, so swapping the two Register calls in
-		// bootstrap is caught only by this and core/anytype's wiring test:
+		// bootstrap is caught only by this and core/loom's wiring test:
 		// Seed and SetObserver run on quicdemotion's not-yet-created state.
 		repo := t.TempDir()
 		svc := New().(*service)

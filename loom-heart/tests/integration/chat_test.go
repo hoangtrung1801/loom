@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/hoangtrung1801/loom/loom-heart/core"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	apicore "github.com/hoangtrung1801/loom/loom-heart/core/api/core"
 	apimodel "github.com/hoangtrung1801/loom/loom-heart/core/api/model"
 	apiserver "github.com/hoangtrung1801/loom/loom-heart/core/api/server"
@@ -29,6 +28,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/object/objectcreator"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/metrics"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/initialparams"

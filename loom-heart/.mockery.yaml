@@ -166,7 +166,7 @@ packages:
   github.com/hoangtrung1801/loom/loom-heart/space/clientspace:
     interfaces:
       Space:
-  github.com/hoangtrung1801/loom/loom-heart/core/anytype/account:
+  github.com/hoangtrung1801/loom/loom-heart/core/loom/account:
     interfaces:
       Service:
   github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject:

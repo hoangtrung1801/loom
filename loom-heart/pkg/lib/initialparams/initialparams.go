@@ -28,7 +28,7 @@ type Paths struct {
 	Workdir     string // raw path from the client
 	Common      string // <workdir>/common
 	LogsDir     string // <workdir>/common/logs
-	LogFile     string // <workdir>/common/logs/anytype.log
+	LogFile     string // <workdir>/common/logs/loom.log
 	ProfilesDir string // <workdir>/common/profiles
 }
 
@@ -105,7 +105,7 @@ func paths(workdir string) Paths {
 		Workdir:     workdir,
 		Common:      common,
 		LogsDir:     logs,
-		LogFile:     filepath.Join(logs, "anytype.log"),
+		LogFile:     filepath.Join(logs, "loom.log"),
 		ProfilesDir: filepath.Join(common, "profiles"),
 	}
 }

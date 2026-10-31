@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	helperEnv        = "ANYTYPE_ACCOUNT_LOCK_HELPER"
-	helperRootEnv    = "ANYTYPE_ACCOUNT_LOCK_ROOT"
-	helperAccountEnv = "ANYTYPE_ACCOUNT_LOCK_ACCOUNT"
-	helperReadyEnv   = "ANYTYPE_ACCOUNT_LOCK_READY"
+	helperEnv        = "LOOM_ACCOUNT_LOCK_HELPER"
+	helperRootEnv    = "LOOM_ACCOUNT_LOCK_ROOT"
+	helperAccountEnv = "LOOM_ACCOUNT_LOCK_ACCOUNT"
+	helperReadyEnv   = "LOOM_ACCOUNT_LOCK_READY"
 )
 
 func randomAccountID(t *testing.T) string {

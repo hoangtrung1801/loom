@@ -42,9 +42,9 @@ func (s *testSession) recoverAccount(t *testing.T) (accountID string) {
 }
 
 func (s *testSuite) SetupSuite() {
-	port := os.Getenv("ANYTYPE_TEST_GRPC_PORT")
+	port := os.Getenv("LOOM_TEST_GRPC_PORT")
 	if port == "" {
-		s.FailNow("you must specify ANYTYPE_TEST_GRPC_PORT env variable")
+		s.FailNow("you must specify LOOM_TEST_GRPC_PORT env variable")
 	}
 
 	s.testSession = newTestSession(s.T(), port, "mnemonic", "account_id")
