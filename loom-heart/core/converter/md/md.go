@@ -1,0 +1,1285 @@
+package md
+
+import (
+	"bytes"
+	"fmt"
+	"html"
+	"io"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/JohannesKaufmann/html-to-markdown/escape"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/state"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/table"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/template"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/simple"
+	"github.com/hoangtrung1801/loom/loom-heart/core/converter"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/logging"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/schema"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/schema/yaml"
+	"github.com/hoangtrung1801/loom/loom-heart/util/uri"
+)
+
+var log = logging.Logger("md-export")
+
+type FileNamer interface {
+	Get(path, hash, title, ext string) (name string)
+}
+
+type ObjectResolver interface {
+	// ResolveRelation gets relation details by ID
+	ResolveRelation(relationId string) (*domain.Details, error)
+	// ResolveType gets type details by ID
+	ResolveType(typeId string) (*domain.Details, error)
+	// ResolveRelationOptions gets relation options for a given relation
+	ResolveRelationOptions(relationKey string) ([]*domain.Details, error)
+	// ResolveObject gets object details by ID (for already loaded objects)
+	ResolveObject(objectId string) (*domain.Details, bool)
+	// GetRelationByKey gets relation by its key
+	GetRelationByKey(relationKey string) (*domain.Details, error)
+}
+
+func NewMDConverter(s *state.State, fn FileNamer, includeRelations bool) converter.Converter {
+	return &MD{s: s, fn: fn, includeRelations: includeRelations, knownDocs: make(map[string]*domain.Details)}
+}
+
+func NewMDConverterWithSchema(s *state.State, fn FileNamer, includeRelations bool, includeSchema bool) converter.Converter {
+	return &MD{s: s, fn: fn, includeRelations: includeRelations, includeSchema: true, knownDocs: make(map[string]*domain.Details)}
+}
+
+func NewMDConverterWithResolver(s *state.State, fn FileNamer, includeRelations bool, includeSchema bool, resolver ObjectResolver) converter.Converter {
+	return &MD{s: s, fn: fn, includeRelations: includeRelations, includeSchema: includeSchema, resolver: resolver, knownDocs: make(map[string]*domain.Details)}
+}
+
+type MD struct {
+	s *state.State
+
+	knownDocs map[string]*domain.Details
+	resolver  ObjectResolver
+
+	includeRelations bool
+	includeSchema    bool
+	mw               *marksWriter
+	fn               FileNamer
+	// inTableCell is set while rendering the contents of a GFM table cell. A
+	// pipe inside a cell has to stay escaped even within a code span, because
+	// GFM resolves cell boundaries before inline parsing.
+	inTableCell bool
+}
+
+var removeArrayRelations = []string{
+	bundle.RelationKeyLastModifiedBy.String(),
+	bundle.RelationKeyCreator.String(),
+	bundle.RelationKeyType.String(),
+}
+
+func (h *MD) Convert(sbType model.SmartBlockType) (result []byte) {
+	if h.s.Pick(h.s.RootId()) == nil {
+		return
+	}
+	if len(h.s.Pick(h.s.RootId()).Model().ChildrenIds) == 0 {
+		return
+	}
+	switch sbType {
+	case model.SmartBlockType_STType,
+		model.SmartBlockType_STRelation,
+		model.SmartBlockType_STRelationOption,
+		model.SmartBlockType_Participant,
+		model.SmartBlockType_SpaceView,
+		model.SmartBlockType_ChatObjectDeprecated,
+		model.SmartBlockType_ChatDerivedObject,
+		model.SmartBlockType_DiscussionObject:
+		return nil
+	}
+	buf := bytes.NewBuffer(nil)
+	in := new(renderState)
+	h.renderProperties(buf)
+	h.renderChildren(buf, in, h.s.Pick(h.s.RootId()).Model())
+	result = buf.Bytes()
+	buf.Reset()
+	return
+}
+
+func (h *MD) renderProperties(buf writer) {
+	if !h.includeRelations {
+		return
+	}
+
+	if h.resolver == nil {
+		log.Error("MD converter requires ObjectResolver to resolve properties, but it is not set")
+		return
+	}
+
+	// Get object type information
+	objectTypeDetails, typeName := h.getObjectTypeInfo()
+	if objectTypeDetails == nil {
+		return
+	}
+
+	// Collect all properties to export
+	properties := h.collectProperties(objectTypeDetails)
+	if len(properties) == 0 {
+		return
+	}
+
+	// Add object ID after other properties
+	properties = h.appendObjectId(properties)
+
+	// Export to YAML
+	h.exportPropertiesToYAML(buf, properties, typeName)
+}
+
+// getObjectTypeInfo retrieves object type details and name
+func (h *MD) getObjectTypeInfo() (*domain.Details, string) {
+	objectTypeId := h.s.LocalDetails().GetString(bundle.RelationKeyType)
+	if objectTypeId == "" {
+		return nil, ""
+	}
+
+	objectTypeDetails, err := h.resolver.ResolveType(objectTypeId)
+	if err != nil || objectTypeDetails == nil {
+		return nil, ""
+	}
+
+	typeName := objectTypeDetails.GetString(bundle.RelationKeyName)
+	return objectTypeDetails, typeName
+}
+
+// collectProperties gathers all properties from relations
+func (h *MD) collectProperties(objectTypeDetails *domain.Details) []yaml.Property {
+	var properties []yaml.Property
+
+	// Get all relation IDs
+	relationIds := h.getRelationIds(objectTypeDetails)
+
+	// Process each relation
+	for _, id := range relationIds {
+		relDetails, err := h.resolver.ResolveRelation(id)
+		if err != nil || relDetails == nil {
+			continue
+		}
+		prop := h.processRelation(relDetails)
+		if prop != nil {
+			properties = append(properties, *prop)
+		}
+	}
+
+	// Add collection property if applicable
+	if h.isCollection() {
+		properties = h.addCollectionProperty(properties)
+	}
+
+	// Add system properties
+	properties = h.addSystemProperties(properties)
+
+	return properties
+}
+
+// getRelationIds returns all relation IDs from the object type
+func (h *MD) getRelationIds(objectTypeDetails *domain.Details) []string {
+	var ids []string
+	ids = append(ids, objectTypeDetails.GetStringList(bundle.RelationKeyRecommendedFeaturedRelations)...)
+	ids = append(ids, objectTypeDetails.GetStringList(bundle.RelationKeyRecommendedRelations)...)
+	return slices.Compact(ids)
+}
+
+// isCollection checks if the current object is a collection
+func (h *MD) isCollection() bool {
+	layout, hasLayout := h.s.Layout()
+	return hasLayout && layout == model.ObjectType_collection
+}
+
+// processRelation processes a single relation and returns a property
+func (h *MD) processRelation(details *domain.Details) *yaml.Property {
+	// Extract relation metadata
+	key := details.GetString(bundle.RelationKeyRelationKey)
+
+	// Get the value for this relation
+	v := h.s.CombinedDetails().Get(domain.RelationKey(key))
+
+	// Process the value based on format
+	format := model.RelationFormat(details.GetInt64(bundle.RelationKeyRelationFormat))
+	processedValue, ok := h.processRelationValue(v, format, key)
+	if !ok {
+		return nil
+	}
+
+	return &yaml.Property{
+		Name:        details.GetString(bundle.RelationKeyName),
+		Key:         key,
+		Format:      format,
+		Value:       processedValue,
+		IncludeTime: details.GetBool(bundle.RelationKeyRelationFormatIncludeTime),
+	}
+}
+
+// processRelationValue processes a relation value based on its format
+// Returns the processed value and whether it should be included
+func (h *MD) processRelationValue(v domain.Value, format model.RelationFormat, key string) (domain.Value, bool) {
+	if v.IsNull() {
+		return domain.Value{}, false
+	}
+	switch format {
+	case model.RelationFormat_file:
+		return h.processFileRelation(v)
+	case model.RelationFormat_object:
+		return h.processObjectRelation(v, key)
+	case model.RelationFormat_tag, model.RelationFormat_status:
+		return h.processTagOrStatusRelation(v)
+	default:
+		return v, true
+	}
+}
+
+// processFileRelation handles file format relations
+func (h *MD) processFileRelation(v domain.Value) (domain.Value, bool) {
+	ids := v.WrapToStringList()
+	if len(ids) == 0 {
+		return v, false
+	}
+
+	var fileList []string
+	for _, fileId := range ids {
+		if filename := h.processFileId(fileId); filename != "" {
+			fileList = append(fileList, filename)
+		}
+	}
+
+	if len(fileList) == 0 {
+		return v, false
+	}
+	return domain.StringList(fileList), true
+}
+
+// processFileId processes a single file ID and returns its filename
+func (h *MD) processFileId(fileId string) string {
+	info, _ := h.getObjectInfo(fileId)
+	if info == nil {
+		return ""
+	}
+
+	layout := info.GetInt64(bundle.RelationKeyLayout)
+	if !h.isFileLayout(layout) {
+		return ""
+	}
+
+	_, filename, _ := h.getLinkInfo(fileId)
+	if filename == "" {
+		return ""
+	}
+
+	return filename
+}
+
+// isFileLayout checks if the layout represents a file object type
+func (h *MD) isFileLayout(layout int64) bool {
+	return layout == int64(model.ObjectType_file) ||
+		layout == int64(model.ObjectType_image) ||
+		layout == int64(model.ObjectType_audio) ||
+		layout == int64(model.ObjectType_video) ||
+		layout == int64(model.ObjectType_pdf)
+}
+
+// processObjectRelation handles object format relations
+func (h *MD) processObjectRelation(v domain.Value, key string) (domain.Value, bool) {
+	ids := v.WrapToStringList()
+	if len(ids) == 0 {
+		return v, false
+	}
+
+	// Check if this is a single-value relation
+	if slices.Contains(removeArrayRelations, key) && len(ids) > 0 {
+		title, _, ok := h.getLinkInfo(ids[0])
+		if ok {
+			return domain.String(title), true
+		}
+		return v, false
+	}
+
+	// Process multiple objects
+	var objectList []string
+	for _, id := range ids {
+		if name := h.getObjectName(id); name != "" {
+			objectList = append(objectList, name)
+		}
+	}
+
+	if len(objectList) == 0 {
+		return v, false
+	}
+	return domain.StringList(objectList), true
+}
+
+// getObjectName returns the appropriate name for an object
+func (h *MD) getObjectName(objectId string) string {
+	title, filename, ok := h.getLinkInfo(objectId)
+	if !ok {
+		return ""
+	}
+
+	// Use filename if object is in export, otherwise use title
+	if h.knownDocs[objectId] != nil {
+		return filename
+	}
+	return title
+}
+
+// processTagOrStatusRelation handles tag and status format relations
+func (h *MD) processTagOrStatusRelation(v domain.Value) (domain.Value, bool) {
+	ids := v.WrapToStringList()
+	if len(ids) == 0 {
+		return v, false
+	}
+
+	var nameList []string
+	for _, id := range ids {
+		if d, _ := h.getObjectInfo(id); d != nil {
+			if label := d.Get(bundle.RelationKeyName).String(); label != "" {
+				nameList = append(nameList, label)
+			}
+		}
+	}
+
+	if len(nameList) == 0 {
+		return v, false
+	}
+	return domain.StringList(nameList), true
+}
+
+// appendObjectId adds object ID after other properties
+func (h *MD) appendObjectId(properties []yaml.Property) []yaml.Property {
+	objectId := h.s.LocalDetails().GetString(bundle.RelationKeyId)
+	if objectId == "" {
+		return properties
+	}
+
+	idProp := yaml.Property{
+		Name:   "id",
+		Key:    "id",
+		Format: model.RelationFormat_shorttext,
+		Value:  domain.String(objectId),
+	}
+	return append(properties, idProp)
+}
+
+// exportPropertiesToYAML exports properties to YAML format
+func (h *MD) exportPropertiesToYAML(buf writer, properties []yaml.Property, typeName string) {
+	exportOptions := &yaml.ExportOptions{}
+
+	// Add schema reference if enabled
+	if h.includeSchema && typeName != "" {
+		exportOptions.SchemaReference = GenerateSchemaFileName(typeName)
+	}
+
+	// Export using YAML exporter
+	yamlData, err := yaml.ExportToYAML(properties, exportOptions)
+	if err != nil {
+		log.Errorf("failed to export properties to YAML: %v", err)
+		return
+	}
+
+	// Write the YAML front matter
+	_, _ = buf.Write(yamlData) // Error is ignored as buffer writes don't fail
+}
+
+// addCollectionProperty adds Collection property to the properties list if there are collection items
+func (h *MD) addCollectionProperty(properties []yaml.Property) []yaml.Property {
+	collectionObjects := h.s.GetStoreSlice(template.CollectionStoreKey)
+	if len(collectionObjects) == 0 {
+		return properties
+	}
+
+	var collectionList []string
+	for _, objId := range collectionObjects {
+		title, filename, ok := h.getLinkInfo(objId)
+		if !ok {
+			continue
+		}
+
+		// Same logic as object relations - use filename if in export, otherwise title
+		if h.knownDocs[objId] != nil {
+			collectionList = append(collectionList, filename)
+		} else {
+			collectionList = append(collectionList, title)
+		}
+	}
+
+	if len(collectionList) == 0 {
+		return properties
+	}
+
+	collectionProp := yaml.Property{
+		Name:   "Collection",
+		Key:    schema.CollectionPropertyKey,
+		Format: model.RelationFormat_object,
+		Value:  domain.StringList(collectionList),
+	}
+	return append(properties, collectionProp)
+}
+
+// addSystemProperties adds system properties that are not already included
+func (h *MD) addSystemProperties(properties []yaml.Property) []yaml.Property {
+	// Create a map of existing property keys
+	existingKeys := make(map[string]bool)
+	for _, prop := range properties {
+		existingKeys[prop.Key] = true
+	}
+
+	// Add system properties if they have values and are not already included
+	for _, key := range schema.SystemProperties {
+		if existingKeys[key] {
+			continue
+		}
+
+		v := h.s.CombinedDetails().Get(domain.RelationKey(key))
+		if v.IsNull() {
+			continue
+		}
+		if s, ok := v.TryString(); ok && s == "" {
+			continue
+		}
+
+		relDetails, err := h.resolver.GetRelationByKey(key)
+		if err != nil || relDetails == nil {
+			continue
+		}
+
+		prop := h.processRelation(relDetails)
+		if prop == nil {
+			continue
+		}
+		properties = append(properties, *prop)
+	}
+
+	return properties
+}
+
+func (h *MD) Export() (result string) {
+	buf := bytes.NewBuffer(nil)
+	in := new(renderState)
+	h.renderProperties(buf)
+
+	h.renderChildren(buf, in, h.s.Pick(h.s.RootId()).Model())
+	return buf.String()
+}
+
+func (h *MD) Ext() string {
+	return ".md"
+}
+
+type renderState struct {
+	indent     string
+	listOpened bool
+	listNumber int
+}
+
+func (in renderState) AddNBSpace() *renderState {
+	return &renderState{indent: in.indent + "  "}
+}
+
+func (in renderState) AddSpace() *renderState {
+	return &renderState{indent: in.indent + "    "}
+}
+
+type writer interface {
+	io.Writer
+	io.StringWriter
+	WriteRune(r rune) (n int, err error)
+}
+
+func (h *MD) render(buf writer, in *renderState, b *model.Block) {
+	switch b.Content.(type) {
+	case *model.BlockContentOfSmartblock:
+	case *model.BlockContentOfText:
+		h.renderText(buf, in, b)
+	case *model.BlockContentOfFile:
+		h.renderFile(buf, in, b)
+	case *model.BlockContentOfBookmark:
+		h.renderBookmark(buf, in, b)
+	case *model.BlockContentOfDiv:
+		h.renderDiv(buf, in, b)
+	case *model.BlockContentOfLayout:
+		h.renderLayout(buf, in, b)
+	case *model.BlockContentOfLink:
+		h.renderLink(buf, in, b)
+	case *model.BlockContentOfLatex:
+		h.renderLatex(buf, in, b)
+	case *model.BlockContentOfTable:
+		h.renderTable(buf, in, b)
+	default:
+		h.renderLayout(buf, in, b)
+	}
+}
+
+func (h *MD) renderChildren(buf writer, in *renderState, parent *model.Block) {
+	for _, chId := range parent.ChildrenIds {
+		b := h.s.Pick(chId)
+		if b == nil {
+			continue
+		}
+		h.render(buf, in, b.Model())
+	}
+}
+
+func (h *MD) renderText(buf writer, in *renderState, b *model.Block) {
+	text := b.GetText()
+	// writeMarkedText renders the block text with its marks (links, bold, italic,
+	// code, ...) into the given writer. It is split out of renderText so that
+	// styles which need to post-process the rendered text — Quote, which has to
+	// prefix every line with "> " — can render into a temporary buffer instead of
+	// writing the raw, mark-less text.
+	writeMarkedText := func(buf writer) {
+		mw := h.marksWriter(text)
+		var (
+			i int
+			r rune
+		)
+
+		for i, r = range []rune(text.Text) {
+			mw.writeMarks(buf, i)
+			// Code span contents are literal in markdown: escaping them would
+			// write the backslash out as visible content rather than escape
+			// anything (GO-7514).
+			//
+			// The one exception is a pipe inside a GFM table cell. GFM resolves
+			// cell boundaries BEFORE inline parsing, so an unescaped pipe splits
+			// the cell even in the middle of a code span; `\|` is required there
+			// and is turned back into a literal pipe before the span is parsed.
+			switch {
+			case !mw.inCodeSpan(i):
+				buf.WriteString(escape.MarkdownCharacters(string(r)))
+			case r == '|' && h.inTableCell:
+				buf.WriteString(`\|`)
+			default:
+				buf.WriteString(string(r))
+			}
+		}
+		mw.writeMarks(buf, i+1)
+	}
+	renderText := func() {
+		writeMarkedText(buf)
+		buf.WriteString("   \n")
+	}
+	if in.listOpened && text.Style != model.BlockContentText_Marked && text.Style != model.BlockContentText_Numbered {
+		buf.WriteString("   \n")
+		in.listOpened = false
+		in.listNumber = 0
+	}
+
+	// Toggle blocks are emitted as an HTML <details> element at column 0 (see the
+	// Toggle case below): the indent prefix is intentionally skipped here so the
+	// opener is not indented (a >=4-space indent would make goldmark parse the
+	// whole element as an indented code block on re-import, and a smaller indent
+	// leaks indentation characters — e.g. the figure-space from a Checkbox parent
+	// — into the child text). Nesting is reconstructed by the importer's
+	// open/close <details> stack, not by markdown indentation.
+	if text.Style != model.BlockContentText_Toggle {
+		buf.WriteString(in.indent) // nolint:errcheck
+	}
+
+	switch text.Style {
+	case model.BlockContentText_Header1, model.BlockContentText_ToggleHeader1, model.BlockContentText_Title:
+		_, err := buf.WriteString(`# `)
+		if err != nil {
+			log.Warnf("failed to export header1 in markdown: %v", err)
+		}
+		renderText()
+		h.renderChildren(buf, in.AddSpace(), b)
+	case model.BlockContentText_Header2, model.BlockContentText_ToggleHeader2:
+		_, err := buf.WriteString(`## `)
+		if err != nil {
+			log.Warnf("failed to export header2 in markdown: %v", err)
+		}
+		renderText()
+		h.renderChildren(buf, in.AddSpace(), b)
+	case model.BlockContentText_Header3, model.BlockContentText_ToggleHeader3:
+		_, err := buf.WriteString(`### `)
+		if err != nil {
+			log.Warnf("failed to export header3 in markdown: %v", err)
+		}
+		renderText()
+		h.renderChildren(buf, in.AddSpace(), b)
+	case model.BlockContentText_Header4:
+		_, err := buf.WriteString(`#### `)
+		if err != nil {
+			log.Warnf("failed to export header4 in markdown: %v", err)
+		}
+		renderText()
+		h.renderChildren(buf, in.AddSpace(), b)
+	case model.BlockContentText_Quote:
+		// Render the marks (links, bold, ...) into a temporary buffer first, then
+		// apply the "> " blockquote prefix per line. Writing text.Text directly
+		// here used to drop every mark of a quote block (GO-7514).
+		quoteBuf := bytes.NewBuffer(nil)
+		writeMarkedText(quoteBuf)
+		buf.WriteString("> ")
+		buf.WriteString(strings.ReplaceAll(quoteBuf.String(), "\n", "   \n> "))
+		buf.WriteString("   \n\n")
+		h.renderChildren(buf, in, b)
+	case model.BlockContentText_Toggle:
+		// Toggle blocks are exported as an HTML <details>/<summary> element so that
+		// they round-trip back to a Toggle on import (and don't collide with Quote's
+		// "> " blockquote marker).
+		//
+		// The whole element (opener, <summary>, children, closer) is written at
+		// column 0 regardless of the toggle's parent indent: markdown indentation
+		// is NOT used to convey nesting here (the importer rebuilds it from the
+		// open/close <details> stack). Indenting the opener by >=4 spaces would make
+		// goldmark treat it as an indented code block and collapse the toggle;
+		// smaller indents would leak into child text. So children are rendered with
+		// a reset (empty) indent too.
+		//
+		// The summary text is HTML-escaped so that characters that are significant
+		// to the HTML parser ('<', '>', '&') — including a literal "</details>" in
+		// the title — survive the round-trip. The importer unescapes them back.
+		childIn := &renderState{}
+		buf.WriteString("<details>\n")                                               // nolint:errcheck
+		buf.WriteString("<summary>")                                                 // nolint:errcheck
+		buf.WriteString(html.EscapeString(strings.ReplaceAll(text.Text, "\n", " "))) // nolint:errcheck
+		buf.WriteString("</summary>\n\n")                                            // nolint:errcheck
+		h.renderChildren(buf, childIn, b)
+		buf.WriteString("\n")             // nolint:errcheck
+		buf.WriteString("</details>\n\n") // nolint:errcheck
+	case model.BlockContentText_Code:
+		buf.WriteString("```\n") // nolint:errcheck
+		txt := strings.ReplaceAll(text.Text, "```", "\\`\\`\\`")
+		txt = strings.ReplaceAll(txt, "\n", "\n"+in.indent)
+		buf.WriteString(in.indent + txt)            // nolint:errcheck
+		buf.WriteString("\n" + in.indent + "```\n") // nolint:errcheck
+		h.renderChildren(buf, in, b)
+	case model.BlockContentText_Checkbox:
+		if text.Checked {
+			buf.WriteString("- [x] ")
+		} else {
+			buf.WriteString("- [ ] ")
+		}
+		renderText()
+		h.renderChildren(buf, in.AddNBSpace(), b)
+	case model.BlockContentText_Marked:
+		buf.WriteString(`- `)
+		renderText()
+		h.renderChildren(buf, in.AddSpace(), b)
+		in.listOpened = true
+	case model.BlockContentText_Numbered:
+		in.listNumber++
+		buf.WriteString(fmt.Sprintf(`%d. `, in.listNumber))
+		renderText()
+		h.renderChildren(buf, in.AddSpace(), b)
+		in.listOpened = true
+	default:
+		renderText()
+		h.renderChildren(buf, in.AddNBSpace(), b)
+	}
+}
+
+func (h *MD) renderFile(buf writer, in *renderState, b *model.Block) {
+	file := b.GetFile()
+	if file == nil || file.State != model.BlockContentFile_Done {
+		return
+	}
+	title, filename, ok := h.getLinkInfo(file.TargetObjectId)
+	if !ok {
+		filename = h.fn.Get("files", file.TargetObjectId, filepath.Base(file.Name), filepath.Ext(file.Name))
+		title = filepath.Base(file.Name)
+	}
+	buf.WriteString(in.indent)
+	if file.Type != model.BlockContentFile_Image {
+		fmt.Fprintf(buf, "[%s](%s)    \n", title, filename)
+	} else {
+		fmt.Fprintf(buf, "![%s](%s)    \n", title, filename)
+	}
+}
+
+func (h *MD) renderBookmark(buf writer, in *renderState, b *model.Block) {
+	bm := b.GetBookmark()
+	if bm != nil && bm.Url != "" {
+		buf.WriteString(in.indent)
+		url, e := uri.ParseURI(bm.Url)
+		if e == nil {
+			fmt.Fprintf(buf, "[%s](%s)    \n", escape.MarkdownCharacters(html.EscapeString(bm.Title)), url.String())
+		}
+	}
+}
+
+func (h *MD) renderDiv(buf writer, in *renderState, b *model.Block) {
+	switch b.GetDiv().Style {
+	case model.BlockContentDiv_Dots, model.BlockContentDiv_Line:
+		buf.WriteString(" --- \n")
+	}
+	h.renderChildren(buf, in, b)
+}
+
+func (h *MD) renderLayout(buf writer, in *renderState, b *model.Block) {
+	style := model.BlockContentLayoutStyle(-1)
+	layout := b.GetLayout()
+	if layout != nil {
+		style = layout.Style
+	}
+
+	switch style {
+	default:
+		h.renderChildren(buf, in, b)
+	}
+}
+
+func (h *MD) renderLink(buf writer, in *renderState, b *model.Block) {
+	l := b.GetLink()
+	if l != nil && l.TargetBlockId != "" {
+		title, filename, ok := h.getLinkInfo(l.TargetBlockId)
+		if ok {
+			buf.WriteString(in.indent)
+			fmt.Fprintf(buf, "[%s](%s)    \n", escape.MarkdownCharacters(html.EscapeString(title)), filename)
+		}
+	}
+}
+
+func (h *MD) renderLatex(buf writer, in *renderState, b *model.Block) {
+	l := b.GetLatex()
+	if l != nil {
+		buf.WriteString(in.indent)
+		fmt.Fprintf(buf, "\n$$\n%s\n$$\n", l.Text)
+	}
+}
+
+func (h *MD) renderTable(buf writer, in *renderState, b *model.Block) {
+	if t := b.GetTable(); t == nil {
+		return
+	}
+
+	err := func() error {
+		tb, err := table.NewTable(h.s, b.Id)
+		if err != nil {
+			return err
+		}
+
+		rowsCount := len(tb.RowIDs())
+		colsCount := len(tb.ColumnIDs())
+		maxColWidth := make([]int, colsCount)
+		cells := make([][]string, rowsCount)
+		for rowIdx := range tb.RowIDs() {
+			cells[rowIdx] = make([]string, colsCount)
+		}
+
+		err = tb.Iterate(func(b simple.Block, pos table.CellPosition) bool {
+			cellBuf := &bytes.Buffer{}
+			if b != nil {
+				wasInTableCell := h.inTableCell
+				h.inTableCell = true
+				h.render(cellBuf, in, b.Model())
+				h.inTableCell = wasInTableCell
+			}
+			content := cellBuf.String()
+			// Convert newlines to <br> tags for GFM compatibility
+			// GFM tables don't support markdown soft breaks inside cells
+			// HTML <br> tags are the standard way to represent line breaks in table cells
+			content = strings.ReplaceAll(content, "\r\n", "<br>")
+			content = strings.ReplaceAll(content, "\n", "<br>")
+			content = strings.TrimSpace(content)
+			if content == "" {
+				content = " "
+			}
+			content = " " + content + " "
+
+			if len(content) > maxColWidth[pos.ColNumber] {
+				maxColWidth[pos.ColNumber] = len(content)
+			}
+			cells[pos.RowNumber][pos.ColNumber] = content
+			return true
+		})
+		if err != nil {
+			return err
+		}
+
+		for i, w := range maxColWidth {
+			// The minimum width of a column must be 3
+			if w < 3 {
+				maxColWidth[i] = 3
+			}
+		}
+
+		for i, row := range cells {
+			buf.WriteString(in.indent)
+			rowStart := "|"
+			for colNumber, cell := range row {
+				tmpl := fmt.Sprintf("%%%ds|", maxColWidth[colNumber])
+				fmt.Fprint(buf, rowStart)
+				rowStart = ""
+				fmt.Fprintf(buf, tmpl, cell)
+			}
+			fmt.Fprintln(buf)
+
+			// Header rule
+			if i == 0 {
+				buf.WriteString(in.indent)
+				rowStart := "|"
+				for colNumber := range row {
+					fmt.Fprint(buf, rowStart)
+					rowStart = ""
+					buf.WriteRune(':')
+					for i := 0; i < maxColWidth[colNumber]-1; i++ {
+						buf.WriteRune('-')
+					}
+					buf.WriteRune('|')
+				}
+				fmt.Fprintln(buf)
+			}
+		}
+
+		return nil
+	}()
+	fmt.Fprintln(buf)
+
+	if err != nil {
+		fmt.Fprintf(buf, "error while rendering table: %s", err)
+	}
+}
+
+func (h *MD) marksWriter(text *model.BlockContentText) *marksWriter {
+	if h.mw == nil {
+		h.mw = &marksWriter{
+			h: h,
+		}
+	}
+	return h.mw.Init(text)
+}
+
+func (h *MD) SetKnownDocs(docs map[string]*domain.Details) converter.Converter {
+	h.knownDocs = docs
+	return h
+}
+
+func (h *MD) getObjectInfo(objectId string) (details *domain.Details, isIncludedInExport bool) {
+	details, _ = h.knownDocs[objectId]
+	if details != nil {
+		return details, true
+	}
+
+	details, _ = h.resolver.ResolveObject(objectId)
+	return details, false
+}
+
+func (h *MD) getLinkInfo(docId string) (title, filename string, ok bool) {
+	info, _ := h.getObjectInfo(docId)
+	if info == nil {
+		return
+	}
+	ok = true
+	title = info.GetString(bundle.RelationKeyName)
+	// if object is a file
+	layout := info.GetInt64(bundle.RelationKeyLayout)
+	if layout == int64(model.ObjectType_file) || layout == int64(model.ObjectType_image) || layout == int64(model.ObjectType_audio) || layout == int64(model.ObjectType_video) || layout == int64(model.ObjectType_pdf) {
+		ext := info.GetString(bundle.RelationKeyFileExt)
+		if ext != "" {
+			ext = "." + ext
+		}
+		title = strings.TrimSuffix(title, ext)
+		if title == "" {
+			title = docId
+		}
+		filename = h.fn.Get("files", docId, title, ext)
+		return
+	}
+	if title == "" {
+		title = info.GetString(bundle.RelationKeySnippet)
+	}
+	if title == "" {
+		title = docId
+	}
+
+	filename = h.fn.Get("", docId, title, h.Ext())
+	return
+}
+
+type marksWriter struct {
+	h           *MD
+	breakpoints map[int]struct {
+		starts []*model.BlockContentTextMark
+		ends   []*model.BlockContentTextMark
+	}
+	open []*model.BlockContentTextMark
+	// codeSpans holds the rendering decided for each Keyboard (code span) mark:
+	// how many backticks delimit it and whether it needs space padding. It is
+	// computed in Init, because the delimiter depends on the span's contents.
+	codeSpans map[*model.BlockContentTextMark]codeSpan
+	// codeRanges are the [from, to) rune ranges covered by Keyboard marks. Text
+	// inside them must NOT be markdown-escaped: a code span is literal, so a
+	// backslash written there shows up as content rather than escaping anything.
+	codeRanges [][2]int
+}
+
+// codeSpan is how one Keyboard mark is rendered as a markdown code span.
+type codeSpan struct {
+	delim string // the backtick run opening and closing the span
+	pad   bool   // whether a space is needed just inside each delimiter
+}
+
+// maxBacktickRun returns the length of the longest run of backticks in s.
+func maxBacktickRun(s string) int {
+	var max, cur int
+	for _, r := range s {
+		if r == '`' {
+			cur++
+			if cur > max {
+				max = cur
+			}
+		} else {
+			cur = 0
+		}
+	}
+	return max
+}
+
+// newCodeSpan decides how to delimit a code span holding content.
+//
+// CommonMark closes a code span at the next backtick run of exactly the same
+// length as the opener, so a delimiter one backtick longer than the longest run
+// inside the content can never be closed early.
+//
+// The padding rule is the other half: a code span whose content both begins and
+// ends with a space has one space stripped from each end by the parser, and a
+// content that starts or ends with a backtick would otherwise merge into the
+// delimiter run. Adding a space at each end covers both — the parser strips
+// exactly the pair we added, so the content survives byte for byte. Content that
+// is nothing but spaces is left alone: the strip rule explicitly does not apply
+// to it, so padding would corrupt rather than preserve it.
+func newCodeSpan(content string) codeSpan {
+	cs := codeSpan{delim: strings.Repeat("`", maxBacktickRun(content)+1)}
+	if strings.Trim(content, " ") == "" {
+		return cs
+	}
+	if strings.HasPrefix(content, "`") || strings.HasSuffix(content, "`") ||
+		(strings.HasPrefix(content, " ") && strings.HasSuffix(content, " ")) {
+		cs.pad = true
+	}
+	return cs
+}
+
+// splitCodeSpanMarks returns marks with every Keyboard mark that spans a line
+// break replaced by one mark per line.
+//
+// A markdown code span cannot contain a line break at all: CommonMark converts
+// line endings inside a span to spaces, so there is no spelling of a multiline
+// span that round-trips. Worse, a multiline span is what makes the widened
+// delimiter dangerous — a run of three or more backticks at the start of a line
+// opens a fenced code block, and with the content on a LATER line the rest of
+// the opening line reads as a clean info string, so the fence is accepted and
+// swallows everything after it (GO-7514).
+//
+// Emitting one span per line fixes both: the line break is carried by the block
+// itself rather than by the span, and the fence becomes unreachable. A delimiter
+// of three or more backticks means the content holds a run of at least two, and
+// with the content now on the same line as its opener that backtick lands in
+// what would have been the info string — which a backtick fence may not contain,
+// so it can never be parsed as a fence.
+func splitCodeSpanMarks(text *model.BlockContentText) []*model.BlockContentTextMark {
+	runes := []rune(text.Text)
+	out := make([]*model.BlockContentTextMark, 0, len(text.Marks.Marks))
+	for _, mark := range text.Marks.Marks {
+		from, to, ok := codeSpanBounds(mark, len(runes))
+		if !ok || !strings.ContainsRune(string(runes[from:to]), '\n') {
+			out = append(out, mark)
+			continue
+		}
+		segStart := from
+		for i := from; i <= to; i++ {
+			if i < to && runes[i] != '\n' {
+				continue
+			}
+			if i > segStart {
+				out = append(out, &model.BlockContentTextMark{
+					Range: &model.Range{From: int32(segStart), To: int32(i)},
+					Type:  model.BlockContentTextMark_Keyboard,
+					Param: mark.Param,
+				})
+			}
+			segStart = i + 1
+		}
+	}
+	return out
+}
+
+// codeSpanBounds returns the clamped rune bounds of a Keyboard mark, and whether
+// the mark is a non-empty code span at all.
+func codeSpanBounds(mark *model.BlockContentTextMark, textLen int) (from, to int, ok bool) {
+	if mark.Type != model.BlockContentTextMark_Keyboard || mark.Range == nil {
+		return 0, 0, false
+	}
+	from, to = int(mark.Range.From), int(mark.Range.To)
+	if from < 0 {
+		from = 0
+	}
+	if to > textLen {
+		to = textLen
+	}
+	return from, to, from < to
+}
+
+// initCodeSpans precomputes, for every Keyboard mark, the delimiter and padding
+// its contents require, and records the rune ranges that must stay unescaped.
+func (mw *marksWriter) initCodeSpans(text *model.BlockContentText, marks []*model.BlockContentTextMark) {
+	runes := []rune(text.Text)
+	for _, mark := range marks {
+		from, to, ok := codeSpanBounds(mark, len(runes))
+		if !ok {
+			continue
+		}
+		if mw.codeSpans == nil {
+			mw.codeSpans = make(map[*model.BlockContentTextMark]codeSpan)
+		}
+		mw.codeSpans[mark] = newCodeSpan(string(runes[from:to]))
+		mw.codeRanges = append(mw.codeRanges, [2]int{from, to})
+	}
+}
+
+// inCodeSpan reports whether the rune at index pos is inside a code span, and so
+// must be written literally rather than markdown-escaped.
+func (mw *marksWriter) inCodeSpan(pos int) bool {
+	for _, r := range mw.codeRanges {
+		if pos >= r[0] && pos < r[1] {
+			return true
+		}
+	}
+	return false
+}
+
+func (mw *marksWriter) writeMarks(buf writer, pos int) {
+	writeMark := func(m *model.BlockContentTextMark, start bool) {
+		switch m.Type {
+		case model.BlockContentTextMark_Strikethrough:
+			buf.WriteString("~~")
+		case model.BlockContentTextMark_Italic:
+			buf.WriteString("*")
+		case model.BlockContentTextMark_Bold:
+			buf.WriteString("**")
+		case model.BlockContentTextMark_Link:
+			if start {
+				buf.WriteString("[")
+			} else {
+				urlP, e := uri.ParseURI(m.Param)
+				urlS := m.Param
+				if e == nil {
+					urlS = urlP.String()
+				}
+				fmt.Fprintf(buf, "](%s)", urlS)
+			}
+		case model.BlockContentTextMark_Mention, model.BlockContentTextMark_Object:
+			_, filename, ok := mw.h.getLinkInfo(m.Param)
+			if ok {
+				if start {
+					buf.WriteString("[")
+				} else {
+					fmt.Fprintf(buf, "](%s)", filename)
+				}
+			}
+		case model.BlockContentTextMark_Keyboard:
+			cs, ok := mw.codeSpans[m]
+			if !ok {
+				cs = codeSpan{delim: "`"}
+			}
+			if start {
+				buf.WriteString(cs.delim)
+				if cs.pad {
+					buf.WriteString(" ")
+				}
+			} else {
+				if cs.pad {
+					buf.WriteString(" ")
+				}
+				buf.WriteString(cs.delim)
+			}
+		case model.BlockContentTextMark_Emoji:
+			if start {
+				_, err := buf.WriteString(m.Param)
+				if err != nil {
+					log.Errorf("failed to write emoji: %s, %v", m.Param, err)
+				}
+			}
+		}
+	}
+
+	if mw.breakpoints == nil {
+		return
+	}
+	if marks, ok := mw.breakpoints[pos]; ok {
+		var (
+			hasClosedLink bool
+			hasStartLink  bool
+		)
+		for i := len(marks.ends) - 1; i >= 0; i-- {
+			if len(mw.open) > 0 {
+				if mw.open[len(mw.open)-1] != marks.ends[i] {
+					marks.ends = append(marks.ends, mw.open[len(mw.open)-1])
+					marks.starts = append(marks.starts, mw.open[len(mw.open)-1])
+					mw.breakpoints[pos] = marks
+					mw.writeMarks(buf, pos)
+					return
+				} else {
+					mw.open = mw.open[:len(mw.open)-1]
+				}
+			}
+			writeMark(marks.ends[i], false)
+			if !hasClosedLink && marks.ends[i].Type == model.BlockContentTextMark_Link {
+				hasClosedLink = true
+			}
+		}
+		for _, m := range marks.starts {
+			if m.Type == model.BlockContentTextMark_Link {
+				hasStartLink = true
+				break
+			}
+		}
+		if hasStartLink && hasClosedLink {
+			buf.WriteString(" ")
+		}
+		for _, m := range marks.starts {
+			writeMark(m, true)
+			mw.open = append(mw.open, m)
+		}
+	}
+}
+
+func (mw *marksWriter) Init(text *model.BlockContentText) *marksWriter {
+	mw.open = mw.open[:0]
+	mw.codeSpans = nil
+	mw.codeRanges = mw.codeRanges[:0]
+	if text.Marks != nil && len(text.Marks.Marks) > 0 {
+		marks := splitCodeSpanMarks(text)
+		mw.initCodeSpans(text, marks)
+		mw.breakpoints = make(map[int]struct {
+			starts []*model.BlockContentTextMark
+			ends   []*model.BlockContentTextMark
+		})
+		for _, mark := range marks {
+			if mark.Range != nil && mark.Range.From != mark.Range.To {
+				from := mw.breakpoints[int(mark.Range.From)]
+				from.starts = append(from.starts, mark)
+				mw.breakpoints[int(mark.Range.From)] = from
+				to := mw.breakpoints[int(mark.Range.To)]
+				to.ends = append(to.ends, mark)
+				mw.breakpoints[int(mark.Range.To)] = to
+			}
+		}
+		for _, marks := range mw.breakpoints {
+			sort.Sort(sortedMarks(marks.starts))
+			sort.Sort(sortedMarks(marks.ends))
+		}
+	} else {
+		mw.breakpoints = nil
+	}
+	return mw
+}
+
+type sortedMarks []*model.BlockContentTextMark
+
+func (a sortedMarks) Len() int      { return len(a) }
+func (a sortedMarks) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a sortedMarks) Less(i, j int) bool {
+	li := a[i].Range.To - a[i].Range.From
+	lj := a[j].Range.To - a[j].Range.From
+	if li == lj {
+		return a[i].Type < a[j].Type
+	}
+	return li > lj
+}
+
+// Replace characters that would break or confuse file-paths.
+var replacer = strings.NewReplacer(
+	" ", "_", // spaces → underscores
+	"/", "_", // forward slashes → underscores
+	"\\", "_", // backslashes → underscores
+)
+
+// GenerateSchemaFileName creates an OS-safe schema file name from the object type name.
+func GenerateSchemaFileName(typeName string) string {
+	sanitised := strings.ToLower(typeName)
+	sanitised = replacer.Replace(sanitised)
+	return filepath.Join("schemas", sanitised+".schema.json")
+}
+
+// GenerateJSONSchema generates a JSON schema for the object type using the schema package
+func (h *MD) GenerateJSONSchema() ([]byte, error) {
+	if h.resolver == nil {
+		return nil, fmt.Errorf("resolver not set")
+	}
+
+	objectTypeId := h.s.LocalDetails().GetString(bundle.RelationKeyType)
+	objectTypeDetails, err := h.resolver.ResolveType(objectTypeId)
+	if err != nil || objectTypeDetails == nil {
+		return nil, fmt.Errorf("object type not found")
+	}
+
+	// Get all relations for this type
+	featuredRelations := objectTypeDetails.GetStringList(bundle.RelationKeyRecommendedFeaturedRelations)
+	regularRelations := objectTypeDetails.GetStringList(bundle.RelationKeyRecommendedRelations)
+	allRelations := append(featuredRelations, regularRelations...)
+
+	// Collect relation details
+	var relationDetailsList []*domain.Details
+	for _, relationId := range allRelations {
+		relationDetails, err := h.resolver.ResolveRelation(relationId)
+		if err == nil && relationDetails != nil {
+			relationDetailsList = append(relationDetailsList, relationDetails)
+		}
+	}
+
+	// Create adapter for schema.ObjectResolver
+	schemaResolver := &schemaResolverAdapter{resolver: h.resolver}
+
+	// Create schema using the schema package
+	s, err := schema.SchemaFromObjectDetailsWithResolver(objectTypeDetails, relationDetailsList, schemaResolver)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create schema: %w", err)
+	}
+
+	// Export using the schema package
+	exporter := schema.NewJSONSchemaExporter("  ")
+	var buf bytes.Buffer
+	if err := exporter.Export(s, &buf); err != nil {
+		return nil, fmt.Errorf("failed to export schema: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+func (h *MD) getRelationOptions(relationKey string) []string {
+	var options []string
+
+	// Return empty if resolver is not available
+	if h.resolver == nil {
+		return options
+	}
+
+	optionDetails, err := h.resolver.ResolveRelationOptions(relationKey)
+	if err == nil && optionDetails != nil {
+		for _, details := range optionDetails {
+			if optionName := details.GetString(bundle.RelationKeyName); optionName != "" {
+				options = append(options, optionName)
+			}
+		}
+	}
+
+	return options
+}
+
+// schemaResolverAdapter adapts md.ObjectResolver to schema.ObjectResolver
+type schemaResolverAdapter struct {
+	resolver ObjectResolver
+}
+
+func (a *schemaResolverAdapter) RelationById(relationId string) (*domain.Details, error) {
+	return a.resolver.ResolveRelation(relationId)
+}
+
+func (a *schemaResolverAdapter) RelationByKey(relationKey string) (*domain.Details, error) {
+	return a.resolver.GetRelationByKey(relationKey)
+}
+
+func (a *schemaResolverAdapter) RelationOptions(relationKey string) ([]*domain.Details, error) {
+	return a.resolver.ResolveRelationOptions(relationKey)
+}

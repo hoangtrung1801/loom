@@ -1,0 +1,117 @@
+package objectid
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/anyproto/any-sync/commonspace/object/tree/treestorage"
+	"go.uber.org/zap"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/import/common"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"
+)
+
+// oldFile represents file in pre Files-as-Objects format
+type oldFile struct {
+	blockService      *block.Service
+	fileObjectService fileobject.Service
+	objectStore       objectstore.ObjectStore
+}
+
+func (f *oldFile) GetIDAndPayload(ctx context.Context, spaceId string, sn *common.Snapshot, _ time.Time, _ bool, origin objectorigin.ObjectOrigin) (string, treestorage.TreeStorageCreatePayload, error) {
+	fileId := sn.Snapshot.Data.Details.GetString(bundle.RelationKeyId)
+	filesKeys := map[string]string{}
+	for _, fileKeys := range sn.Snapshot.FileKeys {
+		if fileKeys.Hash == fileId {
+			filesKeys = fileKeys.Keys
+			break
+		}
+	}
+
+	// AnyBlock v2 carries remote metadata in FileInfo, including when the
+	// document represents a legacy file and its document ID is not the blob CID.
+	if info := sn.Snapshot.Data.FileInfo; info != nil && info.FileId != "" {
+		fileId = info.FileId
+		filesKeys = make(map[string]string, len(info.EncryptionKeys))
+		for _, key := range info.EncryptionKeys {
+			filesKeys[key.Path] = key.Key
+		}
+	}
+
+	filePath := sn.Snapshot.Data.Details.GetString(bundle.RelationKeySource)
+	if filePath != "" {
+		fileObjectId, err := uploadFile(ctx, f.blockService, spaceId, filePath, origin, filesKeys, sn.Snapshot.Data.Details)
+		if err != nil {
+			log.Error("handling old file object: upload file", zap.Error(err))
+		}
+		if err == nil {
+			return fileObjectId, treestorage.TreeStorageCreatePayload{}, nil
+		}
+	}
+
+	err := f.objectStore.AddFileKeys(domain.FileEncryptionKeys{
+		FileId:         domain.FileId(fileId),
+		EncryptionKeys: filesKeys,
+	})
+	if err != nil {
+		return "", treestorage.TreeStorageCreatePayload{}, fmt.Errorf("add file keys: %w", err)
+	}
+	objectId, err := f.fileObjectService.CreateFromImport(domain.FullFileId{SpaceId: spaceId, FileId: domain.FileId(fileId)}, origin, nil)
+	if err != nil {
+		return "", treestorage.TreeStorageCreatePayload{}, fmt.Errorf("create file object: %w", err)
+	}
+	return objectId, treestorage.TreeStorageCreatePayload{}, nil
+}
+
+// copyDetailsExcludingFileRelations copies all details except relations managed
+// internally by the file service: keys starting with "file" (system file metadata)
+// and iconImage (set by the file indexer after upload; may self-reference the
+// file's own old CID which cannot be remapped before processSnapshot runs).
+func copyDetailsExcludingFileRelations(details *domain.Details) *domain.Details {
+	result := domain.NewDetails()
+	for k, v := range details.Iterate() {
+		if !strings.HasPrefix(string(k), "file") && k != bundle.RelationKeyIconImage {
+			result.Set(k, v)
+		}
+	}
+	return result
+}
+
+func uploadFile(
+	ctx context.Context,
+	blockService *block.Service,
+	spaceId, filePath string,
+	origin objectorigin.ObjectOrigin,
+	encryptionKeys map[string]string,
+	details *domain.Details,
+) (string, error) {
+	params := pb.RpcFileUploadRequest{
+		SpaceId: spaceId,
+		Details: copyDetailsExcludingFileRelations(details).ToProto(),
+	}
+
+	if strings.HasPrefix(filePath, "http://") || strings.HasPrefix(filePath, "https://") {
+		params.Url = filePath
+	} else {
+		params.LocalPath = filePath
+	}
+	dto := block.FileUploadRequest{
+		RpcFileUploadRequest: params,
+		ObjectOrigin:         origin,
+		CustomEncryptionKeys: encryptionKeys,
+	}
+
+	fileObjectId, _, _, err := blockService.UploadFile(ctx, spaceId, dto)
+	if err != nil {
+		return "", err
+	}
+	return fileObjectId, nil
+}

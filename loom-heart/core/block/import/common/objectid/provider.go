@@ -1,0 +1,102 @@
+package objectid
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/anyproto/any-sync/commonspace/object/tree/treestorage"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/import/common"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject"
+	sb "github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core/smartblock"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/logging"
+	"github.com/hoangtrung1801/loom/loom-heart/space"
+)
+
+var log = logging.LoggerNotSugared("import")
+
+type IdAndKeyProvider interface {
+	IDProvider
+	InternalKeyProvider
+}
+
+type IDProvider interface {
+	GetIDAndPayload(ctx context.Context, spaceID string, sn *common.Snapshot, createdTime time.Time, getExisting bool, origin objectorigin.ObjectOrigin) (string, treestorage.TreeStorageCreatePayload, error)
+}
+
+type InternalKeyProvider interface {
+	GetInternalKey(sbType sb.SmartBlockType) string
+}
+
+type Provider struct {
+	idProviderBySmartBlockType map[sb.SmartBlockType]IDProvider
+}
+
+func NewIDProvider(
+	objectStore objectstore.ObjectStore,
+	spaceService space.Service,
+	blockService *block.Service,
+	fileObjectService fileobject.Service,
+) IdAndKeyProvider {
+	p := &Provider{
+		idProviderBySmartBlockType: make(map[sb.SmartBlockType]IDProvider, 0),
+	}
+	existingObject := newExistingObject(objectStore)
+	treeObject := newTreeObject(existingObject, spaceService)
+	derivedObject := newDerivedObject(existingObject, spaceService, objectStore)
+	fileObject := &fileObject{
+		treeObject:   treeObject,
+		blockService: blockService,
+	}
+	oldFile := &oldFile{
+		blockService:      blockService,
+		objectStore:       objectStore,
+		fileObjectService: fileObjectService,
+	}
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeWorkspace] = newWorkspace(spaceService)
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeWidget] = newWidget(spaceService)
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeRelation] = derivedObject
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeObjectType] = derivedObject
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeRelationOption] = derivedObject
+	p.idProviderBySmartBlockType[sb.SmartBlockTypePage] = treeObject
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeFileObject] = fileObject
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeFile] = oldFile
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeProfilePage] = derivedObject
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeTemplate] = treeObject
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeParticipant] = newParticipant()
+	// a chat is identified by its unique key like a type is, and is created
+	// with the same DeriveTreeObject the derived path already models — so an
+	// imported chat lands on the id its key derives, and a second import of
+	// the same archive resolves to that object instead of a duplicate. Its
+	// messages live in the any-store CRDT rather than in the snapshot, so what
+	// imports is the chat itself: name, icon, description, and no history.
+	p.idProviderBySmartBlockType[sb.SmartBlockTypeChatDerivedObject] = derivedObject
+	return p
+}
+
+func (p *Provider) GetIDAndPayload(
+	ctx context.Context,
+	spaceID string,
+	sn *common.Snapshot,
+	createdTime time.Time,
+	getExisting bool,
+	origin objectorigin.ObjectOrigin,
+) (string, treestorage.TreeStorageCreatePayload, error) {
+	if idProvider, ok := p.idProviderBySmartBlockType[sn.Snapshot.SbType]; ok {
+		return idProvider.GetIDAndPayload(ctx, spaceID, sn, createdTime, getExisting, origin)
+	}
+	return "", treestorage.TreeStorageCreatePayload{}, fmt.Errorf("unsupported smartblock to import")
+}
+
+func (p *Provider) GetInternalKey(sbType sb.SmartBlockType) string {
+	if idProvider, ok := p.idProviderBySmartBlockType[sbType]; ok {
+		if internalKeyProvider, ok := idProvider.(InternalKeyProvider); ok {
+			return internalKeyProvider.GetInternalKey(sbType)
+		}
+	}
+	return ""
+}

@@ -1,0 +1,335 @@
+package core
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/gogo/protobuf/types"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/filedownloader"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileoffloader"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/filespaceusage"
+	"github.com/hoangtrung1801/loom/loom-heart/core/files/reconciler"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+)
+
+func (mw *Middleware) FileDownload(cctx context.Context, req *pb.RpcFileDownloadRequest) *pb.RpcFileDownloadResponse {
+	response := func(path string, code pb.RpcFileDownloadResponseErrorCode, err error) *pb.RpcFileDownloadResponse {
+		m := &pb.RpcFileDownloadResponse{Error: &pb.RpcFileDownloadResponseError{Code: code}, LocalPath: path}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+	var path string
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		path, err = bs.DownloadFile(cctx, req)
+		return
+	})
+	if err != nil {
+		// TODO Maybe use the appropriate error code?
+		return response("", pb.RpcFileDownloadResponseError_UNKNOWN_ERROR, err)
+	}
+
+	return response(path, pb.RpcFileDownloadResponseError_NULL, nil)
+}
+
+func (mw *Middleware) FileDrop(cctx context.Context, req *pb.RpcFileDropRequest) *pb.RpcFileDropResponse {
+	ctx := mw.newContext(cctx)
+	response := func(filesCount int, code pb.RpcFileDropResponseErrorCode, err error) *pb.RpcFileDropResponse {
+		m := &pb.RpcFileDropResponse{Error: &pb.RpcFileDropResponseError{Code: code}, FilesCount: int64(filesCount)}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		} else {
+			m.Event = mw.getResponseEvent(ctx)
+		}
+		return m
+	}
+	var filesCount int
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		filesCount, err = bs.DropFiles(*req)
+		return
+	})
+	if err != nil {
+		return response(0, pb.RpcFileDropResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(filesCount, pb.RpcFileDropResponseError_NULL, nil)
+}
+
+func (mw *Middleware) FileListOffload(cctx context.Context, req *pb.RpcFileListOffloadRequest) *pb.RpcFileListOffloadResponse {
+	fileOffloader := mustService[fileoffloader.Service](mw)
+	err := fileOffloader.FilesOffload(cctx, req.OnlyIds, req.IncludeNotPinned)
+	if err != nil {
+		return &pb.RpcFileListOffloadResponse{
+			Error: &pb.RpcFileListOffloadResponseError{
+				Code:        pb.RpcFileListOffloadResponseError_UNKNOWN_ERROR,
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+	return &pb.RpcFileListOffloadResponse{
+		Error: &pb.RpcFileListOffloadResponseError{
+			Code: pb.RpcFileListOffloadResponseError_NULL,
+		},
+	}
+}
+
+func (mw *Middleware) FileOffload(cctx context.Context, req *pb.RpcFileOffloadRequest) *pb.RpcFileOffloadResponse {
+	response := func(bytesOffloaded uint64, code pb.RpcFileOffloadResponseErrorCode, err error) *pb.RpcFileOffloadResponse {
+		m := &pb.RpcFileOffloadResponse{BytesOffloaded: bytesOffloaded, Error: &pb.RpcFileOffloadResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+
+		return m
+	}
+
+	if mw.applicationService.GetApp() == nil {
+		return response(0, pb.RpcFileOffloadResponseError_NODE_NOT_STARTED, fmt.Errorf("anytype is nil"))
+	}
+
+	fileOffloader := mustService[fileoffloader.Service](mw)
+	bytesRemoved, err := fileOffloader.FileOffload(cctx, req.Id, req.IncludeNotPinned)
+	if err != nil {
+		log.Errorf("failed to offload file %s: %s", req.Id, err)
+	}
+
+	return response(bytesRemoved, pb.RpcFileOffloadResponseError_NULL, nil)
+}
+
+func (mw *Middleware) FileSpaceOffload(cctx context.Context, req *pb.RpcFileSpaceOffloadRequest) *pb.RpcFileSpaceOffloadResponse {
+	response := func(filesOffloaded int, bytesOffloaded uint64, code pb.RpcFileSpaceOffloadResponseErrorCode, err error) *pb.RpcFileSpaceOffloadResponse {
+		m := &pb.RpcFileSpaceOffloadResponse{
+			FilesOffloaded: int32(filesOffloaded),
+			BytesOffloaded: bytesOffloaded,
+			Error:          &pb.RpcFileSpaceOffloadResponseError{Code: code},
+		}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+
+		return m
+	}
+
+	fileOffloader := mustService[fileoffloader.Service](mw)
+	filesOffloaded, bytesRemoved, err := fileOffloader.FileSpaceOffload(cctx, req.SpaceId, false)
+	if err != nil {
+		return response(0, 0, pb.RpcFileSpaceOffloadResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(filesOffloaded, bytesRemoved, pb.RpcFileSpaceOffloadResponseError_NULL, nil)
+}
+
+func (mw *Middleware) FileUpload(cctx context.Context, req *pb.RpcFileUploadRequest) *pb.RpcFileUploadResponse {
+	response := func(objectId string, preloadFileId string, details *types.Struct, code pb.RpcFileUploadResponseErrorCode, err error) *pb.RpcFileUploadResponse {
+		m := &pb.RpcFileUploadResponse{Error: &pb.RpcFileUploadResponseError{Code: code}, ObjectId: objectId, PreloadFileId: preloadFileId, Details: details}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+	var (
+		objectId      string
+		preloadFileId string
+		details       *domain.Details
+	)
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		dto := block.FileUploadRequest{RpcFileUploadRequest: *req, ObjectOrigin: objectorigin.ObjectOrigin{Origin: req.Origin}}
+		if req.PreloadOnly {
+			preloadFileId, _, err = bs.PreloadFile(cctx, req.SpaceId, dto)
+		} else if req.PreloadFileId != "" {
+			// Reuse preloaded file
+			objectId, _, details, err = bs.CreateObjectFromPreloadedFile(cctx, req.SpaceId, req.PreloadFileId, dto)
+		} else {
+			objectId, _, details, err = bs.UploadFile(cctx, req.SpaceId, dto)
+		}
+		return
+	})
+
+	if err != nil {
+		return response("", "", nil, pb.RpcFileUploadResponseError_UNKNOWN_ERROR, err)
+	}
+
+	var detailsProto *types.Struct
+	if details != nil {
+		detailsProto = details.ToProto()
+	}
+	return response(objectId, preloadFileId, detailsProto, pb.RpcFileUploadResponseError_NULL, nil)
+}
+
+func (mw *Middleware) FileDiscardPreload(cctx context.Context, req *pb.RpcFileDiscardPreloadRequest) *pb.RpcFileDiscardPreloadResponse {
+	response := func(code pb.RpcFileDiscardPreloadResponseErrorCode, err error) *pb.RpcFileDiscardPreloadResponse {
+		m := &pb.RpcFileDiscardPreloadResponse{Error: &pb.RpcFileDiscardPreloadResponseError{Code: code}}
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+
+	// Discard preloaded file if it hasn't been used to create an object
+	err := mw.doBlockService(func(bs *block.Service) (err error) {
+		return bs.DiscardPreloadedFile(cctx, req.SpaceId, req.FileId)
+	})
+
+	if err != nil {
+		return response(pb.RpcFileDiscardPreloadResponseError_UNKNOWN_ERROR, err)
+	}
+	return response(pb.RpcFileDiscardPreloadResponseError_NULL, nil)
+}
+
+func (mw *Middleware) FileSpaceUsage(cctx context.Context, req *pb.RpcFileSpaceUsageRequest) *pb.RpcFileSpaceUsageResponse {
+	response := func(code pb.RpcFileSpaceUsageResponseErrorCode, err error, usage *pb.RpcFileSpaceUsageResponseUsage) *pb.RpcFileSpaceUsageResponse {
+		m := &pb.RpcFileSpaceUsageResponse{
+			Error: &pb.RpcFileSpaceUsageResponseError{Code: code},
+			Usage: usage,
+		}
+
+		if err != nil {
+			m.Error.Description = getErrorDescription(err)
+		}
+		return m
+	}
+
+	usage, err := mustService[filespaceusage.Service](mw).GetSpaceUsage(cctx, req.SpaceId)
+	if err != nil {
+		return response(pb.RpcFileSpaceUsageResponseError_UNKNOWN_ERROR, err, nil)
+	}
+	return response(pb.RpcFileSpaceUsageResponseError_NULL, nil, usage)
+}
+
+func (mw *Middleware) FileNodeUsage(ctx context.Context, req *pb.RpcFileNodeUsageRequest) *pb.RpcFileNodeUsageResponse {
+	usage, err := mustService[filespaceusage.Service](mw).GetNodeUsage(ctx)
+	code := mapErrorCode[pb.RpcFileNodeUsageResponseErrorCode](err)
+	resp := &pb.RpcFileNodeUsageResponse{
+		Error: &pb.RpcFileNodeUsageResponseError{
+			Code:        code,
+			Description: getErrorDescription(err),
+		},
+	}
+	if usage != nil {
+		resp.Usage = &pb.RpcFileNodeUsageResponseUsage{
+			CidsCount:       uint64(usage.Usage.TotalCidsCount),
+			BytesUsage:      uint64(usage.Usage.TotalBytesUsage),
+			BytesLimit:      uint64(usage.Usage.AccountBytesLimit),
+			BytesLeft:       usage.Usage.BytesLeft,
+			LocalBytesUsage: usage.LocalUsageBytes,
+		}
+
+		resp.Spaces = make([]*pb.RpcFileNodeUsageResponseSpace, 0, len(usage.Usage.Spaces))
+		for _, space := range usage.Usage.Spaces {
+			resp.Spaces = append(resp.Spaces, &pb.RpcFileNodeUsageResponseSpace{
+				SpaceId:    space.SpaceId,
+				FilesCount: uint64(space.FileCount),
+				CidsCount:  uint64(space.CidsCount),
+				BytesUsage: uint64(space.SpaceBytesUsage),
+			})
+		}
+	}
+
+	return resp
+}
+
+func (mw *Middleware) FileReconcile(ctx context.Context, req *pb.RpcFileReconcileRequest) *pb.RpcFileReconcileResponse {
+	err := mustService[reconciler.Reconciler](mw).Start(ctx)
+	if err != nil {
+		return &pb.RpcFileReconcileResponse{
+			Error: &pb.RpcFileReconcileResponseError{
+				Code:        mapErrorCode[pb.RpcFileReconcileResponseErrorCode](err),
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+	return &pb.RpcFileReconcileResponse{
+		Error: &pb.RpcFileReconcileResponseError{Code: pb.RpcFileReconcileResponseError_NULL},
+	}
+}
+
+func (mw *Middleware) FileSetAutoDownload(ctx context.Context, req *pb.RpcFileSetAutoDownloadRequest) *pb.RpcFileSetAutoDownloadResponse {
+	err := mustService[filedownloader.Service](mw).SetEnabled(req.Enabled, req.WifiOnly)
+	if err != nil {
+		return &pb.RpcFileSetAutoDownloadResponse{
+			Error: &pb.RpcFileSetAutoDownloadResponseError{
+				Code:        mapErrorCode[pb.RpcFileSetAutoDownloadResponseErrorCode](err),
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+	return &pb.RpcFileSetAutoDownloadResponse{
+		Error: &pb.RpcFileSetAutoDownloadResponseError{Code: pb.RpcFileSetAutoDownloadResponseError_NULL},
+	}
+}
+
+func (mw *Middleware) FileAutoDownloadSetLimit(ctx context.Context, req *pb.RpcFileAutoDownloadSetLimitRequest) *pb.RpcFileAutoDownloadSetLimitResponse {
+	err := mustService[filedownloader.Service](mw).SetSizeLimit(req.SizeLimitMebibytes)
+	if err != nil {
+		return &pb.RpcFileAutoDownloadSetLimitResponse{
+			Error: &pb.RpcFileAutoDownloadSetLimitResponseError{
+				Code:        mapErrorCode[pb.RpcFileAutoDownloadSetLimitResponseErrorCode](err),
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+	return &pb.RpcFileAutoDownloadSetLimitResponse{
+		Error: &pb.RpcFileAutoDownloadSetLimitResponseError{Code: pb.RpcFileAutoDownloadSetLimitResponseError_NULL},
+	}
+}
+
+func (mw *Middleware) FileCacheDownload(ctx context.Context, req *pb.RpcFileCacheDownloadRequest) *pb.RpcFileCacheDownloadResponse {
+	handle := func() error {
+		fileObjectService := mustService[fileobject.Service](mw)
+		// Fast path: resolve the file id from the indexed object store without
+		// opening the smartblock. CacheFile then skips the warm-up entirely when
+		// the file is already cached locally.
+		fullId, err := fileObjectService.GetFileIdFromObject(req.FileObjectId)
+		if err != nil {
+			// The file id could not be read from the index — the object is not
+			// indexed yet, or its file id relation is still empty mid-upload. Fall
+			// back to loading the file data, which also warms up the object itself.
+			file, err := fileObjectService.GetFileData(ctx, req.FileObjectId)
+			if err != nil {
+				return fmt.Errorf("get file data: %w", err)
+			}
+			fullId = domain.FullFileId{SpaceId: file.SpaceId(), FileId: file.FileId()}
+		}
+		mustService[filedownloader.Service](mw).CacheFile(fullId.SpaceId, fullId.FileId)
+		return nil
+	}
+	err := handle()
+	if err != nil {
+		return &pb.RpcFileCacheDownloadResponse{
+			Error: &pb.RpcFileCacheDownloadResponseError{
+				Code:        mapErrorCode[pb.RpcFileCacheDownloadResponseErrorCode](err),
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+	return &pb.RpcFileCacheDownloadResponse{
+		Error: &pb.RpcFileCacheDownloadResponseError{Code: pb.RpcFileCacheDownloadResponseError_NULL},
+	}
+}
+
+func (mw *Middleware) FileCacheCancelDownload(ctx context.Context, req *pb.RpcFileCacheCancelDownloadRequest) *pb.RpcFileCacheCancelDownloadResponse {
+	handle := func() error {
+		file, err := mustService[fileobject.Service](mw).GetFileData(ctx, req.FileObjectId)
+		if err != nil {
+			return fmt.Errorf("get file data: %w", err)
+		}
+		mustService[filedownloader.Service](mw).CancelFileCaching(file.FileId())
+		return nil
+	}
+	err := handle()
+	if err != nil {
+		return &pb.RpcFileCacheCancelDownloadResponse{
+			Error: &pb.RpcFileCacheCancelDownloadResponseError{
+				Code:        mapErrorCode[pb.RpcFileCacheCancelDownloadResponseErrorCode](err),
+				Description: getErrorDescription(err),
+			},
+		}
+	}
+	return &pb.RpcFileCacheCancelDownloadResponse{
+		Error: &pb.RpcFileCacheCancelDownloadResponseError{Code: pb.RpcFileCacheCancelDownloadResponseError_NULL},
+	}
+}

@@ -46,7 +46,7 @@ Before development, you need the anytype-heart middleware:
 ## Architecture Overview
 
 ### High-Level Structure
-Loom is an Electron-based desktop application with TypeScript/React frontend communicating with a Go-based middleware (anytype-heart) via gRPC.
+Loom is an Electron-based desktop application with TypeScript/React frontend communicating with a Go-based middleware (loom-heart) via gRPC.
 
 **Key Components:**
 - **Electron Main Process** (`electron.js`) - Window management, IPC, system integration

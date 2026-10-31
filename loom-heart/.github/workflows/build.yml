@@ -1,0 +1,193 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      alpha_version:
+        description: 'Alpha version'
+        default: ''
+      run-on-runner:
+        description: 'Specify the runner to use'
+        required: true
+        default: 'macos-15'
+
+
+permissions:
+  actions: 'write'
+  packages: 'write'
+  contents: 'write'
+
+
+jobs:
+  build:
+    runs-on: ${{ github.event_name == 'push' && 'macos-15' || (github.event.inputs.run-on-runner || 'macos-15') }}
+    timeout-minutes: 120
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          check-latest: true
+
+      - name: Setup GO
+        run: |
+          echo "PATH=$PATH"
+          echo "which go: '$(which go)'"
+          echo "which go version: '$( $(which go) version )'"
+          echo "go version: '$(go version)'"
+          echo GOPATH=$(go env GOPATH) >> $GITHUB_ENV
+          echo GOBIN=$(go env GOPATH)/bin >> $GITHUB_ENV
+          echo $(go env GOPATH)/bin >> $GITHUB_PATH
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install brew and node deps
+        run: make install-brew-and-node-deps
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1.7.0
+        with:
+          xcode-version: '16.2'
+
+      - name: Set env vars
+        env:
+          UNSPLASH_KEY: ${{ secrets.UNSPLASH_KEY }}
+          INHOUSE_KEY: ${{ secrets.INHOUSE_KEY }}
+        run: |
+          GIT_SUMMARY=$(git describe --tags --exclude='*-nightly.*' --always)
+          echo "FLAGS=-X github.com/hoangtrung1801/loom/loom-heart/util/vcs.GitSummary=${GIT_SUMMARY} -X github.com/hoangtrung1801/loom/loom-heart/metrics.DefaultInHouseKey=${INHOUSE_KEY} -X github.com/hoangtrung1801/loom/loom-heart/util/unsplash.DefaultToken=${UNSPLASH_KEY}" >> $GITHUB_ENV
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION=${{ github.event.inputs.alpha_version }}
+            if [ -z "$VERSION" ]; then
+              VERSION=$(git rev-parse --short HEAD)
+            fi
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=${GITHUB_REF##*/}
+          fi
+          echo VERSION=${VERSION} >> $GITHUB_ENV
+          echo BUILD_TAG_NETWORK=envproduction >> $GITHUB_ENV
+          echo MAVEN_ARTIFACT_VERSION=${VERSION} >> $GITHUB_ENV
+          echo GOPRIVATE=github.com/anyproto >> $GITHUB_ENV
+          NDK28=$(ls -d ${ANDROID_HOME}/ndk/28.* 2>/dev/null | sort -V | tail -1)
+          if [ -z "$NDK28" ]; then echo "ERROR: NDK 28.x not found"; ls ${ANDROID_HOME}/ndk/; exit 1; fi
+          echo "Using NDK: $NDK28"
+          echo ANDROID_NDK=$NDK28 >> $GITHUB_ENV
+          echo ANDROID_NDK_HOME=$NDK28 >> $GITHUB_ENV
+          echo ANDROID_NDK_ROOT=$NDK28 >> $GITHUB_ENV
+          echo $(pwd)/deps >> $GITHUB_PATH
+          echo "${GOBIN}" >> $GITHUB_PATH
+          git config --global url."https://${{ secrets.ANYTYPE_PAT }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Go mod download
+        run: go mod download
+
+      - name: install protoc
+        run: make setup-protoc
+
+      - name: setup go
+        run: |
+          make setup-go
+          make setup-gomobile
+          which gomobile
+
+      - name: Cross-compile library mac/win/linux
+        run: |
+          make cross-compile-library
+          ls -lha .
+
+      - name: Make JS protos
+        if: github.event_name == 'push'
+        run: |
+          make protos-js
+          make ci-js-protos
+
+      - name: Pack servers
+        if: github.event_name == 'push'
+        run: make pack-server
+
+      - name: Make swift protos
+        run: make swift-protos
+
+      - name: Compile ios lib
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USER: ${{ github.actor }}
+          MAVEN_ARTIFACT_ID: 'anytype-heart-ios'
+          MAVEN_ARTIFACT_NAME: 'ios_framework.tar.gz'
+          PUBLISH_GRADLE: 1
+        run: make compile-ios-lib
+
+      - name: Make java protos
+        run: make ci-java-protos
+
+      - name: Compile android lib
+        run: make compile-android-lib
+
+      - name: Publish android lib to maven
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USER: ${{ github.actor }}
+          MAVEN_ARTIFACT_ID: 'anytype-heart-android'
+          MAVEN_ARTIFACT_NAME: 'lib.aar'
+        run: |
+          gradle publish
+
+      - name: Validate release artifacts
+        if: github.event_name == 'push'
+        run: |
+          expected=(
+            ".release/android_lib_${VERSION}.tar.gz"
+            ".release/ios_framework_${VERSION}.tar.gz"
+            ".release/js_${VERSION}_darwin-amd64.tar.gz"
+            ".release/js_${VERSION}_darwin-arm64.tar.gz"
+            ".release/js_${VERSION}_linux-amd64.tar.gz"
+            ".release/js_${VERSION}_linux-arm64.tar.gz"
+            ".release/js_${VERSION}_windows-amd64.zip"
+          )
+          missing=()
+          for f in "${expected[@]}"; do
+            [ -f "$f" ] || missing+=("$f")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Release blocked — missing artifacts:"
+            printf '  - %s\n' "${missing[@]}"
+            exit 1
+          fi
+          echo "All 7 release artifacts present:"
+          ls -lh .release/
+
+      - name: Release
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v3
+        with:
+          prerelease: ${{ contains(github.ref, '-rc') }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: '.release/*'
+
+      - name: Trigger integration tests in anytype-suite
+        if: github.event_name == 'push'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.ANYTYPE_SUITE_TRIGGER_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/anyproto/anytype-suite/dispatches \
+            -d "{\"event_type\": \"test-release\", \"client_payload\": {\"version\": \"${{ env.VERSION }}\"}}"
+
+      - name: Trigger release in anytype-cli
+        if: github.event_name == 'push'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.ANYTYPE_CLI_TRIGGER_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/anyproto/anytype-cli/dispatches \
+            -d "{\"event_type\": \"trigger-from-heart\", \"client_payload\": {\"version\": \"${{ env.VERSION }}\"}}"

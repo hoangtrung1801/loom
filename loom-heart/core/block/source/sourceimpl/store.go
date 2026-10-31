@@ -1,0 +1,484 @@
+package sourceimpl
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+
+	"github.com/anyproto/any-sync/commonspace/object/acl/list"
+	"github.com/anyproto/any-sync/commonspace/object/tree/objecttree"
+	"github.com/anyproto/any-sync/commonspace/object/tree/synctree"
+	"github.com/anyproto/any-sync/commonspace/object/tree/synctree/updatelistener"
+	"github.com/gogo/protobuf/proto"
+	"github.com/golang/snappy"
+
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/state"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/storestate"
+	"github.com/hoangtrung1801/loom/loom-heart/core/block/source"
+	"github.com/hoangtrung1801/loom/loom-heart/pb"
+	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core/smartblock"
+	"github.com/hoangtrung1801/loom/loom-heart/space"
+	"github.com/hoangtrung1801/loom/loom-heart/space/clientspace"
+	"github.com/hoangtrung1801/loom/loom-heart/space/clientspace/keyvalueservice"
+)
+
+var _ updatelistener.UpdateListener = (*store)(nil)
+
+var (
+	_ updatelistener.UpdateListener = (*store)(nil)
+	_ source.Store                  = (*store)(nil)
+)
+
+type store struct {
+	*treeSource
+	spaceService space.Service
+	store        *storestate.StoreState
+	onUpdateHook func()
+	onPushChange source.PushChangeHook
+	sbType       smartblock.SmartBlockType
+
+	diffManagers map[string]*diffManager
+}
+
+type DiffManagerStats struct {
+	DiffManagerName string   `json:"diffManagerName"`
+	SeenHeads       []string `json:"seenHeads"`
+	AllChanges      []string `json:"allChanges"`
+	AllChangesCount int      `json:"allChangesCount"`
+}
+
+type StoreStat struct {
+	DiffManagers []DiffManagerStats `json:"diffManagers"`
+}
+
+func (s *store) ProvideStat() any {
+	stats := make([]DiffManagerStats, 0, len(s.diffManagers))
+	for name, manager := range s.diffManagers {
+		ids := manager.diffManager.GetIds()
+		stats = append(stats, DiffManagerStats{
+			DiffManagerName: name,
+			SeenHeads:       manager.diffManager.SeenHeads(),
+			AllChanges:      ids[0:min(len(ids), 1000)],
+			AllChangesCount: len(ids),
+		})
+	}
+	return StoreStat{
+		DiffManagers: stats,
+	}
+}
+
+func (s *store) StatId() string {
+	return s.Id()
+}
+
+func (s *store) StatType() string {
+	return "source.store"
+}
+
+type diffManager struct {
+	diffManager *objecttree.DiffManager
+	onRemove    func(removed []string)
+}
+
+func (s *store) getTechSpace() clientspace.Space {
+	return s.spaceService.TechSpace()
+}
+
+func (s *store) GetFileKeysSnapshot() []*pb.ChangeFileKeys {
+	return nil
+}
+
+func (s *store) AclList() list.AclList {
+	return s.ObjectTree.AclList()
+}
+
+func (s *store) SetPushChangeHook(onPushChange source.PushChangeHook) {
+	s.onPushChange = onPushChange
+}
+
+func (s *store) RegisterDiffManager(name string, onRemoveHook func(removed []string)) {
+	if _, ok := s.diffManagers[name]; !ok {
+		s.diffManagers[name] = &diffManager{
+			onRemove: onRemoveHook,
+		}
+	}
+}
+
+func (s *store) initDiffManagers(ctx context.Context) error {
+	for name, manager := range s.diffManagers {
+		err := s.InitDiffManager(ctx, name, nil)
+		if err != nil {
+			return fmt.Errorf("init diff manager: %w", err)
+		}
+
+		vals, err := s.getTechSpace().KeyValueService().Get(ctx, s.seenHeadsKey(name))
+		if err != nil {
+			log.With("error", err).Error("init diff manager: get value")
+			continue
+		}
+		for _, val := range vals {
+			seenHeads, err := unmarshalSeenHeads(val.Data)
+			if err != nil {
+				log.With("error", err).Error("init diff manager: unmarshal seen heads")
+				continue
+			}
+			manager.diffManager.Remove(seenHeads)
+		}
+	}
+	return nil
+}
+
+func unmarshalSeenHeads(raw []byte) ([]string, error) {
+	var seenHeads []string
+	err := json.Unmarshal(raw, &seenHeads)
+	if err != nil {
+		return nil, err
+	}
+	return seenHeads, nil
+}
+
+// buildReusedDiffManager creates a DiffManager that reuses the already-in-memory sync
+// tree instead of re-reading the entire change log from storage.
+//
+// Previously every diff manager built its own history tree via
+// space.TreeBuilder().BuildHistoryTree(...), i.e. a full GetAfterOrder scan of the whole
+// "changes" collection. A chat registers three diff managers (messages, mentions,
+// reactions), so opening it scanned the log 1 (sync build) + 3 (diff managers) = 4 times.
+//
+// NewChangeDiffer only iterates the tree (IterateRoot) to copy each change's
+// Id+PreviousIds into its own graph; it does not mutate the tree and keeps no reference to
+// it (only the immutable PreviousIds slices, which are never modified after a change is
+// created). For a chat the live DAG (root..heads) is exactly what BuildHistoryTree produced,
+// because seenHeads are always ancestors-or-equal of the current tree heads. So reusing the
+// in-memory sync tree is equivalent and drops the 3 redundant scans (4->1).
+//
+// No lock is taken here ON PURPOSE: the object-tree mutex is non-reentrant and is already
+// held by every caller of InitDiffManager — factory.InitObject takes it (SetLocker(ot) +
+// Lock) around Init -> ReadStoreDoc -> initDiffManagers on open, and cache.DoWait takes it
+// (sb.Lock) on the mark-unread path. Locking again would self-deadlock.
+//
+// Safe against ocache eviction/GC: (1) the held lock blocks eviction during the build
+// (GC closes via smartBlock.TryClose -> TryLock, which fails while locked; Close() also
+// re-acquires the lock); (2) after the build the DiffManager keeps its OWN copied graph
+// and holds no reference to the tree, so later eviction/GC of the tree is harmless, and
+// ongoing updates pass a fresh tree via updateInDiffManagers. This assumes the in-memory
+// sync tree holds the COMPLETE DAG (true for chats: BuildTree loads every change); a
+// future lazy/partial tree mode would need to revisit this.
+func (s *store) buildReusedDiffManager(seenHeads []string, onRemove func(removed []string)) (*objecttree.DiffManager, error) {
+	liveTree := s.Tree()
+	// Reuse is equivalent to BuildHistoryTree only while the in-memory tree still spans the
+	// whole snapshotRoot..heads range. Creating a non-genesis snapshot resets the in-memory
+	// tree to [latest snapshot..heads] (objectTree clears ot.tree on IsSnapshot), after which
+	// a seenHead before that snapshot would be misclassified and unread counts would drift.
+	// Chats never create snapshots, so the genesis root (SnapshotCounter == 1) is the only
+	// snapshot. Trip loudly if that ever changes instead of silently miscounting.
+	root := liveTree.Root()
+	if root == nil || root.SnapshotCounter > 1 {
+		cnt := -1
+		if root != nil {
+			cnt = root.SnapshotCounter
+		}
+		return nil, fmt.Errorf("reuse diff manager: tree is not genesis-rooted (root snapshot counter %d); restore BuildHistoryTree for snapshotted objects", cnt)
+	}
+	// The object-tree mutex is non-reentrant and MUST already be held by the caller (see the
+	// doc above). Trip loudly on a future lock-free caller instead of silently racing the
+	// shared iteration flags: TryLock fails when this goroutine already holds the lock.
+	if liveTree.TryLock() {
+		liveTree.Unlock()
+		log.With("objectId", s.Id()).Error("buildReusedDiffManager called without the object-tree lock held")
+	}
+	curTreeHeads := liveTree.Heads()
+	buildTree := func(_ []string) (objecttree.ReadableObjectTree, error) {
+		return liveTree, nil
+	}
+	return objecttree.NewDiffManager(seenHeads, curTreeHeads, buildTree, onRemove)
+}
+
+func (s *store) InitDiffManager(ctx context.Context, name string, seenHeads []string) (err error) {
+	manager, ok := s.diffManagers[name]
+	if !ok {
+		return nil
+	}
+
+	onRemove := func(removed []string) {
+		if manager.onRemove != nil {
+			manager.onRemove(removed)
+		}
+	}
+
+	manager.diffManager, err = s.buildReusedDiffManager(seenHeads, onRemove)
+	if err != nil {
+		return fmt.Errorf("init diff manager: %w", err)
+	}
+	manager.diffManager.Init()
+
+	err = s.getTechSpace().KeyValueService().SubscribeForKey(s.seenHeadsKey(name), name, func(key string, val keyvalueservice.Value) {
+		s.ObjectTree.Lock()
+		defer s.ObjectTree.Unlock()
+
+		newSeenHeads, err := unmarshalSeenHeads(val.Data)
+		if err != nil {
+			log.Errorf("subscribe for seenHeads: %s: %v", name, err)
+			return
+		}
+		manager.diffManager.Remove(newSeenHeads)
+	})
+	if err != nil {
+		return fmt.Errorf("subscribe: %w", err)
+	}
+
+	return
+}
+
+func (s *store) ReadDoc(ctx context.Context, receiver source.ChangeReceiver, empty bool) (doc state.Doc, err error) {
+	s.receiver = receiver
+	setter, ok := s.ObjectTree.(synctree.ListenerSetter)
+	if !ok {
+		err = fmt.Errorf("should be able to set listner inside object tree")
+		return
+	}
+	setter.SetListener(s)
+	setter.SetDeferredUpdater(true)
+
+	// Fake state, this kind of objects not support state operations.
+	// Object type and layout details are set in the corresponding smartblock Init methods.
+	return state.NewDoc(s.id, nil), nil
+}
+
+func (s *store) PushChange(params source.PushChangeParams) (id string, err error) {
+	if s.onPushChange != nil {
+		return s.onPushChange(params)
+	}
+	return "", nil
+}
+
+func (s *store) ReadStoreDoc(ctx context.Context, storeState *storestate.StoreState, params source.ReadStoreDocParams) (err error) {
+	s.onUpdateHook = params.OnUpdateHook
+	s.store = storeState
+
+	tx, err := s.store.NewTx(ctx)
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	applier := &storeApply{
+		tx:   tx,
+		ot:   s.ObjectTree,
+		hook: params.ReadStoreTreeHook,
+	}
+	if err = applier.Apply(ctx); err != nil {
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	err = s.initDiffManagers(ctx)
+	if err != nil {
+		return fmt.Errorf("init diff managers: %w", err)
+	}
+
+	if params.ReadStoreTreeHook != nil {
+		err = params.ReadStoreTreeHook.AfterDiffManagersInit(ctx)
+		if err != nil {
+			return fmt.Errorf("after diff managers init hook: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *store) PushStoreChange(ctx context.Context, params source.PushStoreChangeParams) (changeId string, err error) {
+	tx, err := s.store.NewTx(ctx)
+	if err != nil {
+		return "", fmt.Errorf("new tx: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	change := &pb.StoreChange{
+		ChangeSet: params.Changes,
+	}
+	data, dataType, err := MarshalStoreChange(change)
+	if err != nil {
+		return "", fmt.Errorf("marshal change: %w", err)
+	}
+
+	addResult, err := s.ObjectTree.AddContentWithValidator(ctx, objecttree.SignableChangeContent{
+		Data:              data,
+		Key:               s.ObjectTree.AclList().AclState().Key(),
+		ShouldBeEncrypted: true,
+		DataType:          dataType,
+		Timestamp:         params.Time.Unix(),
+	}, func(change objecttree.StorageChange) error {
+		err = tx.ApplyChangeSetReturnAllErrors(storestate.ChangeSet{
+			Id:        change.Id,
+			Order:     change.OrderId,
+			AclHeadId: s.ObjectTree.AclList().Head().Id,
+			Changes:   params.Changes,
+			Creator:   s.accountService.AccountID(),
+			Timestamp: params.Time.Unix(),
+		})
+		if err != nil {
+			return fmt.Errorf("apply change set: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("add content: %w", err)
+	}
+
+	if len(addResult.Added) == 0 {
+		return "", fmt.Errorf("add changes list is empty")
+	}
+	changeId = addResult.Added[0].Id
+	tx.UpdateMaxAddSeq(addResult.Added[0].AddSeq)
+	err = tx.Commit()
+	if err == nil {
+		s.onUpdateHook()
+	}
+	ch, err := s.ObjectTree.GetChange(changeId)
+	if err != nil {
+		return "", err
+	}
+
+	s.addToDiffManagers(&objecttree.Change{
+		Id:          changeId,
+		PreviousIds: ch.PreviousIds,
+	})
+
+	return changeId, err
+}
+
+func (s *store) addToDiffManagers(change *objecttree.Change) {
+	for _, m := range s.diffManagers {
+		if m.diffManager != nil {
+			m.diffManager.Add(change)
+		}
+	}
+}
+
+func (s *store) update(ctx context.Context, tree objecttree.ObjectTree) error {
+	tx, err := s.store.NewTx(ctx)
+	if err != nil {
+		return err
+	}
+	applier := &storeApply{
+		tx: tx,
+		ot: tree,
+	}
+	if err = applier.Apply(ctx); err != nil {
+		return errors.Join(tx.Rollback(), err)
+	}
+	err = tx.Commit()
+
+	s.updateInDiffManagers(tree)
+	if err == nil {
+		s.onUpdateHook()
+	}
+	return err
+}
+
+func (s *store) updateInDiffManagers(tree objecttree.ObjectTree) {
+	for _, m := range s.diffManagers {
+		if m.diffManager != nil {
+			m.diffManager.Update(tree)
+		}
+	}
+}
+
+func (s *store) MarkSeenHeads(ctx context.Context, name string, heads []string) error {
+	manager, ok := s.diffManagers[name]
+	if ok {
+		manager.diffManager.Remove(heads)
+		return s.StoreSeenHeads(ctx, name)
+	}
+	return nil
+}
+
+func (s *store) StoreSeenHeads(ctx context.Context, name string) error {
+	manager, ok := s.diffManagers[name]
+	if !ok {
+		return nil
+	}
+
+	seenHeads := manager.diffManager.SeenHeads()
+	raw, err := json.Marshal(seenHeads)
+	if err != nil {
+		return fmt.Errorf("marshal seen heads: %w", err)
+	}
+
+	return s.getTechSpace().KeyValueService().Set(ctx, s.seenHeadsKey(name), raw)
+}
+
+func (s *store) seenHeadsKey(diffManagerName string) string {
+	return s.id + diffManagerName
+}
+
+func (s *store) Update(tree objecttree.ObjectTree) error {
+	err := s.update(context.Background(), tree)
+	if err != nil {
+		log.With("objectId", s.id).Errorf("update: failed to read store doc: %v", err)
+	}
+	return err
+}
+
+func (s *store) Rebuild(tree objecttree.ObjectTree) error {
+	err := s.update(context.Background(), tree)
+	if err != nil {
+		log.With("objectId", s.id).Errorf("rebuild: failed to read store doc: %v", err)
+	}
+	return err
+}
+
+func MarshalStoreChange(change *pb.StoreChange) (result []byte, dataType string, err error) {
+	data := bytesPool.Get().([]byte)[:0]
+	defer func() {
+		bytesPool.Put(data)
+	}()
+
+	data = slices.Grow(data, change.Size())
+	n, err := change.MarshalTo(data)
+	if err != nil {
+		return
+	}
+	data = data[:n]
+
+	if n > snappyLowerLimit {
+		result = snappy.Encode(nil, data)
+		dataType = dataTypeSnappy
+	} else {
+		result = bytes.Clone(data)
+	}
+
+	return
+}
+
+func UnmarshalStoreChange(treeChange *objecttree.Change, data []byte) (result any, err error) {
+	change := &pb.StoreChange{}
+	if treeChange.DataType == dataTypeSnappy {
+		buf := bytesPool.Get().([]byte)[:0]
+		defer func() {
+			bytesPool.Put(buf)
+		}()
+
+		var n int
+		if n, err = snappy.DecodedLen(data); err == nil {
+			buf = slices.Grow(buf, n)[:n]
+			var decoded []byte
+			decoded, err = snappy.Decode(buf, data)
+			if err == nil {
+				data = decoded
+			}
+		}
+	}
+	if err = proto.Unmarshal(data, change); err == nil {
+		result = change
+	}
+	return
+}
