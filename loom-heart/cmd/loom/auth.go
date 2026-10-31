@@ -284,7 +284,7 @@ func authCall(ctx context.Context, baseURL, method, path, key string, in, out an
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s %s (is Anytype running with the API on?): %w", method, baseURL+path, err)
+		return fmt.Errorf("%s %s (is Loom running with the API on?): %w", method, baseURL+path, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)

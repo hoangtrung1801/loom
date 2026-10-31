@@ -36,7 +36,7 @@ func fullExecutor(ctx context.Context, withOpLists bool) (*full.Executor, *full.
 	}
 	table, err := fetch(ctx, client)
 	if err != nil {
-		return nil, nil, fmt.Errorf("the full tool table is read from the running app's API at %s (is Anytype running with the API on, and are you paired — loom auth?): %w", client.BaseURL, err)
+		return nil, nil, fmt.Errorf("the full tool table is read from the running app's API at %s (is Loom running with the API on, and are you paired — loom auth?): %w", client.BaseURL, err)
 	}
 	return full.NewExecutor(client, table), table, nil
 }

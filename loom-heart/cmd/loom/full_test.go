@@ -231,7 +231,7 @@ func TestRunAPI(t *testing.T) {
 
 		// then
 		assert.Equal(t, 1, code)
-		assert.Contains(t, stderr, "is Anytype running")
+		assert.Contains(t, stderr, "is Loom running")
 	})
 }
 

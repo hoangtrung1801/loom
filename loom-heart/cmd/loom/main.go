@@ -99,9 +99,13 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runAPI(argv[1:], stdin, stdout, stderr)
 	}
 
+	if verb == "serve" {
+		return runServe(argv[1:], stdin, stdout, stderr)
+	}
+
 	tool, ok := wrapper.ToolByVerb(verb)
 	if !ok {
-		fmt.Fprintf(stderr, "unknown verb %q — verbs: %s, api, auth, tools, mcp\n", verb, strings.Join(verbs(), ", "))
+		fmt.Fprintf(stderr, "unknown verb %q — verbs: %s, api, auth, serve, tools, mcp\n", verb, strings.Join(verbs(), ", "))
 		return 2
 	}
 
@@ -286,14 +290,15 @@ func verbs() []string {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "loom — task tools over the local Anytype API (v2)")
+	fmt.Fprintln(w, "loom — task tools over the local Loom API (v2)")
 	fmt.Fprintln(w, "\nusage: loom <verb> [--flag value …]")
 	fmt.Fprintln(w, "\nverbs:")
 	for _, t := range wrapper.Tools() {
 		fmt.Fprintf(w, "  %-15s %s\n", t.Verb(), firstSentence(t.Description))
 	}
 	fmt.Fprintf(w, "  %-15s %s\n", "api", "every API operation (all object kinds): list them, or run one — api <operation> [key=value … | JSON]")
-	fmt.Fprintf(w, "  %-15s %s\n", "auth", "pair with the running app and save an API key: auth [login] [--code 1234] | status | logout")
+	fmt.Fprintf(w, "  %-15s %s\n", "auth", "pair with the running app (or loom serve) and save an API key: auth [login] [--code 1234] | status | logout")
+	fmt.Fprintf(w, "  %-15s %s\n", "serve", "run Loom headless, synced through the any-sync network, and serve the API: serve --new | LOOM_MNEMONIC=… serve")
 	fmt.Fprintf(w, "  %-15s %s\n", "tools", "print the machine-readable tool manifest (JSON); --tier small|large|full")
 	fmt.Fprintf(w, "  %-15s %s\n", "mcp", "serve the tools over MCP stdio for AI agents; --tier small|large|full")
 	fmt.Fprintln(w, "\ncross-verb flags: --json, --dry-run, --if-match <etag>, --create-missing")
