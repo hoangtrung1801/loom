@@ -504,7 +504,7 @@ const ChatForm = forwardRef<RefProps, Props>((props, ref) => {
 		U.Common.clipboardCopy({
 			text: str,
 			html: Mark.toHtml(res.text, res.marks),
-			anytype: {
+			loom: {
 				range,
 				blocks: [ block ],
 			},

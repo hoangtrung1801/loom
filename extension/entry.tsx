@@ -11,9 +11,9 @@ declare global {
 		isExtension: boolean;
 		Electron: any;
 		$: any;
-		Anytype: any;
+		Loom: any;
 		isWebVersion: boolean;
-		AnytypeGlobalConfig: any;
+		LoomGlobalConfig: any;
 	}
 };
 
@@ -30,7 +30,7 @@ window.Electron = {
 	getTheme: () => '',
 };
 
-window.Anytype = {
+window.Loom = {
 	Lib: {
 		C,
 		U,
@@ -38,7 +38,7 @@ window.Anytype = {
 	},
 };
 
-window.AnytypeGlobalConfig = { 
+window.LoomGlobalConfig = { 
 	emojiUrl: J.Extension.clipper.emojiUrl, 
 	menuBorderTop: 16, 
 	menuBorderBottom: 16,

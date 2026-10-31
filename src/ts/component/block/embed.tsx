@@ -86,7 +86,7 @@ const BlockEmbed = forwardRef<I.BlockRef, I.BlockComponent>((props, ref) => {
 	let appHtmlContent = '';
 	let appStateText = '';
 	let appStateBlockId = '';
-	if (processor === I.EmbedProcessor.AnytypeMiniApp) {
+	if (processor === I.EmbedProcessor.LoomMiniApp) {
 		const parent = S.Block.getParentLeaf(rootId, block.id);
 		if (parent) {
 			const codeSiblings = S.Block.getChildren(rootId, parent.id, (b: I.Block) => {
@@ -179,7 +179,7 @@ const BlockEmbed = forwardRef<I.BlockRef, I.BlockComponent>((props, ref) => {
 
 		if (node) {
 			const receiver = U.Dom.select('#receiver', node);
-			if (receiver && processor !== I.EmbedProcessor.AnytypeMiniApp) {
+			if (receiver && processor !== I.EmbedProcessor.LoomMiniApp) {
 				receiver.remove();
 			};
 		};
@@ -551,7 +551,7 @@ const BlockEmbed = forwardRef<I.BlockRef, I.BlockComponent>((props, ref) => {
 						ADD_ATTR: [
 							'frameborder', 'title', 'allow', 'allowfullscreen', 'loading', 'referrerpolicy', 'src',
 						],
-						ALLOWED_URI_REGEXP: /^(?:(?:ftp|https?|mailto|tel|callto|sms|cid|xmpp|xxx|anytype):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+						ALLOWED_URI_REGEXP: /^(?:(?:ftp|https?|mailto|tel|callto|sms|cid|xmpp|xxx|loom):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
 					};
 
 					const data: any = { 
@@ -613,17 +613,17 @@ const BlockEmbed = forwardRef<I.BlockRef, I.BlockComponent>((props, ref) => {
 						sanitizeParam.ADD_TAGS.push('script');
 					};
 
-					if (processor === I.EmbedProcessor.AnytypeMiniApp) {
+					if (processor === I.EmbedProcessor.LoomMiniApp) {
 						let parsedState: any = null;
 						if (appStateText) {
 							try {
 								parsedState = JSON.parse(appStateText);
 							} catch (e) {
-								console.warn('AnytypeMiniApp: invalid JSON state', e);
+								console.warn('LoomMiniApp: invalid JSON state', e);
 							};
 						};
 
-						data.anytypeMiniApp = {
+						data.loomMiniApp = {
 							html: appHtmlContent,
 							state: parsedState,
 						};
@@ -662,7 +662,7 @@ const BlockEmbed = forwardRef<I.BlockRef, I.BlockComponent>((props, ref) => {
 								break;
 							};
 
-							case 'anytypeMiniAppState': {
+							case 'loomMiniAppState': {
 								if (!appStateBlockId) {
 									break;
 								};
@@ -670,7 +670,7 @@ const BlockEmbed = forwardRef<I.BlockRef, I.BlockComponent>((props, ref) => {
 								try {
 									serialized = JSON.stringify(e.data.state, null, 2);
 								} catch (err) {
-									console.warn('AnytypeMiniApp: failed to serialize state', err);
+									console.warn('LoomMiniApp: failed to serialize state', err);
 									break;
 								};
 								S.Block.updateContent(rootId, appStateBlockId, { text: serialized });

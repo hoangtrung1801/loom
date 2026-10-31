@@ -269,7 +269,7 @@ class CommonStore {
 	};
 
 	get config (): I.AppConfig {
-		const config = window.AnytypeGlobalConfig || this.configObj || {};
+		const config = window.LoomGlobalConfig || this.configObj || {};
 
 		return {
 			...config,

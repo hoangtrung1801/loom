@@ -4,7 +4,7 @@
  * Thin wrapper around the User Timing API (performance.mark / performance.measure).
  * Marks and measures recorded here show up:
  *   - in the DevTools Performance panel (Timings track),
- *   - in Electron contentTracing output (blink.user_timing category) — see ANYTYPE_TRACE_STARTUP,
+ *   - in Electron contentTracing output (blink.user_timing category) — see LOOM_TRACE_STARTUP,
  * so the app's own boot milestones line up against the native flame chart and network waterfall.
  *
  * All names are namespaced with PREFIX so they're trivial to filter in the timeline.

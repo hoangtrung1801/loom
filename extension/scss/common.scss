@@ -1,6 +1,6 @@
-html.anytypeWebclipper-iframe, 
-html.anytypeWebclipper-popup,
-html.anytypeWebclipper-auth { 
+html.loomWebclipper-iframe, 
+html.loomWebclipper-popup,
+html.loomWebclipper-auth { 
 	@import "~scss/font";
 	@import "~scss/_mixins";
 
@@ -225,9 +225,9 @@ html.anytypeWebclipper-auth {
 }
 
 @media (prefers-color-scheme: dark) {
-	html.anytypeWebclipper-iframe,
-	html.anytypeWebclipper-popup,
-	html.anytypeWebclipper-auth {
+	html.loomWebclipper-iframe,
+	html.loomWebclipper-popup,
+	html.loomWebclipper-auth {
 		/* Text */
 		--color-text-primary: #e1e1e1;
 		--color-text-secondary: #a3a3a3;

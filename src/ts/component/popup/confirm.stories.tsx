@@ -97,7 +97,7 @@ export const IconUpdate: Story = {
 	args: {
 		...popupProps('confirm-icon-update', {
 			title: 'Update Available',
-			text: 'A new version of Anytype is ready to install. Restart to apply the update.',
+			text: 'A new version of Loom is ready to install. Restart to apply the update.',
 			iconParam: { name: 'popup/header/update', color: 'lime', size: 56 },
 			textConfirm: 'Restart Now',
 			textCancel: 'Later',

@@ -6,7 +6,7 @@ if (typeof globalThis.window === 'undefined') {
 };
 
 (globalThis as any).window.Electron = {};
-(globalThis as any).window.AnytypeGlobalConfig = {};
+(globalThis as any).window.LoomGlobalConfig = {};
 (globalThis as any).window.getSelection = () => ({});
 // Late-bound on purpose: binding the real timers here would make window.setTimeout invisible to
 // vi.useFakeTimers(), which replaces the globals afterwards

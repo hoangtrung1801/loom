@@ -10,11 +10,11 @@
 		body.appendChild(container);
 	};
 
-	container.id = [ 'anytypeWebclipper', 'container' ].join('-');
+	container.id = [ 'loomWebclipper', 'container' ].join('-');
 	container.appendChild(iframe);
 	container.appendChild(dimmer);
 
-	iframe.id = [ 'anytypeWebclipper', 'iframe' ].join('-');
+	iframe.id = [ 'loomWebclipper', 'iframe' ].join('-');
 	iframe.src = chrome.runtime.getURL('iframe/index.html');
 
 	dimmer.className = 'dimmer';

@@ -426,15 +426,15 @@ const Menu = forwardRef<RefProps, I.Menu>((props, ref) => {
 	};
 
 	const getBorderTop = () => {
-		return Number(window.AnytypeGlobalConfig?.menuBorderTop) || J.Size.header;
+		return Number(window.LoomGlobalConfig?.menuBorderTop) || J.Size.header;
 	};
 	
 	const getBorderBottom = () => {
-		return Number(window.AnytypeGlobalConfig?.menuBorderBottom) || J.Size.menuBorder;
+		return Number(window.LoomGlobalConfig?.menuBorderBottom) || J.Size.menuBorder;
 	};
 
 	const getBorderLeft = (isFixed) => {
-		return Number(window.AnytypeGlobalConfig?.menuBorderLeft) || J.Size.menuBorder;
+		return Number(window.LoomGlobalConfig?.menuBorderLeft) || J.Size.menuBorder;
 	};
 
 	const position = () => {

@@ -99,11 +99,11 @@
 						return;
 					};
 
-					// ── AnytypeMiniApp short-circuit ──────────────────────────────
+					// ── LoomMiniApp short-circuit ──────────────────────────────
 					// Receives { html, state } and injects the html into #root,
 					// re-creating <script> elements so React deps actually execute.
-					// State is exposed on window.__ANYTYPE_STATE__ before scripts run.
-					if (oe.data && oe.data.anytypeMiniApp) {
+					// State is exposed on window.__LOOM_STATE__ before scripts run.
+					if (oe.data && oe.data.loomMiniApp) {
 						blockId = oe.data.blockId;
 						processor = oe.data.processor;
 						isMiniApp = true;
@@ -118,13 +118,13 @@
 						htmlEl.addClass(`align${oe.data.align}`);
 
 						if (oe.data.allowIframeResize) {
-							if (window.__anytypeMiniAppResizeTimer__) {
-								clearInterval(window.__anytypeMiniAppResizeTimer__);
+							if (window.__loomMiniAppResizeTimer__) {
+								clearInterval(window.__loomMiniAppResizeTimer__);
 							};
-							window.__anytypeMiniAppResizeTimer__ = setInterval(resize, 300);
+							window.__loomMiniAppResizeTimer__ = setInterval(resize, 300);
 						};
 
-						injectAnytypeMiniApp(oe.data.anytypeMiniApp);
+						injectLoomMiniApp(oe.data.loomMiniApp);
 						return;
 					};
 					// ──────────────────────────────────────────────────────────────
@@ -316,20 +316,20 @@
 
 				let lastInjectedAppHtml = null;
 
-				function setupAnytypeApi () {
-					// Outbound bridge: React calls window.__ANYTYPE_API__.setState(next)
-					// to push a new state to the host. Anytype writes it into the JSON
+				function setupLoomApi () {
+					// Outbound bridge: React calls window.__LOOM_API__.setState(next)
+					// to push a new state to the host. Loom writes it into the JSON
 					// sibling block; on the echo back the state-only path runs and
-					// dispatches an 'anytype:state' CustomEvent, which the React app
+					// dispatches an 'loom:state' CustomEvent, which the React app
 					// listens to and uses to update its local mirror state.
 					//
-					// IMPORTANT: the React app's 'anytype:state' listener must NOT
+					// IMPORTANT: the React app's 'loom:state' listener must NOT
 					// call setState() — it should only update its local React state.
 					// That's the structural rule that prevents echo loops.
-					window.__ANYTYPE_API__ = {
+					window.__LOOM_API__ = {
 						setState: function (nextState) {
 							window.parent.postMessage({
-								type: 'anytypeMiniAppState',
+								type: 'loomMiniAppState',
 								state: nextState,
 								blockId: blockId,
 							}, '*');
@@ -337,17 +337,17 @@
 					};
 				};
 
-				function injectAnytypeMiniApp (payload) {
+				function injectLoomMiniApp (payload) {
 					const html = String((payload && payload.html) || '');
 					const state = (payload && payload.state) !== undefined ? payload.state : null;
 
 					// State-only fast path: html unchanged → don't tear down React.
-					// Just update window.__ANYTYPE_STATE__ and dispatch an event so
+					// Just update window.__LOOM_STATE__ and dispatch an event so
 					// the user's React app can update its local state without losing
 					// scroll position, focus, or any non-canonical UI state.
 					if (html === lastInjectedAppHtml) {
-						window.__ANYTYPE_STATE__ = state;
-						window.dispatchEvent(new CustomEvent('anytype:state', { detail: state }));
+						window.__LOOM_STATE__ = state;
+						window.dispatchEvent(new CustomEvent('loom:state', { detail: state }));
 						return;
 					};
 
@@ -356,8 +356,8 @@
 					// measures fresh.
 					height = 0;
 					lastInjectedAppHtml = html;
-					window.__ANYTYPE_STATE__ = state;
-					setupAnytypeApi();
+					window.__LOOM_STATE__ = state;
+					setupLoomApi();
 
 					// Wipe previous content + scripts so re-injects start clean.
 					scripts.html('');
@@ -405,7 +405,7 @@
 							s.async = false;
 							s.onload = next;
 							s.onerror = function () {
-								console.warn('AnytypeMiniApp: script load failed', old.src);
+								console.warn('LoomMiniApp: script load failed', old.src);
 								next();
 							};
 							scriptsEl.appendChild(s);

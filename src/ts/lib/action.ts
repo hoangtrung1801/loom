@@ -684,7 +684,7 @@ class Action {
 			U.Common.clipboardCopy({
 				text: message.textSlot,
 				html: message.htmlSlot,
-				anytype: {
+				loom: {
 					range,
 					blocks: (message.anySlot || []).map(Mapper.From.Block),
 				},

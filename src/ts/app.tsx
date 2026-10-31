@@ -28,8 +28,8 @@ import 'react-pdf/dist/Page/TextLayer.css';
 import 'scss/common.scss';
 
 const memoryHistory = hs.createMemoryHistory;
-const history = (window as any).__anytypeHistory || memoryHistory();
-(window as any).__anytypeHistory = history;
+const history = (window as any).__loomHistory || memoryHistory();
+(window as any).__loomHistory = history;
 const electron = U.Common.getElectron();
 const isPackaged = electron.isPackaged;
 
@@ -38,11 +38,11 @@ declare global {
 		isExtension: boolean;
 		$: any;
 		Electron: any;
-		Anytype: any;
+		Loom: any;
 
 		isWebVersion: boolean;
 		Config: any;
-		AnytypeGlobalConfig: I.AppConfig;
+		LoomGlobalConfig: I.AppConfig;
 	}
 };
 
@@ -50,7 +50,7 @@ declare global {
 };
 
 if (!isPackaged) {
-	window.Anytype = {
+	window.Loom = {
 		Lib: {
 			I,
 			C,
@@ -410,7 +410,7 @@ const App: FC = () => {
 		};
 
 		if (css && !config.disableCss) {
-			U.Dom.injectCss('anytype-custom-css', css);
+			U.Dom.injectCss('loom-custom-css', css);
 		};
 
 		U.Dom.addClass(body, 'over');

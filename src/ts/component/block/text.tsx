@@ -1508,11 +1508,11 @@ const BlockText = forwardRef<I.BlockRef, Props>((props, ref) => {
 		const data: any = {
 			text: U.String.normalizeLineEndings(String(cb?.getData('text/plain') || '')),
 			html: String(cb?.getData('text/html') || ''),
-			anytype: JSON.parse(String(cb?.getData('application/json') || '{}')),
+			loom: JSON.parse(String(cb?.getData('application/json') || '{}')),
 			files: [],
 		};
 		
-		data.anytype.range = data.anytype.range || { from: 0, to: 0 };
+		data.loom.range = data.loom.range || { from: 0, to: 0 };
 
 		const files = cb?.items ? U.Common.getDataTransferFiles(cb.items) : [];
 		const pasteWithData = (pasteData: any) => {
@@ -1567,7 +1567,7 @@ const BlockText = forwardRef<I.BlockRef, Props>((props, ref) => {
 			U.Common.clipboardCopy({
 				text,
 				html: message.htmlSlot,
-				anytype: {
+				loom: {
 					range: { from: 0, to: length },
 					blocks: [ block ],
 				},

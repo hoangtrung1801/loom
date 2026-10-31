@@ -1009,12 +1009,12 @@ const extractMarks = (child: TextNode, start: number, end: number): I.Mark[] => 
 
 	const style = child.getStyle();
 	if (style) {
-		const colorMatch = style.match(/--anytype-color:\s*([^;]+)/);
+		const colorMatch = style.match(/--loom-color:\s*([^;]+)/);
 		if (colorMatch) {
 			marks.push({ type: I.MarkType.Color, range: { ...range }, param: colorMatch[1].trim() });
 		};
 
-		const bgColorMatch = style.match(/--anytype-bgcolor:\s*([^;]+)/);
+		const bgColorMatch = style.match(/--loom-bgcolor:\s*([^;]+)/);
 		if (bgColorMatch) {
 			marks.push({ type: I.MarkType.BgColor, range: { ...range }, param: bgColorMatch[1].trim() });
 		};
@@ -1435,14 +1435,14 @@ const createFormattedNodes = (text: string, marks: I.Mark[]): LexicalNode[] => {
 					case I.MarkType.Color: {
 						if (mark.param) {
 							styles.push(`color: var(--color-dark-${mark.param})`);
-							styles.push(`--anytype-color: ${mark.param}`);
+							styles.push(`--loom-color: ${mark.param}`);
 						};
 						break;
 					};
 					case I.MarkType.BgColor: {
 						if (mark.param) {
 							styles.push(`background-color: var(--color-light-${mark.param})`);
-							styles.push(`--anytype-bgcolor: ${mark.param}`);
+							styles.push(`--loom-bgcolor: ${mark.param}`);
 						};
 						break;
 					};
@@ -2607,7 +2607,7 @@ const PasteUrlPlugin = ({ rootId }: { rootId?: string }) => {
 					};
 				};
 
-				// HTML without anytype blocks: use BlockPreview to parse into blocks
+				// HTML without loom blocks: use BlockPreview to parse into blocks
 				const html = clipboardData.getData('text/html') || '';
 				if (html) {
 					event.preventDefault();

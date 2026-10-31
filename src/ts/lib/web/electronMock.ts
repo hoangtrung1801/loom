@@ -1,6 +1,6 @@
 /**
  * Web-compatible mock of the Electron API for browser mode.
- * This enables running Anytype in a standard web browser without Electron.
+ * This enables running Loom in a standard web browser without Electron.
  */
 
 /**
@@ -65,7 +65,7 @@ interface MockConfig {
 }
 
 class WebStorage {
-	private prefix = 'anytype_';
+	private prefix = 'loom_';
 
 	get(key: string): any {
 		try {
@@ -250,7 +250,7 @@ class ElectronMock {
 		});
 
 		handlers.set('setBadge', (args) => {
-			document.title = args[0] ? `(${args[0]}) Anytype` : 'Anytype';
+			document.title = args[0] ? `(${args[0]}) Loom` : 'Loom';
 			return true;
 		});
 
@@ -341,7 +341,7 @@ class ElectronMock {
 
 	private clearStorageAndReload(): true {
 		Object.keys(localStorage).forEach(key => {
-			if (key.startsWith('anytype_')) {
+			if (key.startsWith('loom_')) {
 				localStorage.removeItem(key);
 			}
 		});
@@ -365,7 +365,7 @@ class ElectronMock {
 	storeDelete = (key: string) => this.storage.delete(key);
 
 	// Get data path from URL params, localStorage, or window config
-	// This path must be writable by the anytypeHelper backend
+	// This path must be writable by the loomHelper backend
 	private getDataPath = (): string => {
 		// Check URL params first
 		const urlParams = new URLSearchParams(window.location.search);
@@ -375,14 +375,14 @@ class ElectronMock {
 		}
 
 		// Check localStorage
-		const storedPath = localStorage.getItem('anytype_dataPath');
+		const storedPath = localStorage.getItem('loom_dataPath');
 		if (storedPath) {
 			return storedPath;
 		}
 
 		// Check window config
-		if ((window as any).AnytypeGlobalConfig?.dataPath) {
-			return (window as any).AnytypeGlobalConfig.dataPath;
+		if ((window as any).LoomGlobalConfig?.dataPath) {
+			return (window as any).LoomGlobalConfig.dataPath;
 		}
 
 		// Default: use a path in user's home directory
@@ -392,8 +392,8 @@ class ElectronMock {
 
 	userPath = () => this.getDataPath();
 	tmpPath = () => '/tmp';
-	downloadPath = () => this.getDataPath() ? `${this.getDataPath()}/downloads` : '/tmp/anytype-web/downloads';
-	logPath = () => this.getDataPath() ? `${this.getDataPath()}/logs` : '/tmp/anytype-web/logs';
+	downloadPath = () => this.getDataPath() ? `${this.getDataPath()}/downloads` : '/tmp/loom-web/downloads';
+	logPath = () => this.getDataPath() ? `${this.getDataPath()}/logs` : '/tmp/loom-web/logs';
 	defaultPath = () => this.getDataPath();
 
 	dirName = (fp: string) => fp.substring(0, fp.lastIndexOf('/'));
@@ -426,8 +426,8 @@ class ElectronMock {
 	getGlobal = (key: string) => {
 		if (key === 'serverAddress') {
 			// Get gRPC-web proxy address from window config or env
-			// Note: anytypeHelper starts gRPC on port X and gRPC-web proxy on port X+1
-			return (window as any).AnytypeGlobalConfig?.serverAddress ||
+			// Note: loomHelper starts gRPC on port X and gRPC-web proxy on port X+1
+			return (window as any).LoomGlobalConfig?.serverAddress ||
 				(window as any).GRPC_SERVER_ADDRESS ||
 				'http://127.0.0.1:31008';
 		}

@@ -2390,8 +2390,8 @@ const EditorPage = forwardRef<I.BlockRef, Props>((props, ref) => {
 	};
 
 	const onPaste = (data: any) => {
-		data.anytype = data.anytype || {};
-		data.anytype.range = data.anytype.range || { from: 0, to: 0 };
+		data.loom = data.loom || {};
+		data.loom.range = data.loom.range || { from: 0, to: 0 };
 
 		let { focused, range } = focus.state;
 
@@ -2422,7 +2422,7 @@ const EditorPage = forwardRef<I.BlockRef, Props>((props, ref) => {
 		let from = 0;
 		let to = 0;
 
-		C.BlockPaste(rootId, focused, range, selection?.get(I.SelectType.Block, true) || [], data.anytype.range.to > 0, { ...data, anytype: data.anytype.blocks }, '', (message: any) => {
+		C.BlockPaste(rootId, focused, range, selection?.get(I.SelectType.Block, true) || [], data.loom.range.to > 0, { ...data, loom: data.loom.blocks }, '', (message: any) => {
 			if (message.error.code) {
 				return;
 			};
@@ -2703,10 +2703,10 @@ const EditorPage = forwardRef<I.BlockRef, Props>((props, ref) => {
 		const data: any = {
 			text: U.String.normalizeLineEndings(String(cb.getData('text/plain') || '')),
 			html: String(cb.getData('text/html') || ''),
-			anytype: JSON.parse(String(cb.getData('application/json') || '{}')),
+			loom: JSON.parse(String(cb.getData('application/json') || '{}')),
 			files: [],
 		};
-		data.anytype.range = data.anytype.range || { from: 0, to: 0 };
+		data.loom.range = data.loom.range || { from: 0, to: 0 };
 		return data;
 	};
 

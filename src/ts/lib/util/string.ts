@@ -12,7 +12,7 @@ const FORBIDDEN_TAGS = [
 ];
 const DOMAIN_REGEX = /^(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/)?(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[A-Za-z]{2,}(?::\d{1,5})?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?$/;
 const URL_REGEX = /^(?:([a-zA-Z][a-zA-Z0-9+.-]*):([^\s]+)|(?:(?:[^:@\s]+(?::[^@\s]*)?@)?(?:localhost|(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)|(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[A-Za-z]{2,}))(?::\d{1,5})?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?)$/i;
-const ALLOWED_PROTOCOLS = [ 'mailto', 'tel', 'anytype' ];
+const ALLOWED_PROTOCOLS = [ 'mailto', 'tel', 'loom' ];
 const SCHEME_REGEX = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
 // Intentionally tight allowlist of TLDs eligible for auto-linking bare (scheme-less)

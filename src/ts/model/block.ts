@@ -28,7 +28,7 @@ const ContentModel = {
 };
 
 /**
- * Block is the fundamental content unit in Anytype documents.
+ * Block is the fundamental content unit in Loom documents.
  *
  * Every piece of content - text, images, links, embeds, tables, etc. -
  * is represented as a block. Blocks form a tree structure where some

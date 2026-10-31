@@ -55,7 +55,7 @@ const ElectronMock = {
 
 // Install globally
 (window as any).Electron = ElectronMock;
-(window as any).AnytypeGlobalConfig = {};
+(window as any).LoomGlobalConfig = {};
 (window as any).isExtension = false;
 
 export default ElectronMock;
