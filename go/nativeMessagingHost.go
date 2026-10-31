@@ -1,6 +1,6 @@
 /*
-- This is the native messaging host for the AnyType browser extension.
-- It enables the web extension to find the open ports of the AnyType application and to start it if it is not running.
+- This is the native messaging host for the Loom browser extension.
+- It enables the web extension to find the open ports of the Loom application and to start it if it is not running.
 - It is installed by the Electron script found in electron/js/lib/installNativeMessagingHost.js
 */
 
@@ -75,10 +75,10 @@ func contains(s []string, e string) bool {
 
 // CORE LOGIC
 
-// Windows: returns a list of open ports for all instances of anytypeHelper.exe found using cli utilities tasklist, netstat and findstr
-// Windows: returns a list of open ports for all instances of anytypeHelper.exe found using cli utilities tasklist, netstat and findstr
+// Windows: returns a list of open ports for all instances of loomHelper.exe found using cli utilities tasklist, netstat and findstr
+// Windows: returns a list of open ports for all instances of loomHelper.exe found using cli utilities tasklist, netstat and findstr
 func getOpenPortsWindows() (map[string][]string, error) {
-	appName := "anytypeHelper.exe"
+	appName := "loomHelper.exe"
 	stdout, err := execCommand(`tasklist`)
 	if err != nil {
 		return nil, err
@@ -183,10 +183,10 @@ func isGrpcWebServer(port string) (bool, error) {
 	return false, fmt.Errorf("unexpected content type: %s", resp.Header.Get("Content-Type"))
 }
 
-// MacOS and Linux: returns a list of all open ports for all instances of anytype found using cli utilities lsof and grep
+// MacOS and Linux: returns a list of all open ports for all instances of loom found using cli utilities lsof and grep
 func getOpenPortsUnix() (map[string][]string, error) {
 	// execute the command
-	appName := "anytype"
+	appName := "loom"
 	stdout, err := execCommand(`lsof -i -P -n | grep LISTEN | grep "` + appName + `"`)
 	Trace.Print(`lsof -i -P -n | grep LISTEN | grep "` + appName + `"`)
 	if err != nil {
@@ -221,7 +221,7 @@ func getOpenPortsUnix() (map[string][]string, error) {
 	return result, nil
 }
 
-// Windows, MacOS and Linux: returns a list of all open ports for all instances of anytype found using cli utilities
+// Windows, MacOS and Linux: returns a list of all open ports for all instances of loom found using cli utilities
 func getOpenPorts() (map[string][]string, error) {
 	// Get Platform
 	platform := runtime.GOOS
@@ -288,7 +288,7 @@ func getOpenPorts() (map[string][]string, error) {
 	return ports, nil
 }
 
-// Windows, MacOS and Linux: Starts AnyType as a detached process and returns the PID
+// Windows, MacOS and Linux: Starts Loom as a detached process and returns the PID
 func startApplication() (int, error) {
 	platform := runtime.GOOS
 	executablePath, err := os.Executable()
@@ -298,11 +298,11 @@ func startApplication() (int, error) {
 	// /Resources/app.asar.unpacked/dist/executable
 	appPath := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(executablePath))))
 	if platform == "windows" {
-		appPath = filepath.Join(appPath, "Anytype.exe")
+		appPath = filepath.Join(appPath, "Loom.exe")
 	} else if platform == "darwin" {
-		appPath = filepath.Join(appPath, "MacOS", "Anytype")
+		appPath = filepath.Join(appPath, "MacOS", "Loom")
 	} else if platform == "linux" {
-		appPath = filepath.Join(appPath, "anytype")
+		appPath = filepath.Join(appPath, "loom")
 	} else {
 		return 0, errors.New("unsupported platform")
 	}
@@ -363,7 +363,7 @@ func Init(traceHandle io.Writer, errorHandle io.Writer) {
 
 func main() {
 	// create temp file for logging
-	tmpFileName := filepath.Join(os.TempDir(), "anytype-nmh.log")
+	tmpFileName := filepath.Join(os.TempDir(), "loom-nmh.log")
 	file, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		Init(os.Stdout, os.Stderr)

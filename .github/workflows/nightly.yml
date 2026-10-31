@@ -293,12 +293,12 @@ jobs:
           jq \
             --tab \
             '
-            .name = "anytype-dev" |
+            .name = "loom-dev" |
             .version = "${{ needs.nightly-settings.outputs.app_version }}" |
-            .description = "Anytype Nightly" |
-            .build.appId = "com.anytype.anytype-dev" |
-            .build.productName = "Anytype Nightly" |
-            .build.protocols[0].name = "Anytype Nightly" |
+            .description = "Loom Nightly" |
+            .build.appId = "com.loom.app-dev" |
+            .build.productName = "Loom Nightly" |
+            .build.protocols[0].name = "Loom Nightly" |
             .build.mac.publish |= map(del(.url)) |
             .build.mac.publish[0].provider = "s3" |
             .build.mac.publish[0].bucket = "${{ env.S3_BUCKET }}" |
@@ -307,8 +307,8 @@ jobs:
             .build.win.publish[0].provider = "s3" |
             .build.win.publish[0].bucket = "${{ env.S3_BUCKET }}" |
             .build.win.publish[0].region = "${{ secrets.NIGHTLY_AWS_REGION }}" |
-            .build.linux.description = "Anytype Nightly" |
-            .build.linux.desktop.entry.Name = "Anytype Nightly" |
+            .build.linux.description = "Loom Nightly" |
+            .build.linux.desktop.entry.Name = "Loom Nightly" |
             .build.linux.publish |= map(del(.url)) |
             .build.linux.publish[0].provider = "s3" |
             .build.linux.publish[0].bucket = "${{ env.S3_BUCKET }}" |

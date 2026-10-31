@@ -112,7 +112,7 @@ if [[ "$OS" =~ ^windows-.*$ ]]; then
     echo "Done"
 
     echo "Moving... "
-    mv -fv grpc-server.exe "$FOLDER/anytypeHelper.exe"
+    mv -fv grpc-server.exe "$FOLDER/loomHelper.exe"
 else
     echo -n "Uncompressing... "
     tar -zxf $FILE || exit 1
@@ -121,7 +121,7 @@ else
     echo "Moving... "
     rm -rf "$FOLDER"
     mkdir -p "$FOLDER"
-    mv -fv grpc-server "$FOLDER/anytypeHelper"
+    mv -fv grpc-server "$FOLDER/loomHelper"
 fi
 
 rm -rf dist/lib/pb

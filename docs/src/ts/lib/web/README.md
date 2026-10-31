@@ -5,29 +5,29 @@ Run anytype-ts in a browser without Electron for development and testing.
 ## Quick Start
 
 ```bash
-# Start web mode (automatically starts anytypeHelper and opens browser)
+# Start web mode (automatically starts loomHelper and opens browser)
 bun run start:web
 ```
 
 That's it! The script will:
-1. Start `anytypeHelper` with gRPC-web proxy (auto-assigned ports)
+1. Start `loomHelper` with gRPC-web proxy (auto-assigned ports)
 2. Start the Vite dev server
 3. Open your browser with the correct URL
 
 ## Using External Server
 
-If you're running `anytypeHelper` separately (e.g., for debugging):
+If you're running `loomHelper` separately (e.g., for debugging):
 
 ```bash
 # Use an external gRPC-web server
-ANYTYPE_USE_SIDE_SERVER=http://127.0.0.1:31008 bun run start:web
+LOOM_USE_SIDE_SERVER=http://127.0.0.1:31008 bun run start:web
 ```
 
 ## Environment Variables
 
 | Variable                   | Description                        | Default                           |
 |----------------------------|------------------------------------|-----------------------------------|
-| `ANYTYPE_USE_SIDE_SERVER`  | External gRPC-web server URL       | (starts anytypeHelper)            |
+| `LOOM_USE_SIDE_SERVER`  | External gRPC-web server URL       | (starts loomHelper)            |
 | `WEB_PORT`                 | Dev server port                    | `9090`                            |
 | `WEB_DATA_PATH`            | Data storage path for backend      | OS app data (see below)           |
 
@@ -52,7 +52,7 @@ Browser (localhost:9090)
     |       |
     |       +-- electronMock.ts (mocks Electron API)
     |
-    +-- gRPC-web --> anytypeHelper (auto-assigned port)
+    +-- gRPC-web --> loomHelper (auto-assigned port)
 ```
 
 ## URL Parameters

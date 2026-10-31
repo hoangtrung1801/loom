@@ -72,8 +72,8 @@ if [[ "$FROM_DIST" == true ]]; then
 	fi
 else
 	# Local mode: use anytype-heart repo. HEART_DIR overrides the default checkout,
-	# with ANYTYPE_HEART_PATH supported as a fallback for existing worktrees.
-	HEART_DIR="${HEART_DIR:-${ANYTYPE_HEART_PATH:-$ROOT_DIR/anytype-heart}}"
+	# with LOOM_HEART_PATH supported as a fallback for existing worktrees.
+	HEART_DIR="${HEART_DIR:-${LOOM_HEART_PATH:-$ROOT_DIR/anytype-heart}}"
 	if [[ ! -d "$HEART_DIR" ]]; then
 		echo "Error: anytype-heart repo not found at $HEART_DIR"
 		exit 1
