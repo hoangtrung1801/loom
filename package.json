@@ -1,7 +1,7 @@
 {
-	"name": "anytype",
+	"name": "loom",
 	"version": "0.57.4",
-	"description": "Anytype",
+	"description": "Loom",
 	"main": "electron.js",
 	"scripts": {
 		"precommit": "bunx lint-staged",
@@ -212,10 +212,10 @@
 		"afterPack": "./electron/hook/afterpack.js",
 		"appId": "com.anytype.anytype",
 		"compression": "normal",
-		"productName": "Anytype",
+		"productName": "Loom",
 		"protocols": [
 			{
-				"name": "Anytype",
+				"name": "Loom",
 				"role": "Editor",
 				"schemes": [
 					"anytype"
@@ -1146,7 +1146,7 @@
 		"linux": {
 			"icon": "electron/img/icons",
 			"category": "Utility",
-			"executableName": "anytype",
+			"executableName": "loom",
 			"executableArgs": [
 				"--ozone-platform-hint=auto"
 			],
@@ -1156,7 +1156,7 @@
 				"rpm",
 				"tar.gz"
 			],
-			"description": "Anytype",
+			"description": "Loom",
 			"publish": [
 				{
 					"provider": "generic",
@@ -1167,14 +1167,14 @@
 				"entry": {
 					"Categories": "Utility;Office;Calendar;ProjectManagement;",
 					"Keywords": "project management;",
-					"StartupWMClass": "anytype",
+					"StartupWMClass": "loom",
 					"MimeType": "x-scheme-handler/anytype;"
 				}
 			},
 			"extraFiles": [
 				{
-					"from": "anytype-xwayland.desktop",
-					"to": "anytype-xwayland.desktop"
+					"from": "loom-xwayland.desktop",
+					"to": "loom-xwayland.desktop"
 				}
 			]
 		},

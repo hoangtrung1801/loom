@@ -333,39 +333,39 @@ class Util {
 		const home = process.env.HOME || '';
 		const dataHome = process.env.XDG_DATA_HOME || path.join(home, '.local', 'share');
 		const applicationsDir = path.join(dataHome, 'applications');
-		const desktopFilePath = path.join(applicationsDir, 'anytype.desktop');
+		const desktopFilePath = path.join(applicationsDir, 'loom.desktop');
 		const execPath = process.env.APPIMAGE || process.execPath;
 
 		const content = [
 			'[Desktop Entry]',
-			'Name=Anytype',
+			'Name=Loom',
 			'Comment=Project management and knowledge workspace',
 			`Exec="${execPath}" --ozone-platform-hint=auto %u`,
 			'Terminal=false',
 			'Type=Application',
-			'Icon=anytype',
+			'Icon=loom',
 			'Categories=Utility;Office;Calendar;ProjectManagement;',
-			'StartupWMClass=anytype',
+			'StartupWMClass=loom',
 			'Keywords=project management;',
 			'MimeType=x-scheme-handler/anytype;',
 		].join('\n');
 
 		const xwaylandContent = [
 			'[Desktop Entry]',
-			'Name=Anytype (XWayland)',
+			'Name=Loom (XWayland)',
 			'Comment=Project management and knowledge workspace (XWayland mode)',
 			`Exec="${execPath}" --ozone-platform=x11 %u`,
 			'Terminal=false',
 			'Type=Application',
-			'Icon=anytype',
+			'Icon=loom',
 			'Categories=Utility;Office;Calendar;ProjectManagement;',
-			'StartupWMClass=anytype',
+			'StartupWMClass=loom',
 			'Keywords=project management;',
 			'MimeType=x-scheme-handler/anytype;',
 			'NoDisplay=true',
 		].join('\n');
 
-		const xwaylandFilePath = path.join(applicationsDir, 'anytype-xwayland.desktop');
+		const xwaylandFilePath = path.join(applicationsDir, 'loom-xwayland.desktop');
 
 		try {
 			fs.mkdirSync(applicationsDir, { recursive: true });
@@ -373,7 +373,7 @@ class Util {
 			if (!fs.existsSync(desktopFilePath)) {
 				fs.writeFileSync(desktopFilePath, content, 'utf-8');
 
-				execFile('xdg-mime', [ 'default', 'anytype.desktop', 'x-scheme-handler/anytype' ], (err: any) => {
+				execFile('xdg-mime', [ 'default', 'loom.desktop', 'x-scheme-handler/anytype' ], (err: any) => {
 					if (err) {
 						this.log('info', `xdg-mime default failed: ${err.message}`);
 					};

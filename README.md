@@ -1,4 +1,4 @@
-# Anytype Desktop
+# Loom Desktop
 
 > **Local‑first, peer‑to‑peer & end‑to‑end‑encrypted knowledge OS for macOS, Windows & Linux.**
 
@@ -7,7 +7,7 @@
 [![Crowdin](https://badges.crowdin.net/anytype-desktop/localized.svg)](https://crowdin.com/project/anytype-desktop)
 [![License](https://img.shields.io/badge/license-ASAL-1.0-blue.svg)](LICENSE.md)
 
-Anytype is a **personal knowledge base**—your digital brain—that lets you gather, connect and remix all kinds of information. Create pages, tasks, wikis, journals—even entire apps—and *define your own data model* while your data stays **offline‑first, private and encrypted** across devices.
+Loom is a **personal knowledge base**—your digital brain—that lets you gather, connect and remix all kinds of information. Create pages, tasks, wikis, journals—even entire apps—and *define your own data model* while your data stays **offline‑first, private and encrypted** across devices.
 
 
 ## ✨ Key Features
