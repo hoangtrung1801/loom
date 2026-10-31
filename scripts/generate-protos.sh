@@ -5,6 +5,7 @@
 #   bash scripts/generate-protos.sh                          # use bundled loom-heart/
 #   HEART_DIR=../loom-heart_foo scripts/generate-protos.sh # use another checkout
 #   bash scripts/generate-protos.sh --from-dist              # use dist/lib/protos (CI)
+#   SKIP_HEART_BUILD=1 bash scripts/generate-protos.sh       # bindings only, do not build the helper
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -80,9 +81,14 @@ else
 	fi
 	echo "Using loom-heart at $HEART_DIR"
 
-	# Rebuild the JS dev binary from loom-heart, installing into this checkout
-	echo "Building loom-heart JS dev binary..."
-	(cd "$HEART_DIR" && make install-dev-js CLIENT_DESKTOP_PATH="$ROOT_DIR")
+	# Rebuild the JS dev binary from loom-heart, installing into this checkout.
+	# CI builds the helper itself and sets SKIP_HEART_BUILD=1 to only generate bindings.
+	if [[ -n "${SKIP_HEART_BUILD:-}" ]]; then
+		echo "SKIP_HEART_BUILD set: not building the loom-heart JS dev binary"
+	else
+		echo "Building loom-heart JS dev binary..."
+		(cd "$HEART_DIR" && make install-dev-js CLIENT_DESKTOP_PATH="$ROOT_DIR")
+	fi
 
 	# pb/protos/ — commands, events, changes, snapshot
 	mkdir -p "$PROTO_ROOT/pb/protos"
