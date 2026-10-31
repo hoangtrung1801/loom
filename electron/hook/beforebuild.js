@@ -19,7 +19,7 @@ exports.default = async function (context) {
 		return;
 	};
 
-	const files = [ 'anytypeHelper', 'anytypeHelper.exe' ];
+	const files = [ 'loomHelper', 'loomHelper.exe' ];
 
 	files.forEach(it => {
 		const src = `./${folder}/${it}`;

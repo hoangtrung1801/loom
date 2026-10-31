@@ -41,7 +41,7 @@ const statOrNull = (filePath: string): fs.Stats | null => {
  * Where opened files live: a scope of our own inside the system temp directory,
  * a folder per object.
  */
-export const openedRoot = (): string => path.join(app.getPath('temp'), 'anytype', 'open');
+export const openedRoot = (): string => path.join(app.getPath('temp'), 'loom', 'open');
 
 // How long a folder there is kept once nothing has landed in it. macOS purges
 // its own temp scope; Windows and Linux leave it to whoever filled it

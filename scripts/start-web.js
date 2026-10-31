@@ -10,7 +10,7 @@ const stdoutWebProxyPrefix = 'gRPC Web proxy started at: ';
 const winShutdownStdinMessage = 'shutdown\n';
 
 const webPort = process.env.WEB_PORT || 3030;
-const grpcWebAddr = process.env.ANYTYPE_GRPCWEB_ADDR || '127.0.0.1:31008';
+const grpcWebAddr = process.env.LOOM_GRPCWEB_ADDR || '127.0.0.1:31008';
 const openBrowserAuto = process.env.WEB_OPEN_BROWSER === '1' || process.env.WEB_OPEN_BROWSER === 'true';
 
 // Use the same Application Support / AppData folder as Electron (electron/ts/userData.ts)
@@ -55,7 +55,7 @@ const HELPER_STARTUP_TIMEOUT_MS = 30000;
 
 function startHelper() {
 	return new Promise((resolve, reject) => {
-		const sideServer = process.env.ANYTYPE_USE_SIDE_SERVER;
+		const sideServer = process.env.LOOM_USE_SIDE_SERVER;
 
 		if (sideServer) {
 			console.log(`[Web] Using external server: ${sideServer}`);
@@ -63,7 +63,7 @@ function startHelper() {
 			return;
 		}
 
-		let binPath = path.join(__dirname, '..', 'dist', 'anytypeHelper');
+		let binPath = path.join(__dirname, '..', 'dist', 'loomHelper');
 
 		// Handle Windows executable extension
 		if (process.platform === 'win32' && !fs.existsSync(binPath)) {
@@ -71,12 +71,12 @@ function startHelper() {
 		}
 
 		if (!fs.existsSync(binPath)) {
-			console.error(`[Web] Error: anytypeHelper not found at ${binPath}`);
+			console.error(`[Web] Error: loomHelper not found at ${binPath}`);
 			console.error('[Web] Run ./update.sh to download the middleware first');
 			process.exit(1);
 		}
 
-		console.log('[Web] Starting anytypeHelper...');
+		console.log('[Web] Starting loomHelper...');
 
 		let resolved = false;
 		let timeoutId = null;
@@ -88,7 +88,7 @@ function startHelper() {
 			}
 		};
 
-		// No ANYTYPE_PARENT_LIFELINE here: a browser page can never hold the parent
+		// No LOOM_PARENT_LIFELINE here: a browser page can never hold the parent
 		// secret that opting in makes the helper wait for, so web mode would pay the
 		// wait on every start and stay permissive anyway. The cost is that the helper
 		// no longer dies on EOF, which is what cleanup() below has to make up for.
@@ -102,7 +102,7 @@ function startHelper() {
 		timeoutId = setTimeout(() => {
 			if (!resolved) {
 				resolved = true;
-				console.error(`[Web] Timeout: anytypeHelper did not start within ${HELPER_STARTUP_TIMEOUT_MS / 1000}s`);
+				console.error(`[Web] Timeout: loomHelper did not start within ${HELPER_STARTUP_TIMEOUT_MS / 1000}s`);
 				if (helperProcess) {
 					helperProcess.kill('SIGTERM');
 				}
@@ -114,7 +114,7 @@ function startHelper() {
 			cleanup();
 			if (!resolved) {
 				resolved = true;
-				console.error('[Web] Failed to start anytypeHelper:', err.toString());
+				console.error('[Web] Failed to start loomHelper:', err.toString());
 				reject(err);
 			}
 		});
@@ -144,11 +144,11 @@ function startHelper() {
 			cleanup();
 			if (!resolved) {
 				resolved = true;
-				const msg = `anytypeHelper exited unexpectedly with code ${code}`;
+				const msg = `loomHelper exited unexpectedly with code ${code}`;
 				console.error(`[Web] ${msg}`);
 				reject(new Error(msg));
 			} else {
-				console.error(`[Web] anytypeHelper crashed with code ${code}, shutting down`);
+				console.error(`[Web] loomHelper crashed with code ${code}, shutting down`);
 				process.exit(1);
 			}
 			helperProcess = null;
@@ -272,7 +272,7 @@ process.on('exit', cleanup);
 
 async function main() {
 	try {
-		console.log('[Web] Anytype Web Mode');
+		console.log('[Web] Loom Web Mode');
 		console.log('[Web] ==================');
 
 		const serverAddress = await startHelper();

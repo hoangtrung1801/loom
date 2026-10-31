@@ -25,7 +25,7 @@ const write = (content: string): string => {
 };
 
 beforeEach(() => {
-	dir = fs.mkdtempSync(path.join(os.tmpdir(), 'anytype-checksum-'));
+	dir = fs.mkdtempSync(path.join(os.tmpdir(), 'loom-checksum-'));
 });
 
 afterEach(() => {

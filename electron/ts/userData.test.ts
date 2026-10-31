@@ -20,7 +20,7 @@ const make = (name: string, files: Record<string, string>): string => {
 const read = (...parts: string[]): string => fs.readFileSync(path.join(appData, ...parts), 'utf8');
 
 beforeEach(() => {
-	appData = fs.mkdtempSync(path.join(os.tmpdir(), 'anytype-userdata-'));
+	appData = fs.mkdtempSync(path.join(os.tmpdir(), 'loom-userdata-'));
 });
 
 afterEach(() => {

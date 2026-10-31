@@ -3,7 +3,7 @@
 	let ports = [];
 	let isInitMenu = false;
 
-	const native = chrome.runtime.connectNative('com.anytype.desktop');
+	const native = chrome.runtime.connectNative('com.loom.desktop');
 
 	native.postMessage({ type: 'getPorts' });
 
@@ -90,7 +90,7 @@
 
 		chrome.contextMenus.create({
 			id: 'webclipper',
-			title: 'Anytype Web Clipper',
+			title: 'Loom Web Clipper',
 			contexts: [ 'selection' ]
 		});
 

@@ -3,7 +3,7 @@ import path from 'path';
 import { isTrustedUrl, isExternalUrlAllowed } from './trustedUrl';
 
 const dev = { isDevelopment: true, port: '8080', appPath: '/app', isWindows: false };
-const root = path.resolve(path.sep, 'Applications', 'Anytype.app', 'Contents', 'Resources');
+const root = path.resolve(path.sep, 'Applications', 'Loom.app', 'Contents', 'Resources');
 const appPath = path.join(root, 'app.asar');
 const prod = { isDevelopment: false, port: '8080', appPath, isWindows: false };
 const fileUrl = (...parts: string[]) => 'file://' + path.join(...parts);
@@ -48,15 +48,15 @@ describe('isTrustedUrl', () => {
 		});
 
 		it('accepts install paths containing a pipe', () => {
-			const p = path.join(root, 'Anytype|Beta', 'app.asar');
+			const p = path.join(root, 'Loom|Beta', 'app.asar');
 
 			expect(isTrustedUrl(fileUrl(p, 'dist', 'index.html').replace('|', '%7C'), { ...prod, appPath: p })).toBe(true);
 			expect(isTrustedUrl(fileUrl(p, 'dist', 'index.html'), { ...prod, appPath: p })).toBe(true);
 		});
 
 		it('accepts UNC installs parsed with the server as host', () => {
-			const p = '\\\\server\\share\\Anytype\\app.asar';
-			const chromium = 'file://server/share/Anytype/app.asar/dist/tabs.html';
+			const p = '\\\\server\\share\\Loom\\app.asar';
+			const chromium = 'file://server/share/Loom/app.asar/dist/tabs.html';
 
 			// Only meaningful with Windows path semantics
 			if (path.sep === '\\') {
@@ -92,7 +92,7 @@ describe('isExternalUrlAllowed', () => {
 		expect(isExternalUrlAllowed('https://example.com/a?b=1')).toBe(true);
 		expect(isExternalUrlAllowed('http://example.com')).toBe(true);
 		expect(isExternalUrlAllowed('mailto:a@example.com')).toBe(true);
-		expect(isExternalUrlAllowed('anytype://object?objectId=1&spaceId=2')).toBe(true);
+		expect(isExternalUrlAllowed('loom://object?objectId=1&spaceId=2')).toBe(true);
 	});
 
 	it('rejects native protocol handlers and garbage', () => {

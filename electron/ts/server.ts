@@ -7,7 +7,7 @@ import Util from './util';
 
 const stdoutWebProxyPrefix = 'gRPC Web proxy started at: ';
 const winShutdownStdinMessage = 'shutdown\n';
-const parentLifelineEnv = 'ANYTYPE_PARENT_LIFELINE';
+const parentLifelineEnv = 'LOOM_PARENT_LIFELINE';
 const parentLifelineStdin = 'stdin';
 // The helper requires this value on the account-bootstrap RPCs. It travels on
 // the stdin pipe, the one channel only its parent holds: not in the process
@@ -82,7 +82,7 @@ export class Server {
 			// stop will resolve immediately in case child process is not running
 			this.stop().then((stopped) => {
 				if (!stopped) {
-					const err = new Error('Failed to stop the previous Anytype helper process');
+					const err = new Error('Failed to stop the previous Loom helper process');
 
 					this.readyReject?.(err);
 					reject(err);
@@ -94,7 +94,7 @@ export class Server {
 
 				try {
 					if (!process.stdout.isTTY) {
-						env['GOLOG_FILE'] = path.join(logPath, `anytype_${Util.dateForFile()}.log`);
+						env['GOLOG_FILE'] = path.join(logPath, `loom_${Util.dateForFile()}.log`);
 					};
 
 					this.cp = childProcess.spawn(binPath, [ '127.0.0.1:0', '127.0.0.1:0' ], {
@@ -191,7 +191,7 @@ export class Server {
 						if (this.stopTriggered) {
 							resolve(false);
 						} else {
-							const err = new Error('Anytype helper exited before it was ready');
+							const err = new Error('Loom helper exited before it was ready');
 
 							this.readyReject?.(err);
 							reject(err);
@@ -209,7 +209,7 @@ export class Server {
 						console.log('[Server]: Failed to save log file', log);
 					};
 
-					dialog.showErrorBox('Anytype helper crashed', 'You will be redirected to the crash log file. You can send it to Anytype developers by creating issue at https://community.anytype.io');
+					dialog.showErrorBox('Loom helper crashed', 'You will be redirected to the crash log file. You can send it to Loom developers by creating issue at https://community.anytype.io');
 					shell.showItemInFolder(log);
 
 					app.exit(0);

@@ -58,7 +58,7 @@ describe('PowerStateTracker', () => {
 describe('parseDropList', () => {
 
 	it('reads the switch in every build', () => {
-		expect(Array.from(parseDropList({}, [ 'anytype', `${DROP_SWITCH}suspend,resume` ], true))).toEqual([ 'suspend', 'resume' ]);
+		expect(Array.from(parseDropList({}, [ 'loom', `${DROP_SWITCH}suspend,resume` ], true))).toEqual([ 'suspend', 'resume' ]);
 		expect(Array.from(parseDropList({}, [ `${DROP_SWITCH}Resume` ], false))).toEqual([ 'resume' ]);
 	});
 
@@ -70,11 +70,11 @@ describe('parseDropList', () => {
 	it('is empty by default and ignores unknown values', () => {
 		expect(parseDropList({}, [], false).size).toBe(0);
 		expect(parseDropList({ [DROP_ENV]: 'lock-screen' }, [], false).size).toBe(0);
-		expect(parseDropList({}, [ 'anytype://invite/?cid=--debug-drop-power-event=all' ], true).size).toBe(0);
+		expect(parseDropList({}, [ 'loom://invite/?cid=--debug-drop-power-event=all' ], true).size).toBe(0);
 	});
 
 	it('ignores arguments after a deeplink', () => {
-		expect(parseDropList({}, [ 'Anytype.exe', 'anytype://invite/?cid=x', `${DROP_SWITCH}all` ], true).size).toBe(0);
-		expect(parseDropList({}, [ 'Anytype.exe', `${DROP_SWITCH}suspend`, 'anytype://invite/?cid=x' ], true).size).toBe(1);
+		expect(parseDropList({}, [ 'Loom.exe', 'loom://invite/?cid=x', `${DROP_SWITCH}all` ], true).size).toBe(0);
+		expect(parseDropList({}, [ 'Loom.exe', `${DROP_SWITCH}suspend`, 'loom://invite/?cid=x' ], true).size).toBe(1);
 	});
 });

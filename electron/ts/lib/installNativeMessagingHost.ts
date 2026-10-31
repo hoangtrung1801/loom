@@ -3,7 +3,7 @@
 - This file is responsible for installing the native messaging host manifest file in the correct location for each browser on each platform.
 - It is idempotent, meaning it can run multiple times without causing any problems.
 - The native messaging host is a small executable that can be called by the Webclipper browser extension.
-- the executable remains in the anytype application files, but the manifest file is installed in each browser's unique nativeMessagingHost directory.
+- the executable remains in the loom application files, but the manifest file is installed in each browser's unique nativeMessagingHost directory.
 - Read about what the actual executable does in the file: go/nativeMessagingHost.go
 
 */
@@ -15,7 +15,7 @@ import path from 'path';
 import util from 'util';
 import { fixPathForAsarUnpack, is } from 'electron-util';
 
-const APP_NAME = 'com.anytype.desktop';
+const APP_NAME = 'com.loom.desktop';
 const MANIFEST_FILENAME = `${APP_NAME}.json`;
 const EXTENSION_IDS = [
 	'jbnammhjiplhpjfncnlejjjejghimdkf',
@@ -66,7 +66,7 @@ export const installNativeMessagingHost = (): void => {
 const buildManifestForBrowserKey = (key: string): any => {
 	const base: any = {
 		name: APP_NAME,
-		description: 'Anytype desktop <-> web clipper bridge',
+		description: 'Loom desktop <-> web clipper bridge',
 		type: 'stdio',
 		path: getManifestPath(),
 	};
