@@ -32,7 +32,7 @@ func TestV2CrossSpaceObjectLinksExpandShortSpaceRefs(t *testing.T) {
 		return fx
 	}
 	link := func(space string) string {
-		return "loom://object?objectId=bafyreiobj&spaceId=" + space
+		return "anytype://object?objectId=bafyreiobj&spaceId=" + space
 	}
 
 	t.Run("the spaceId parameter is rewritten, everything else kept", func(t *testing.T) {
@@ -49,10 +49,10 @@ func TestV2CrossSpaceObjectLinksExpandShortSpaceRefs(t *testing.T) {
 
 		for _, dest := range []string{
 			link(realSpaceEval),
-			"loom://object?objectId=bafyreiobj",
+			"anytype://object?objectId=bafyreiobj",
 			"https://example.com/?spaceId=hxwz2i",
-			"loom://object?objectId=bafyreiobj&spaceId=hxwz2i&spaceId=hxwz2i",
-			"https://example.com/loom://object?objectId=x&spaceId=hxwz2i",
+			"anytype://object?objectId=bafyreiobj&spaceId=hxwz2i&spaceId=hxwz2i",
+			"https://example.com/anytype://object?objectId=x&spaceId=hxwz2i",
 		} {
 			assert.Equal(t, dest, e.destination(dest), dest)
 		}
@@ -135,7 +135,7 @@ func TestV2CrossSpaceObjectLinksExpandShortSpaceRefs(t *testing.T) {
 		fx := census(t)
 		e := fx.newSpaceLinkExpander(context.Background())
 		grows := len(realSpaceEval) - len("hxwz2i")
-		base := "loom://object?objectId=bafyreiobj&spaceId=hxwz2i&pad="
+		base := "anytype://object?objectId=bafyreiobj&spaceId=hxwz2i&pad="
 		pad := maxCrossSpaceLinkDest - 8 - spelledDestLen(base)
 		long := base + strings.Repeat("a", pad)
 		require.Less(t, spelledDestLen(long), maxCrossSpaceLinkDest, "parses as sent")
