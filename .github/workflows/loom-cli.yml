@@ -37,6 +37,7 @@ jobs:
       # Only needed if a dependency is private; skipped when the secret is absent
       # (e.g. pull requests from forks) so public modules still download.
       - name: git config
+        working-directory: .
         env:
           ANYTYPE_PAT: ${{ secrets.ANYTYPE_PAT }}
         run: |
