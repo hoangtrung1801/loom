@@ -73,9 +73,12 @@ jobs:
             golang:1.26-alpine sh -ec '
               apk add --no-cache build-base git
               # Tags/flags mirror makefiles/ci-cross-compile-library.mk (linux targets).
+              # Alpine gcc defaults to PIE, which turns -static into a static-pie link that
+              # rejects the non-PIC Go objects ("read-only segment has dynamic relocations"),
+              # so ask for a plain static executable with -no-pie.
               go build \
                 -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
-                -ldflags="-linkmode external -extldflags \"-static -Wl,-z stack-size=1000000\"" \
+                -ldflags="-linkmode external -extldflags \"-static -no-pie -Wl,-z,stack-size=1000000\"" \
                 -o loom ./cmd/loom
               chown '"$(id -u):$(id -g)"' loom
             '
