@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=Anytype
+Name=Loom
 Comment=Project management and knowledge workspace
-Exec=anytype --ozone-platform-hint=auto %u
+Exec=loom --ozone-platform-hint=auto %u
 Terminal=false
 Type=Application
-Icon=anytype
+Icon=loom
 Categories=Utility;Office;Calendar;ProjectManagement;
-StartupWMClass=anytype
+StartupWMClass=loom
 Keywords=project management;
 MimeType=x-scheme-handler/anytype;

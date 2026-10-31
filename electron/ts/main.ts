@@ -62,7 +62,7 @@ app.commandLine.appendSwitch('gtk-version', '3');
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 
 // Wayland: ozone-platform is now configured via .desktop files instead of runtime detection
-// Users can choose anytype.desktop (native Wayland) or anytype-xwayland.desktop (XWayland)
+// Users can choose loom.desktop (native Wayland) or loom-xwayland.desktop (XWayland)
 
 // GPU/Hardware acceleration settings
 // Check for --disable-gpu CLI argument or stored setting

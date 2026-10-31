@@ -1,12 +1,12 @@
 [Desktop Entry]
-Name=Anytype (XWayland)
+Name=Loom (XWayland)
 Comment=Project management and knowledge workspace (XWayland mode)
-Exec=anytype --ozone-platform=x11 %u
+Exec=loom --ozone-platform=x11 %u
 Terminal=false
 Type=Application
-Icon=anytype
+Icon=loom
 Categories=Utility;Office;Calendar;ProjectManagement;
-StartupWMClass=anytype
+StartupWMClass=loom
 Keywords=project management;
 MimeType=x-scheme-handler/anytype;
 NoDisplay=true

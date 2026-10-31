@@ -110,7 +110,7 @@ class MenuManager {
 
 		const menuParam: Electron.MenuItemConstructorOptions[] = [
 			{
-				label: 'Anytype',
+				label: 'Loom',
 				submenu: [
 					{ label: Util.translate('electronMenuAbout'), click: () => Util.send(this.win, 'popup', 'about', {}, true) },
 
@@ -498,7 +498,7 @@ class MenuManager {
 		const icon = this.getTrayIcon();
 
 		this.tray = new Tray(this.toTrayImage(icon));
-		this.tray.setToolTip('Anytype');
+		this.tray.setToolTip('Loom');
 		this.tray.setContextMenu(Menu.buildFromTemplate([
 			{ label: Util.translate('electronMenuOpenApp'), click: () => this.winShow() },
 			{ label: Util.translate('electronMenuSearch'), accelerator: this.getAccelerator('globalSearch'), click: () => this.onGlobalSearch() },
