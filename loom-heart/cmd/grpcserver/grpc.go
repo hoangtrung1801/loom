@@ -82,7 +82,7 @@ func main() {
 	}
 
 	if addr == "" {
-		if env := os.Getenv("ANYTYPE_GRPC_ADDR"); env != "" {
+		if env := os.Getenv("LOOM_GRPC_ADDR"); env != "" {
 			addr = env
 		} else {
 			addr = defaultAddr
@@ -90,7 +90,7 @@ func main() {
 	}
 
 	if webaddr == "" {
-		if env := os.Getenv("ANYTYPE_GRPCWEB_ADDR"); env != "" {
+		if env := os.Getenv("LOOM_GRPCWEB_ADDR"); env != "" {
 			webaddr = env
 		} else {
 			webaddr = defaultWebAddr
@@ -140,11 +140,11 @@ func main() {
 	})
 
 	// todo: we may want to change it to the opposite check with a public release
-	if os.Getenv("ANYTYPE_GRPC_NO_DEBUG_TIMEOUT") != "1" {
+	if os.Getenv("LOOM_GRPC_NO_DEBUG_TIMEOUT") != "1" {
 		unaryInterceptors = append(unaryInterceptors, metrics.LongMethodsInterceptor)
 	}
 
-	grpcDebug, _ := strconv.Atoi(os.Getenv("ANYTYPE_GRPC_LOG"))
+	grpcDebug, _ := strconv.Atoi(os.Getenv("LOOM_GRPC_LOG"))
 	if grpcDebug > 0 {
 		decider := func(_ context.Context, _ string, _ interface{}) bool {
 			return true
@@ -162,7 +162,7 @@ func main() {
 		}
 	}
 
-	grpcTrace, _ := strconv.Atoi(os.Getenv("ANYTYPE_GRPC_TRACE"))
+	grpcTrace, _ := strconv.Atoi(os.Getenv("LOOM_GRPC_TRACE"))
 	if grpcTrace > 0 {
 		jLogger := jaeger.StdLogger
 

@@ -7,8 +7,8 @@ import (
 	"github.com/anyproto/any-sync/app"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/syncstatus/filesyncstatus"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"

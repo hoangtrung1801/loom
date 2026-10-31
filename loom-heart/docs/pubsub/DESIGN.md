@@ -60,7 +60,7 @@ session/identity if they don't want them.
 
 ## 3. Heart component (`core/pubsub`)
 
-Two components registered in `core/anytype/bootstrap.go`:
+Two components registered in `core/loom/bootstrap.go`:
 
 1. `core/pubsub.New()` — CName `client.pubsub`. Implements the engine deps
    (`Crypto`, `MembershipChecker`, `PeerProvider`, `StatusHandler`) plus the

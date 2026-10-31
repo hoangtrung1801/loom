@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileacl/mock_fileacl"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"

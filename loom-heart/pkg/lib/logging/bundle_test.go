@@ -17,8 +17,8 @@ import (
 func TestWriteLogBundle(t *testing.T) {
 	t.Run("active file first, bundle is valid gzip", func(t *testing.T) {
 		dir := t.TempDir()
-		writeLogFile(t, dir, "anytype-2026-01-01.log.gz", "OLD\n", time.Now().Add(-2*time.Hour), true)
-		writeLogFile(t, dir, "anytype.log", "ACTIVE\n", time.Now(), false)
+		writeLogFile(t, dir, "loom-2026-01-01.log.gz", "OLD\n", time.Now().Add(-2*time.Hour), true)
+		writeLogFile(t, dir, "loom.log", "ACTIVE\n", time.Now(), false)
 
 		dest := filepath.Join(dir, "bundle.log.gz")
 		require.NoError(t, WriteLogBundle(dir, dest, 10*1024*1024))
@@ -32,7 +32,7 @@ func TestWriteLogBundle(t *testing.T) {
 		dir := t.TempDir()
 		// ~1MB of highly compressible repeated content.
 		big := strings.Repeat("a", 1024*1024)
-		writeLogFile(t, dir, "anytype.log", big, time.Now(), false)
+		writeLogFile(t, dir, "loom.log", big, time.Now(), false)
 
 		dest := filepath.Join(dir, "bundle.log.gz")
 		require.NoError(t, WriteLogBundle(dir, dest, 4096)) // 4KB cap
@@ -48,10 +48,10 @@ func TestWriteLogBundle(t *testing.T) {
 		assert.True(t, strings.HasPrefix(got, "a"))
 	})
 
-	t.Run("skips non-anytype files", func(t *testing.T) {
+	t.Run("skips non-loom files", func(t *testing.T) {
 		dir := t.TempDir()
 		writeLogFile(t, dir, "unrelated.log", "IGNORE_ME\n", time.Now(), false)
-		writeLogFile(t, dir, "anytype.log", "KEEP\n", time.Now(), false)
+		writeLogFile(t, dir, "loom.log", "KEEP\n", time.Now(), false)
 
 		dest := filepath.Join(dir, "bundle.log.gz")
 		require.NoError(t, WriteLogBundle(dir, dest, 10*1024*1024))

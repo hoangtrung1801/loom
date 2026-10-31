@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/syncstatus/nodestatus"
 	"github.com/hoangtrung1801/loom/loom-heart/core/syncstatus/objectsyncstatus/mock_objectsyncstatus"
 	"github.com/hoangtrung1801/loom/loom-heart/tests/testutil"

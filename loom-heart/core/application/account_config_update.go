@@ -7,8 +7,8 @@ import (
 
 	"github.com/anyproto/any-sync/app"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/api"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 )
 

@@ -10,13 +10,13 @@ import (
 
 	"github.com/anyproto/any-sync/app"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/detailservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core"
@@ -58,7 +58,7 @@ func (s *Service) AccountCreate(ctx context.Context, req *pb.RpcAccountCreateReq
 		return nil, err
 	}
 
-	cfg := anytype.BootstrapConfig(true, req.JoinStreamUrl)
+	cfg := loom.BootstrapConfig(true, req.JoinStreamUrl)
 	if req.DisableLocalNetworkSync {
 		cfg.DontStartLocalNetworkSyncAutomatically = true
 	}
@@ -77,7 +77,7 @@ func (s *Service) AccountCreate(ctx context.Context, req *pb.RpcAccountCreateReq
 	}
 	comps := []app.Component{
 		cfg,
-		anytype.BootstrapWallet(s.rootPath, *s.derivedKeys, s.fulltextPrimaryLanguage),
+		loom.BootstrapWallet(s.rootPath, *s.derivedKeys, s.fulltextPrimaryLanguage),
 		s.eventSender,
 	}
 

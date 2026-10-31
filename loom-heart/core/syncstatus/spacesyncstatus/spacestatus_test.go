@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event/mock_event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filespaceusage"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filesync"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/session"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/syncstatus/nodestatus"

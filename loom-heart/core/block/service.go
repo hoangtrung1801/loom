@@ -40,7 +40,6 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	bookmarksvc "github.com/hoangtrung1801/loom/loom-heart/core/block/bookmark"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/detailservice"
@@ -65,6 +64,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileoffloader"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileuploader"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inbox/inboxservice"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/session"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/objectsubscription"

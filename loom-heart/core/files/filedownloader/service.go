@@ -37,12 +37,12 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/device"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filehelper"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filestorage/rpcstore"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/crossspacesub"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/logging"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"

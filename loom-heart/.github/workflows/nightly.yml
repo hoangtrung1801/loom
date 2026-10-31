@@ -158,7 +158,7 @@ jobs:
           echo "FLAGS=-X github.com/hoangtrung1801/loom/loom-heart/util/vcs.GitSummary=${GIT_SUMMARY} -X github.com/hoangtrung1801/loom/loom-heart/metrics.DefaultInHouseKey=${INHOUSE_KEY} -X github.com/hoangtrung1801/loom/loom-heart/util/unsplash.DefaultToken=${UNSPLASH_KEY}" >> $GITHUB_ENV
 
           VERSION=${{ steps.nightly_info.outputs.version }}
-          echo "${{ secrets.STAGING_NODE_CONF }}" > ./core/anytype/config/nodes/custom.yml
+          echo "${{ secrets.STAGING_NODE_CONF }}" > ./core/loom/config/nodes/custom.yml
 
           echo VERSION=${VERSION} >> $GITHUB_ENV
           echo BUILD_TAG_NETWORK=${{ github.event.inputs.build-tag-network || 'envproduction' }} >> $GITHUB_ENV

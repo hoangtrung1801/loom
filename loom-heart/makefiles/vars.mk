@@ -1,4 +1,4 @@
-CUSTOM_NETWORK_FILE ?= ./core/anytype/config/nodes/custom.yml
+CUSTOM_NETWORK_FILE ?= ./core/loom/config/nodes/custom.yml
 OPENAPI_DOCS_DIR ?= ./core/api/docs
 CLIENT_DESKTOP_PATH ?= ..
 CLIENT_ANDROID_PATH ?= ../anytype-kotlin

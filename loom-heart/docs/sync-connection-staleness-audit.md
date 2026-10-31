@@ -68,7 +68,7 @@ Recovery signals that exist today:
 
 - **H1 — Dead-conn detection window too long.** yamux 30s ping default, QUIC
   30s idle. **Fix (config-only):** `KeepAlivePeriodSec: 10` for both in
-  `core/anytype/config` → yamux detection ≤20s. (QUIC idle stays 30s until
+  `core/loom/config` → yamux detection ≤20s. (QUIC idle stays 30s until
   any-sync exposes `MaxIdleTimeout` — see M1.)
 
 - **H2 — No offline gating; dial churn when the interface is clearly down.**

@@ -1,7 +1,7 @@
 package config_test
 
 import (
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/gateway"
 )
 

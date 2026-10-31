@@ -49,9 +49,9 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileacl"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/participants"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/datastore/anystoreprovider"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"

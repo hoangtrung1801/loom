@@ -14,7 +14,6 @@ import (
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/google/uuid"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/collection"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/state"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/template"
@@ -22,6 +21,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/import/common/source"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/process"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core"

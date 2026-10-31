@@ -22,9 +22,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/device/mock_device"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event/mock_event"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/net/addrs"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
 	"github.com/hoangtrung1801/loom/loom-heart/space/spacecore/clientserver/mock_clientserver"

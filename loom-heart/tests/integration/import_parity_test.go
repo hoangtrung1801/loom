@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	importer "github.com/hoangtrung1801/loom/loom-heart/core/block/import"
 	importv2adapter "github.com/hoangtrung1801/loom/loom-heart/core/block/importv2/adapter"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain/objectorigin"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/database"

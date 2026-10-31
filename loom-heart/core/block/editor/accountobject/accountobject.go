@@ -12,7 +12,6 @@ import (
 	"github.com/anyproto/any-sync/commonspace/object/accountdata"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/anystoredebug"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/basic"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/converter"
@@ -24,6 +23,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/source"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/session"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"

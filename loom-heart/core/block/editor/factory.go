@@ -22,7 +22,6 @@ import (
 	"github.com/anyproto/any-sync/commonspace/object/accountdata"
 	"github.com/anyproto/any-sync/commonspace/object/tree/objecttree"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/backlinks"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/chats/chatrepository"
@@ -44,6 +43,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileuploader"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/reconciler"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core"

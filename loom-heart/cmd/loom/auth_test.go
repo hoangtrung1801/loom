@@ -50,8 +50,8 @@ func pairingStub(t *testing.T, other http.HandlerFunc) string {
 		}
 	}))
 	t.Cleanup(server.Close)
-	t.Setenv("ANYTYPE_API_URL", server.URL)
-	t.Setenv("ANYTYPE_API_KEY", "")
+	t.Setenv("LOOM_API_URL", server.URL)
+	t.Setenv("LOOM_API_KEY", "")
 	t.Setenv("LOOM_SESSION", t.TempDir()+"/session.json")
 	path := filepath.Join(t.TempDir(), "cfg", "config.json")
 	t.Setenv("LOOM_CONFIG", path)
@@ -158,7 +158,7 @@ func TestAuthLogin(t *testing.T) {
 		// when
 		code, _, stderr = runCLI("spaces")
 		require.Equal(t, 0, code, stderr)
-		t.Setenv("ANYTYPE_API_KEY", "env-key")
+		t.Setenv("LOOM_API_KEY", "env-key")
 		code, _, stderr = runCLI("spaces")
 		require.Equal(t, 0, code, stderr)
 
@@ -169,8 +169,8 @@ func TestAuthLogin(t *testing.T) {
 	t.Run("the config may hold the api url", func(t *testing.T) {
 		// given
 		path := pairingStub(t, noOtherRoutes(t))
-		serverURL := os.Getenv("ANYTYPE_API_URL")
-		t.Setenv("ANYTYPE_API_URL", "")
+		serverURL := os.Getenv("LOOM_API_URL")
+		t.Setenv("LOOM_API_URL", "")
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 		require.NoError(t, os.WriteFile(path, []byte(`{"api_url":"`+serverURL+`"}`), 0o600))
 
@@ -216,7 +216,7 @@ func TestAuthStatusAndLogout(t *testing.T) {
 	t.Run("status with a rejected key exits 1 with the server's message", func(t *testing.T) {
 		// given
 		pairingStub(t, noOtherRoutes(t))
-		t.Setenv("ANYTYPE_API_KEY", "stale")
+		t.Setenv("LOOM_API_KEY", "stale")
 
 		// when
 		code, _, stderr := runCLI("auth", "status")

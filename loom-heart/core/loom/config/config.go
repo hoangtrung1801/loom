@@ -26,7 +26,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 	"gopkg.in/yaml.v3"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config/loadenv"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config/loadenv"
 	"github.com/hoangtrung1801/loom/loom-heart/core/wallet"
 	"github.com/hoangtrung1801/loom/loom-heart/metrics"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
@@ -73,8 +73,8 @@ type Config struct {
 	JsonApiListenAddr                      string           `json:",omitempty"` // empty means disabled
 	EnableMembershipV2                     bool             `json:",omitempty"` // optional, default is false
 	PreferredSpaceId                       string           `json:",omitempty"` // optional, set from accountSelect; enables client-driven lazy multi-space loading for this space
-	ImportV2Markdown                       bool             `json:",omitempty"` // route Markdown/Obsidian imports through the v2 engine, DEFAULT TRUE (kill switch: ANYTYPE_IMPORTV2MARKDOWN=false)
-	ImportV2Notion                         bool             `json:",omitempty"` // route Notion imports through the v2 engine, DEFAULT TRUE (kill switch: ANYTYPE_IMPORTV2NOTION=false)
+	ImportV2Markdown                       bool             `json:",omitempty"` // route Markdown/Obsidian imports through the v2 engine, DEFAULT TRUE (kill switch: LOOM_IMPORTV2MARKDOWN=false)
+	ImportV2Notion                         bool             `json:",omitempty"` // route Notion imports through the v2 engine, DEFAULT TRUE (kill switch: LOOM_IMPORTV2NOTION=false)
 
 	RepoPath    string
 	AnalyticsId string
@@ -265,7 +265,7 @@ var DefaultConfig = Config{
 	LocalServerAddr: ":0",
 	DS:              clientds.DefaultConfig,
 	// Markdown, Obsidian and Notion imports run on the v2 engine. Setting
-	// ANYTYPE_IMPORTV2MARKDOWN=false / ANYTYPE_IMPORTV2NOTION=false routes
+	// LOOM_IMPORTV2MARKDOWN=false / LOOM_IMPORTV2NOTION=false routes
 	// them back to v1 — envconfig applies an explicit "false" over these
 	// defaults, and the persisted config file cannot touch them (it
 	// unmarshals into PersistedConfig, not Config).
@@ -713,8 +713,8 @@ func (c *Config) GetPublishServer() publishclient.Config {
 	publishPeerId := "12D3KooWEQPgbxGPvkny8kikS3zqfziM7JsQBnJHXHL9ByCcATs7"
 	publishAddr := "anytype-publish-server.anytype.io:443"
 
-	if peerId := os.Getenv("ANYTYPE_PUBLISH_PEERID"); peerId != "" {
-		if addr := os.Getenv("ANYTYPE_PUBLISH_ADDRESS"); addr != "" {
+	if peerId := os.Getenv("LOOM_PUBLISH_PEERID"); peerId != "" {
+		if addr := os.Getenv("LOOM_PUBLISH_ADDRESS"); addr != "" {
 			publishPeerId = peerId
 			publishAddr = addr
 		}
@@ -755,8 +755,8 @@ func (c *Config) GetPushConfig() PushConfig {
 	pushPeerId := "12D3KooWMATrdteJNq2YvYhtq3RDeWxq6RVXDAr36MsGd5RJzXDn"
 	pushAddr := "anytype-push-server.anytype.io:443"
 
-	if peerId := os.Getenv("ANYTYPE_PUSH_PEERID"); peerId != "" {
-		if addr := os.Getenv("ANYTYPE_PUSH_ADDRESS"); addr != "" {
+	if peerId := os.Getenv("LOOM_PUSH_PEERID"); peerId != "" {
+		if addr := os.Getenv("LOOM_PUSH_ADDRESS"); addr != "" {
 			pushPeerId = peerId
 			pushAddr = addr
 		}

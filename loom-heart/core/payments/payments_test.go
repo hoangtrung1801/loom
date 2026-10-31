@@ -24,9 +24,9 @@ import (
 
 	mock_emailcollector "github.com/hoangtrung1801/loom/loom-heart/core/payments/emailcollector/mock_emailcollector"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event/mock_event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filesync/mock_filesync"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/nameservice/mock_nameservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/payments/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/payments/cache/mock_cache"

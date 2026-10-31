@@ -7,7 +7,7 @@ import (
 
 	"github.com/anyproto/any-sync/app"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom"
 	"github.com/hoangtrung1801/loom/loom-heart/core/recovery"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/space"
@@ -116,7 +116,7 @@ func (s *Service) cancelStart() bool {
 // the legacy-export path alike. It refuses a start whose context is already
 // cancelled — a stop that landed during the lock wait, the previous app's
 // close or the repo bootstrap boots nothing and opens no run — and brackets
-// anytype.StartNewApp with the recovery tracker's run lifecycle: Begin before
+// loom.StartNewApp with the recovery tracker's run lifecycle: Begin before
 // the start, so the tracker is registered ahead of every bootstrap component
 // and its Init runs before any dial or space load; Fail on error, so the
 // status stream ends with an account-level verdict. The tracker lives for the
@@ -130,7 +130,7 @@ func (s *Service) startNewApp(ctx context.Context, mode pb.EventAccountRecoveryM
 		s.recovery.Begin(recovery.Run{Mode: mode, Sender: s.eventSender})
 		comps = append(comps, s.recovery)
 	}
-	a, err := anytype.StartNewApp(ctx, s.clientWithVersion, comps...)
+	a, err := loom.StartNewApp(ctx, s.clientWithVersion, comps...)
 	if err != nil {
 		if s.recovery != nil {
 			s.recovery.Fail(startFailure(ctx, err))

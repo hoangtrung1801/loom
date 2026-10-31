@@ -18,7 +18,7 @@ echo 'export PATH="/<homebrew location>/llvm/bin:$PATH"' >> ~/.zshrc
 ### Integration tests
 First you need to start a docker container via docker-compose:
 ```
-export ANYTYPE_TEST_GRPC_PORT=31088
+export LOOM_TEST_GRPC_PORT=31088
 docker-compose up -d
 ```
 

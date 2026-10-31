@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock/smarttest"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/state"
@@ -23,6 +22,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/source"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/source/mock_source"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"
 	"github.com/hoangtrung1801/loom/loom-heart/util/metricsid"

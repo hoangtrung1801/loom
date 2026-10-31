@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/fileobject"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock/smarttest"
@@ -31,6 +30,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileoffloader"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filestorage"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filesync/mock_filesync"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils/mock_relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/core/session"
 	wallet2 "github.com/hoangtrung1801/loom/loom-heart/core/wallet"

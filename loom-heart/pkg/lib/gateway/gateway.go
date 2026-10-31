@@ -129,7 +129,7 @@ func (g *gateway) Run(context.Context) error {
 // when there is nothing to remember. Persisting is left to the caller: it writes and fsyncs
 // config.json, which must not happen under the lock Addr() needs. Must be called with g.mu held.
 func (g *gateway) bindLocked() (remember string, err error) {
-	override := os.Getenv("ANYTYPE_GATEWAY_ADDR")
+	override := os.Getenv("LOOM_GATEWAY_ADDR")
 	previous := g.addr
 	ln, err := listenGateway(listenConfig{
 		override:   override,

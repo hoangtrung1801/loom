@@ -8,7 +8,7 @@ package main
 //	loom auth logout                            forget the saved key
 //
 // The key lives in a config file (config.json under the user config dir,
-// LOOM_CONFIG overrides), 0600 in a 0700 directory. ANYTYPE_API_KEY
+// LOOM_CONFIG overrides), 0600 in a 0700 directory. LOOM_API_KEY
 // still wins over it, so a script can override the saved key per process.
 
 import (
@@ -116,8 +116,8 @@ func saveConfig(cfg cliConfig) error {
 // resolveAPIKey is the key every verb sends: the environment first, then
 // the config file. source says which, for auth status.
 func resolveAPIKey() (key, source string) {
-	if k := os.Getenv("ANYTYPE_API_KEY"); k != "" {
-		return k, "ANYTYPE_API_KEY"
+	if k := os.Getenv("LOOM_API_KEY"); k != "" {
+		return k, "LOOM_API_KEY"
 	}
 	if k := loadConfig().ApiKey; k != "" {
 		return k, "config file"
@@ -125,10 +125,10 @@ func resolveAPIKey() (key, source string) {
 	return "", ""
 }
 
-// resolveAPIURL is ANYTYPE_API_URL, else the config's api_url, else empty
+// resolveAPIURL is LOOM_API_URL, else the config's api_url, else empty
 // (the client's default).
 func resolveAPIURL() string {
-	if u := os.Getenv("ANYTYPE_API_URL"); u != "" {
+	if u := os.Getenv("LOOM_API_URL"); u != "" {
 		return u
 	}
 	return loadConfig().ApiUrl
@@ -220,7 +220,7 @@ func authLogin(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 func authStatus(stdout, stderr io.Writer) int {
 	key, source := resolveAPIKey()
 	if key == "" {
-		fmt.Fprintln(stderr, "error: no API key — run \"loom auth\" or set ANYTYPE_API_KEY")
+		fmt.Fprintln(stderr, "error: no API key — run \"loom auth\" or set LOOM_API_KEY")
 		return 1
 	}
 	baseURL := wrapper.NewClient(resolveAPIURL(), "").BaseURL

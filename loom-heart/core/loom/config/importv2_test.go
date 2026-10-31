@@ -26,8 +26,8 @@ func TestImportV2DefaultsAndKillSwitch(t *testing.T) {
 		cfg := New()
 		require.True(t, cfg.ImportV2Markdown)
 		require.True(t, cfg.ImportV2Notion)
-		t.Setenv("ANYTYPE_IMPORTV2MARKDOWN", "false")
-		t.Setenv("ANYTYPE_IMPORTV2NOTION", "false")
+		t.Setenv("LOOM_IMPORTV2MARKDOWN", "false")
+		t.Setenv("LOOM_IMPORTV2NOTION", "false")
 
 		// when — the same call initFromFileAndEnv makes
 		err := envconfig.Process("ANYTYPE", cfg)

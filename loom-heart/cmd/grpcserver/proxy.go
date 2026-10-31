@@ -13,15 +13,15 @@ import (
 
 // envAllowedOrigins adds comma-separated exact origins to the gRPC-Web
 // allowlist, for embedders and dev servers that are not on a loopback host.
-const envAllowedOrigins = "ANYTYPE_GRPCWEB_ALLOWED_ORIGINS"
+const envAllowedOrigins = "LOOM_GRPCWEB_ALLOWED_ORIGINS"
 
 // envAllowedHosts adds comma-separated Host header values to the allowlist, for
 // operators who bind the proxy to a routable interface and reach it by name.
-const envAllowedHosts = "ANYTYPE_GRPCWEB_ALLOWED_HOSTS"
+const envAllowedHosts = "LOOM_GRPCWEB_ALLOWED_HOSTS"
 
 // envEnableWebsockets re-enables the grpc-websockets transport, which is still
 // origin-checked when on.
-const envEnableWebsockets = "ANYTYPE_GRPCWEB_ENABLE_WEBSOCKETS"
+const envEnableWebsockets = "LOOM_GRPCWEB_ENABLE_WEBSOCKETS"
 
 var log = logging.Logger("anytype-grpc-server")
 

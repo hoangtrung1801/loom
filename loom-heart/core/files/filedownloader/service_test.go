@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache/mock_cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/device/mock_device"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filestorage"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/crossspacesub"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/crossspacesub/mock_crossspacesub"

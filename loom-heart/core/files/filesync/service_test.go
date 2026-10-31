@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event/mock_event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filestorage"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filestorage/rpcstore"
 	"github.com/hoangtrung1801/loom/loom-heart/core/kanban/mock_kanban"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/wallet/mock_wallet"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"

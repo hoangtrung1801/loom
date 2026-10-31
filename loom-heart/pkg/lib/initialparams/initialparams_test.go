@@ -26,7 +26,7 @@ func TestInit(t *testing.T) {
 			Workdir:     "/tmp/anytype",
 			Common:      filepath.Join("/tmp/anytype", "common"),
 			LogsDir:     filepath.Join("/tmp/anytype", "common", "logs"),
-			LogFile:     filepath.Join("/tmp/anytype", "common", "logs", "anytype.log"),
+			LogFile:     filepath.Join("/tmp/anytype", "common", "logs", "loom.log"),
 			ProfilesDir: filepath.Join("/tmp/anytype", "common", "profiles"),
 		}
 

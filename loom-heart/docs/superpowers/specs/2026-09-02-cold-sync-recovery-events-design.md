@@ -63,7 +63,7 @@ everything else follows the approved decisions verbatim.
 |---|---|---|
 | R1 | **Lazy loading and `Finished`** | One `Finished`, gating on **every** discovered space, deferred ones included. Deferred spaces are reported as `Queued` (no separate `Deferred` state). Rationale: the deferred backlog auto-releases after `preloadRemainingSpacesTimeout` (10 s, `space/service.go:80`) or on `AccountPreloadRemainingSpaces`, so deferral delays `Finished` by at most ~10 s + load, and per-space finalization is the loader's own result. `AccountReady` is the usable-before-done milestone; no third milestone. |
 | R2 | **Partial failure** | `Finished` is always emitted, with `spacesTotal/Loaded/Failed`; global phase goes to `Done`. A per-space failure is a per-space `Error` state with its own `ErrorClass`. A new terminal phase `Failed` is added and reserved for **account-level** fatals only (`AccountSelect` itself fails: account deleted, account not found, incompatible version, unrecoverable start error). `Snapshot.error` carries the account-level class only. |
-| R3 | **Analytics wait** | No dedicated phase. The stream's `FetchingAccount` ends at `AccountReady` (`close(techSpaceReady)`); the up-to-30 s `getAnalyticsId` window sits inside `LoadingSpaces`, which is what is actually happening. The root cause (1 s polling loop, `core/anytype/account/service.go:211-243`) is filed as a follow-up outside this spec: derive the metrics id immediately when the account object is head-synced and still has none. |
+| R3 | **Analytics wait** | No dedicated phase. The stream's `FetchingAccount` ends at `AccountReady` (`close(techSpaceReady)`); the up-to-30 s `getAnalyticsId` window sits inside `LoadingSpaces`, which is what is actually happening. The root cause (1 s polling loop, `core/loom/account/service.go:211-243`) is filed as a follow-up outside this spec: derive the metrics id immediately when the account object is head-synced and still has none. |
 | R4 | **Space names in events** | **Omit** the name. `SpaceDiscovered` carries `spaceId` + `spaceViewId`; clients resolve names from their own SpaceView subscription (the SpaceView is what `SpaceDiscovered` is keyed off, so it exists by then). No user content on the stream, no objectstore lookup near the fold mutex, no `DisplayText` machinery. If overruled: adopt importv2's `DisplayText` (hash in logs, plaintext only in the pb builder). |
 | R5 | **Coalescing policy** | 250 ms window, keyed per (kind, peerId/spaceId), last-wins, immediate publication on every phase/state **edge**; only repeats of the same state (DialFailed for a peer already failing, `SpaceStateChanged` attempt ticks, `PeerDisconnected`) coalesce. A flushed window goes out as **one** `pb.Event` carrying several ordered messages. Details in "Coalescing". |
 | R6 | **Component ownership (deviation from decision 6)** | The tracker is **created once by `core/application.Service`** and passed into `Bootstrap` via the same `comps` path as the event sender, which registers it first (before `space.New()` by construction). Reason: `AccountSelect` holds `Service.lock` for the whole start and `GetApp()` takes `RLock` (`core/application/application.go:57`), so a pull RPC routed through the app would **block until `AccountSelect` returns** — the exact window it exists for. An application-owned handle is lock-free. The `peerobserver.CName` slot is still filled from `bootstrap.go` by the fan-out mux (review correction 7). |
@@ -617,7 +617,7 @@ works from the space child app), called after `sendSyncEvents` outside `t.Lock`,
 created in `techSpace.Run` before `AccountReady`, so on cold recovery the first diff's `missing`
 is normally SpaceViews only and the gate resolves the moment the last one arrives. If a
 non-SpaceView tree is ever in `missing` (a future tech-space object type) and it *does* arrive,
-it resolves on the next diff, bounded by `SyncPeriod` (20 s, `core/anytype/config/config.go:542`).
+it resolves on the next diff, bounded by `SyncPeriod` (20 s, `core/loom/config/config.go:542`).
 If an id never arrives, the stall bound opens the gate after two stalled diffs with
 `viewsConfirmed=false`. Both paths are event-driven; no poll.
 
@@ -718,7 +718,7 @@ that attach before `AccountSelect` (the normal client flow) see `Started` as id 
 | Producer | Exact site | Mechanism | Tracker method -> event |
 |---|---|---|---|
 | Application start | `core/application/account_select.go` `start()` (and the two create sites, `account_stop.go` restart) via a shared `startApp` helper | direct handle, before `StartNewApp`; on error | `Begin` -> `Started`; `Fail(err)` -> `PhaseChanged{Failed}` |
-| Peer lifecycle | `net/peerobservermux` (new) registered in `core/anytype/bootstrap.go` right after `peerstore.New()`, before `pool.New()`/`peerservice.New()`; `Name()` returns `peerobserver.CName` (correction 7) | tracker `Init` -> `mux.Add(t)`; mux fans out synchronously with per-observer panic containment | `ObservePeerEvent` -> `DialStarted`, `PeerConnected`, `DialFailed`, `PeerDisconnected` |
+| Peer lifecycle | `net/peerobservermux` (new) registered in `core/loom/bootstrap.go` right after `peerstore.New()`, before `pool.New()`/`peerservice.New()`; `Name()` returns `peerobserver.CName` (correction 7) | tracker `Init` -> `mux.Add(t)`; mux fans out synchronously with per-observer panic containment | `ObservePeerEvent` -> `DialStarted`, `PeerConnected`, `DialFailed`, `PeerDisconnected` |
 | LAN discovery possibility | `localdiscovery.RegisterDiscoveryPossibilityHook` (`common.go:145`) | tracker `Init`, same interface `peerstatus` uses | `OnDiscoveryPossibility` -> `LocalDiscoveryState` |
 | LAN peer found | `space/spacecore/peer.go` `PeerDiscovered` — first line, before the pool `Get` (correction 6; Android's `SetNotifierProvider` is upstream of this point, so one seam covers all backends) | `spacecore.Init`: `a.Component("core.recovery")` type-asserted to a `PeerDiscoveryObserver` interface declared in `spacecore`; nil-safe | `OnLocalPeerDiscovered` -> `PeerDiscovered` |
 | LAN space exchange | `peerstore.UpdateLocalPeer`, the line after the exchange on both paths (`spacecore/peer.go`, `spacecore/rpchandler.go`); observers run with the store unlocked (precedent `core/peerstatus`) | tracker `Init`: `peerstore.AddObserver` by name | `onLocalPeerSpaces` -> `PeerSpaceExchange`, `LocalPeersStateChanged` |
@@ -737,7 +737,7 @@ Import-cycle audit (verified with `go list -deps`): `core/recovery` imports any-
 error packages), `pb`, `core/event`, `core/session`, `space/spaceinfo`. `spaceinfo` reaches
 `core/block/editor/state` but not `core/recovery`, and every producer in `space/...`,
 `spaceloader`, `treesyncer`, `spacecore` resolves the tracker by **name or interface**, never by
-import. Only `core/application` and `core/anytype` (bootstrap, for the mux) import the new
+import. Only `core/application` and `core/loom` (bootstrap, for the mux) import the new
 packages. Implementation checkpoint: `go build ./...` after each producer.
 
 ### `net/peerobservermux`
@@ -853,7 +853,7 @@ type fixture struct {
 
 ### Manual / integration checkpoint
 
-Cold recovery of a real multi-space account on the dev network with `ANYTYPE_LOG_LEVEL=core.
+Cold recovery of a real multi-space account on the dev network with `LOOM_LOG_LEVEL=core.
 recovery=debug` (the tracker logs each published update as `id:Kind` — ids and kinds only, never
 content). Not yet performed: no such account/network was available while implementing; this is
 the first thing QA should do with the branch. Expected: `Started` before any other log line of `app start`, `AccountReady` within
@@ -884,7 +884,7 @@ touched packages, and is a reviewable commit (`GO-7471 ...`).
    arrival.
 6. **Hardening + docs.** Done: the gate's local half (must-fix of the `NewAccount` race, above),
    `docs/Flow.md` cross-link, the client guide `docs/RecoveryEventsClientIntegration.md`, a
-   debug-level log of every published update (`id:Kind` only; `ANYTYPE_LOG_LEVEL=core.recovery=
+   debug-level log of every published update (`id:Kind` only; `LOOM_LOG_LEVEL=core.recovery=
    debug`), and the follow-ups filed as GO-7487 (analytics-id poll, R3), GO-7488
    (`accountObjectExists` create-if-missing after a 15 s timeout) and GO-7489 (`debugMessage`
    sizing). **Coalescing was not tuned**: no real cold-recovery event log was available in this

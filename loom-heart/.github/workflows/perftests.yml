@@ -161,7 +161,7 @@ jobs:
 
   #     - name: Setup network config
   #       env:
-  #         CUSTOM_NETWORK_FILE: ./core/anytype/config/nodes/custom.yml
+  #         CUSTOM_NETWORK_FILE: ./core/loom/config/nodes/custom.yml
   #       run: |
   #         if (-not $env:ANY_SYNC_NETWORK) {
   #             echo "Using the default production Any Sync Network"

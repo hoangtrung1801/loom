@@ -48,7 +48,7 @@ import (
 // after-document is already marshaled for diff_stats, so the check is nearly
 // free. The escape hatch exists only for debugging a suspected false
 // rejection.
-var v2SkipPostOpValidate = os.Getenv("ANYTYPE_API_V2_SKIP_EDIT_VALIDATE") == "1"
+var v2SkipPostOpValidate = os.Getenv("LOOM_API_V2_SKIP_EDIT_VALIDATE") == "1"
 
 // v2InvalidDocMessage is the R5-net rejection message (kept verbatim from
 // the document-level pipeline — it is part of the agent-facing contract).

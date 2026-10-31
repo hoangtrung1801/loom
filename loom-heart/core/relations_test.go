@@ -49,8 +49,8 @@ func start(t *testing.T, eventSender event.Sender) (setId string, rootPath strin
 }
 
 func TestRelations_New_Account(t *testing.T) {
-	if os.Getenv("ANYTYPE_TEST_INTEGRATION") != "1" {
-		t.Skip("ANYTYPE_TEST_INTEGRATION not set")
+	if os.Getenv("LOOM_TEST_INTEGRATION") != "1" {
+		t.Skip("LOOM_TEST_INTEGRATION not set")
 		return
 	}
 	eventHandler := func(event *pb.Event) {

@@ -65,9 +65,9 @@ func fetchObjects(t *testing.T, s *testSession, ids []string) map[string]*model.
 }
 
 func createAndExportAccount(t *testing.T) (string, map[string]*model.ObjectView) {
-	exportPort := os.Getenv("ANYTYPE_OLD_TEST_GRPC_PORT")
+	exportPort := os.Getenv("LOOM_OLD_TEST_GRPC_PORT")
 	if exportPort == "" {
-		t.Fatal("you must specify ANYTYPE_OLD_TEST_GRPC_PORT env variable")
+		t.Fatal("you must specify LOOM_OLD_TEST_GRPC_PORT env variable")
 	}
 
 	exportSession := newTestSession(t, exportPort, migrationMnemonicKey, migrationAccounIDKey)
@@ -104,7 +104,7 @@ func TestMigration(t *testing.T) {
 
 	exportPath, oldObjects := createAndExportAccount(t)
 
-	importSession := newImportSession(t, os.Getenv("ANYTYPE_TEST_GRPC_PORT"))
+	importSession := newImportSession(t, os.Getenv("LOOM_TEST_GRPC_PORT"))
 	cctx := importSession.newCallCtx(t)
 
 	call(cctx, importSession.AccountRecoverFromLegacyExport, &pb.RpcAccountRecoverFromLegacyExportRequest{

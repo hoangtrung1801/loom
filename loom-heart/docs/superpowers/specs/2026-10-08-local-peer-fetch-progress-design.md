@@ -71,7 +71,7 @@ Connecting:
   TCP connect with `net.Dialer.Timeout = DialTimeoutSec` plus a secure handshake under
   another `DialTimeoutSec` (`net/transport/yamux/yamux.go:108-130`); QUIC with
   `HandshakeIdleTimeout = DialTimeoutSec` (`net/transport/quic/quic.go:63`). The heart
-  sets `DialTimeoutSec: 10` for both (`core/anytype/config/config.go:670,684`). A
+  sets `DialTimeoutSec: 10` for both (`core/loom/config/config.go:670,684`). A
   blackholed address costs 10 s before the next address is tried; any outer bound below
   10 s never reaches the second address of such a peer.
 - `peer.AcquireDrpcConn` (`net/peer/peer.go:269-344`) takes an idle sub-conn or opens
@@ -131,7 +131,7 @@ Fetching:
   window expires. A `Read` also sends a window update before returning
   (`stream.go:132`), which on a saturated send queue can block up to the write timeout.
 - Snappy is **not** negotiated between heart peers: `Config.GetDrpc()` leaves
-  `rpc.Config.Snappy` false (`core/anytype/config/config.go:581-586`), and the server
+  `rpc.Config.Snappy` false (`core/loom/config/config.go:581-586`), and the server
   then uses the no-Snappy checker (`peer.go:609-612`). Irrelevant to the counter either
   way: it counts wire bytes.
 - Transport-side protection that exists: per-write deadlines of `WriteTimeoutSec = 10`

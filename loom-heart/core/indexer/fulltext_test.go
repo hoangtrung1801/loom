@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache/mock_cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/chats/chatmodel"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/chats/chatrepository"
@@ -24,6 +23,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/source/mock_source"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/indexer/mock_indexer"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils/mock_relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/core/syncstatus/spacesyncstatus/mock_spacesyncstatus"
 	"github.com/hoangtrung1801/loom/loom-heart/core/wallet"

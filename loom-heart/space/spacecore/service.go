@@ -34,8 +34,8 @@ import (
 	"github.com/anyproto/any-sync/nodeconf"
 	"github.com/anyproto/any-sync/util/crypto"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/object/treesyncer"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/syncstatus/objectsyncstatus"
 	"github.com/hoangtrung1801/loom/loom-heart/core/wallet"
 	"github.com/hoangtrung1801/loom/loom-heart/space/spacecore/keyvalueobserver"

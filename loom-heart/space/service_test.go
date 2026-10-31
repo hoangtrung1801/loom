@@ -24,11 +24,11 @@ import (
 
 	"github.com/cheggaaa/mb/v3"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event/mock_event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inbox/inboxservice/mock_inboxservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/kanban/mock_kanban"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/notifications/mock_notifications"
 	"github.com/hoangtrung1801/loom/loom-heart/core/recovery"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"

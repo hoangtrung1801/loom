@@ -18,8 +18,8 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 
 	"github.com/hoangtrung1801/loom/loom-heart/core"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config/loadenv"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config/loadenv"
 	"github.com/hoangtrung1801/loom/loom-heart/util/vcs"
 )
 
@@ -29,7 +29,7 @@ var (
 )
 
 func startReportMemory(mw *core.Middleware) {
-	if env := os.Getenv("ANYTYPE_REPORT_MEMORY"); env != "" {
+	if env := os.Getenv("LOOM_REPORT_MEMORY"); env != "" {
 		go func() {
 			var maxAlloc uint64
 			var meanCPU float64

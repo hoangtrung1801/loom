@@ -14,9 +14,9 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileacl"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/database"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/localstore/objectstore"

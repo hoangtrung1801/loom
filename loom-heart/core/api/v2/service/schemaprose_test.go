@@ -28,13 +28,13 @@ import (
 var servedRouteShaped = regexp.MustCompile(`(?:GET|POST|PATCH|PUT|DELETE|HEAD) (?:/|…|\.\.\./)|(?:…|\.\.\.)/[a-z]|/v2/(?:spaces|schemas|search|auth|validate)\b|\?[A-Za-z0-9_-]+=|\b[a-z_]+=<[a-z_]+>`)
 
 // anytypeLink is the format's own link syntax, exempt span-wise.
-var anytypeLink = regexp.MustCompile(`anytype://[^\s)]*`)
+var anytypeLink = regexp.MustCompile(`loom://[^\s)]*`)
 
 func TestServedSchemaProseCarriesNoRoutes(t *testing.T) {
 	t.Run("the link exemption covers the link span only", func(t *testing.T) {
-		mixed := "see [it](anytype://object?objectId=x), then GET /v2/schemas/object"
+		mixed := "see [it](loom://object?objectId=x), then GET /v2/schemas/object"
 		assert.NotEmpty(t, servedRouteShaped.FindString(anytypeLink.ReplaceAllString(mixed, "")))
-		assert.Empty(t, servedRouteShaped.FindString(anytypeLink.ReplaceAllString("[it](anytype://object?objectId=x)", "")))
+		assert.Empty(t, servedRouteShaped.FindString(anytypeLink.ReplaceAllString("[it](loom://object?objectId=x)", "")))
 	})
 
 	fx := newV2Fixture(t)
@@ -53,7 +53,7 @@ func TestServedSchemaProseCarriesNoRoutes(t *testing.T) {
 		case string:
 			checked++
 			// the format's inline-markup grammar documents its own link
-			// syntax (an anytype:// URL with a query) — a URL scheme, not a
+			// syntax (an loom:// URL with a query) — a URL scheme, not a
 			// route of this API; only that span is exempt
 			if found := servedRouteShaped.FindString(anytypeLink.ReplaceAllString(n, "")); found != "" {
 				t.Errorf("%s spells a route (%q) — name the operation by its op id\n  %s", where, found, n)

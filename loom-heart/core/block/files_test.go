@@ -13,10 +13,10 @@ func TestEnsureWithinScope(t *testing.T) {
 	scope := t.TempDir()
 
 	t.Run("dir inside scope is allowed", func(t *testing.T) {
-		in := filepath.Join(scope, "anytype-download")
+		in := filepath.Join(scope, "loom-download")
 		got, err := ensureWithinScope(scope, in)
 		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(resolved(t, scope), "anytype-download"), got)
+		assert.Equal(t, filepath.Join(resolved(t, scope), "loom-download"), got)
 	})
 
 	t.Run("scope root itself is allowed", func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestEnsureWithinScope(t *testing.T) {
 
 		// then: the leaf does not exist yet, which is the normal case — the
 		// containment decision still has to resolve the parent.
-		_, err := ensureWithinScope(scope, filepath.Join(link, "anytype-download"))
+		_, err := ensureWithinScope(scope, filepath.Join(link, "loom-download"))
 		require.Error(t, err)
 	})
 
@@ -73,11 +73,11 @@ func TestEnsureWithinScope(t *testing.T) {
 		require.NoError(t, os.Symlink(target, link))
 
 		// when
-		got, err := ensureWithinScope(scope, filepath.Join(link, "anytype-download"))
+		got, err := ensureWithinScope(scope, filepath.Join(link, "loom-download"))
 
 		// then
 		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(resolved(t, target), "anytype-download"), got)
+		assert.Equal(t, filepath.Join(resolved(t, target), "loom-download"), got)
 	})
 
 	// macOS hands out temp dirs under /var, itself a symlink to /private/var,
@@ -89,11 +89,11 @@ func TestEnsureWithinScope(t *testing.T) {
 		require.NoError(t, os.Symlink(realScope, aliasRoot))
 
 		// when
-		got, err := ensureWithinScope(aliasRoot, filepath.Join(realScope, "anytype-download"))
+		got, err := ensureWithinScope(aliasRoot, filepath.Join(realScope, "loom-download"))
 
 		// then
 		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(resolved(t, realScope), "anytype-download"), got)
+		assert.Equal(t, filepath.Join(resolved(t, realScope), "loom-download"), got)
 	})
 }
 
@@ -125,7 +125,7 @@ func TestDownloadTargetDir(t *testing.T) {
 
 		// then
 		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(resolved(t, tempDir), "anytype-download"), got)
+		assert.Equal(t, filepath.Join(resolved(t, tempDir), "loom-download"), got)
 	})
 
 	t.Run("sandboxed: a path inside the scope is allowed", func(t *testing.T) {
@@ -192,7 +192,7 @@ func TestDownloadTargetDir(t *testing.T) {
 
 		// then
 		require.NoError(t, err)
-		assert.Equal(t, filepath.Join(tempDir, "anytype-download"), got)
+		assert.Equal(t, filepath.Join(tempDir, "loom-download"), got)
 	})
 }
 

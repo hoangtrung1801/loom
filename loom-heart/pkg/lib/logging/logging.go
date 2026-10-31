@@ -110,7 +110,7 @@ var activeSink *bufferedLumberjackSink
 // sinkFilename extracts the log file path from a sink URL.
 //
 // zap resolves output paths through url.Parse. A Windows path carries a drive
-// letter, so "lumberjack:C:\dir\anytype.log" has no "/" after the scheme and is
+// letter, so "lumberjack:C:\dir\loom.log" has no "/" after the scheme and is
 // parsed as an *opaque* URL: the whole path lands in u.Opaque and u.Path is
 // empty. Using u.Path alone therefore yielded an empty Filename on Windows,
 // and lumberjack silently fell back to os.TempDir()/<argv0>-lumberjack.log —
@@ -218,7 +218,7 @@ func Init(logLevels string, saveLogs bool) {
 	} else {
 		registerLumberjackSink(paths.LogsDir, paths.LogFile, &DefaultCfg)
 	}
-	envLogLevels := os.Getenv("ANYTYPE_LOG_LEVEL")
+	envLogLevels := os.Getenv("LOOM_LOG_LEVEL")
 	if logLevels == "" {
 		logLevels = envLogLevels
 	}

@@ -45,7 +45,7 @@ func recordingStub(t *testing.T, handler http.HandlerFunc) func() []string {
 		handler(w, r)
 	})
 	// wrap the server fullStub started: record by re-pointing at a proxy
-	target := os.Getenv("ANYTYPE_API_URL")
+	target := os.Getenv("LOOM_API_URL")
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		paths = append(paths, r.Method+" "+r.URL.Path)
@@ -60,7 +60,7 @@ func recordingStub(t *testing.T, handler http.HandlerFunc) func() []string {
 		_, _ = io.Copy(w, resp.Body)
 	}))
 	t.Cleanup(proxy.Close)
-	t.Setenv("ANYTYPE_API_URL", proxy.URL)
+	t.Setenv("LOOM_API_URL", proxy.URL)
 	return func() []string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -222,9 +222,9 @@ func TestRunAPI(t *testing.T) {
 
 	t.Run("no server says what is needed", func(t *testing.T) {
 		// given
-		t.Setenv("ANYTYPE_API_URL", "http://127.0.0.1:1")
+		t.Setenv("LOOM_API_URL", "http://127.0.0.1:1")
 		t.Setenv("LOOM_CONFIG", t.TempDir()+"/config.json")
-		t.Setenv("ANYTYPE_API_KEY", "test-key")
+		t.Setenv("LOOM_API_KEY", "test-key")
 
 		// when
 		code, _, stderr := runCLI("api")
@@ -299,7 +299,7 @@ func TestRunFullTier(t *testing.T) {
 
 	t.Run("mcp --tier full without a server exits 1 before serving", func(t *testing.T) {
 		// given
-		t.Setenv("ANYTYPE_API_URL", "http://127.0.0.1:1")
+		t.Setenv("LOOM_API_URL", "http://127.0.0.1:1")
 		t.Setenv("LOOM_CONFIG", t.TempDir()+"/config.json")
 
 		// when

@@ -21,7 +21,7 @@ Scope: global
   would match anywhere
 - Resets the penalties on a mid-session network change: a new network
   deserves a clean verdict
-- Disabled entirely via ANYTYPE_QUIC_AUTO_DEMOTION=0
+- Disabled entirely via LOOM_QUIC_AUTO_DEMOTION=0
 */
 
 import (
@@ -54,7 +54,7 @@ const (
 	// DisableEnv set to "0" turns QUIC auto-demotion off entirely (debugging
 	// escape hatch): bootstrap skips registering quicdemotion and this
 	// component skips seeding and persistence.
-	DisableEnv = "ANYTYPE_QUIC_AUTO_DEMOTION"
+	DisableEnv = "LOOM_QUIC_AUTO_DEMOTION"
 
 	walletCName = accountservice.CName
 

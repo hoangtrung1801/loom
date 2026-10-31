@@ -32,9 +32,9 @@ Routing happens inside `ObjectImport` per `req.type`:
 
 | `model.Import.Type` | Engine | Kill switch |
 |---|---|---|
-| `Markdown` (1) | **v2** | `ANYTYPE_IMPORTV2MARKDOWN=false` |
-| `Obsidian` (7) | **v2** | `ANYTYPE_IMPORTV2MARKDOWN=false` |
-| `Notion` (0) | **v2** | `ANYTYPE_IMPORTV2NOTION=false` |
+| `Markdown` (1) | **v2** | `LOOM_IMPORTV2MARKDOWN=false` |
+| `Obsidian` (7) | **v2** | `LOOM_IMPORTV2MARKDOWN=false` |
+| `Notion` (0) | **v2** | `LOOM_IMPORTV2NOTION=false` |
 | `Html`, `Txt`, `Csv`, `Pb`, `External` | v1 | — |
 
 v2 is the default for the first three; the env switches exist to fall back to v1 without a new build.

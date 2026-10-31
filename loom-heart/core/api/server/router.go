@@ -24,11 +24,11 @@ const (
 
 // envApiAllowedOrigins adds comma-separated exact origins to the allowlist, for
 // local clients that are not served from a loopback host.
-const envApiAllowedOrigins = "ANYTYPE_API_ALLOWED_ORIGINS"
+const envApiAllowedOrigins = "LOOM_API_ALLOWED_ORIGINS"
 
 // envApiAllowedHosts adds comma-separated Host header values to the allowlist,
 // for operators who bind the API to a routable interface and reach it by name.
-const envApiAllowedHosts = "ANYTYPE_API_ALLOWED_HOSTS"
+const envApiAllowedHosts = "LOOM_API_ALLOWED_HOSTS"
 
 // NewRouter builds and returns a *gin.Engine with all routes configured.
 func (srv *Server) NewRouter(mw apicore.ClientCommands, eventService apicore.EventService, openapiYAML []byte, openapiJSON []byte) *gin.Engine {
@@ -86,7 +86,7 @@ func (srv *Server) NewRouter(mw apicore.ClientCommands, eventService apicore.Eve
 
 // setupMiddleware configures the base middleware for the router
 func (srv *Server) setupMiddleware() *gin.Engine {
-	isDebug := os.Getenv("ANYTYPE_API_DEBUG") == "1"
+	isDebug := os.Getenv("LOOM_API_DEBUG") == "1"
 	if !isDebug {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -120,7 +120,7 @@ func createPaginationMiddleware() gin.HandlerFunc {
 
 // createRateLimitMiddleware creates and returns rate limit middleware
 func createRateLimitMiddleware() gin.HandlerFunc {
-	isRateLimitDisabled := os.Getenv("ANYTYPE_API_DISABLE_RATE_LIMIT") == "1"
+	isRateLimitDisabled := os.Getenv("LOOM_API_DISABLE_RATE_LIMIT") == "1"
 	return ensureRateLimit(maxWriteRequestsPerSecond, maxBurstRequests, isRateLimitDisabled)
 }
 

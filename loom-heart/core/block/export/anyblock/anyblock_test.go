@@ -29,7 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/maps"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache/mock_cache"
 	editorsb "github.com/hoangtrung1801/loom/loom-heart/core/block/editor/fileobject"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/fileobject/mock_fileobject"
@@ -42,6 +41,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/event/mock_event"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/mock_files"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/notifications/mock_notifications"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils/mock_relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/anyblockjson"

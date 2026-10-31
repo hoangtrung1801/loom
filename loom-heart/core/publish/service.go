@@ -35,11 +35,11 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/export"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/identity"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inviteservice"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/core"
@@ -209,7 +209,7 @@ func (s *service) publishToPublishServer(ctx context.Context, spaceId, pageId, u
 		return err
 	}
 
-	if localPublishDir := os.Getenv("ANYTYPE_LOCAL_PUBLISH_DIR"); localPublishDir != "" {
+	if localPublishDir := os.Getenv("LOOM_LOCAL_PUBLISH_DIR"); localPublishDir != "" {
 		err := os.CopyFS(localPublishDir, os.DirFS(tempPublishDir))
 		if err != nil {
 			log.Error("publishing to local dir error", zap.Error(err))

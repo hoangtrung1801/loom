@@ -19,7 +19,7 @@ import (
 // bundled relations. Internal escape hatch: it lets a build learn about a relation without
 // regenerating relation.gen.go. Files use the same schema as relations.json, and a key that
 // already exists in the generated bundle is never replaced.
-const envExtraRelations = "ANYTYPE_EXTRA_RELATIONS"
+const envExtraRelations = "LOOM_EXTRA_RELATIONS"
 
 var log = logging.Logger("bundle")
 

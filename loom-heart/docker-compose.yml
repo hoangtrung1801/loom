@@ -15,5 +15,5 @@ services:
         source: ./tests/.cache/anytype_old
         target: /var/anytype_old
     ports:
-      - "${ANYTYPE_TEST_GRPC_PORT:?}:31007"
+      - "${LOOM_TEST_GRPC_PORT:?}:31007"
       - "31008:31008"

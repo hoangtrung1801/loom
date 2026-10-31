@@ -6,10 +6,10 @@
     <envs>
       <env name="ANYDEBUG" value=":6061" />
       <env name="ANYPROF" value=":6060" />
-      <env name="ANYTYPE_GATEWAY_ADDR" value="127.0.0.1:31006" />
-      <env name="ANYTYPE_GRPC_ADDR" value="127.0.0.1:31007" />
-      <env name="ANYTYPE_GRPCWEB_ADDR" value="127.0.0.1:31008" />
-      <env name="ANYTYPE_API_DEBUG" value="1" />
+      <env name="LOOM_GATEWAY_ADDR" value="127.0.0.1:31006" />
+      <env name="LOOM_GRPC_ADDR" value="127.0.0.1:31007" />
+      <env name="LOOM_GRPCWEB_ADDR" value="127.0.0.1:31008" />
+      <env name="LOOM_API_DEBUG" value="1" />
       <env name="CC" value="/usr/bin/cc" />
       <env name="CXX" value="/usr/bin/c++" />
       <env name="CGO_CFLAGS" value="-Wno-deprecated-declarations -Wno-deprecated-non-prototype -Wno-xor-used-as-pow" />

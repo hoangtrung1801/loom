@@ -35,7 +35,7 @@ import (
 	"github.com/anyproto/any-sync/app/ocache"
 	"github.com/cheggaaa/mb/v3"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/components"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"

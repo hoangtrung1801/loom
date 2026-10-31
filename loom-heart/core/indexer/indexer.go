@@ -13,12 +13,12 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/cache"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/chats/chatrepository"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/source"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/participants"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
@@ -150,7 +150,7 @@ func (i *indexer) StartFullTextIndex() (err error) {
 	}
 	i.ftQueueFinished = make(chan struct{})
 	var ftCtx context.Context
-	if os.Getenv("ANYTYPE_DISABLE_FT_INDEXER") == "1" {
+	if os.Getenv("LOOM_DISABLE_FT_INDEXER") == "1" {
 		close(i.ftQueueFinished)
 		log.Warn("FT indexer disabled")
 		return

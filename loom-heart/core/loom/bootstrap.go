@@ -1,4 +1,4 @@
-package anytype
+package loom
 
 import (
 	"context"
@@ -39,8 +39,6 @@ import (
 	"github.com/anyproto/any-sync/paymentservice/paymentserviceclient2"
 
 	"github.com/hoangtrung1801/loom/loom-heart/core/acl"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/api"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/backlinks"
@@ -95,6 +93,8 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/inviteservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/invitestore"
 	"github.com/hoangtrung1801/loom/loom-heart/core/kanban"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/migration"
 	"github.com/hoangtrung1801/loom/loom-heart/core/nameservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/notifications"
@@ -157,7 +157,7 @@ var (
 
 func BootstrapConfig(newAccount bool, spaceStreamAutoJoinUrl string) *config.Config {
 	return config.New(
-		config.WithDebugAddr(os.Getenv("ANYTYPE_DEBUG_ADDR")),
+		config.WithDebugAddr(os.Getenv("LOOM_DEBUG_ADDR")),
 		config.WithNewAccount(newAccount),
 		config.WithAutoJoinStream(spaceStreamAutoJoinUrl),
 	)

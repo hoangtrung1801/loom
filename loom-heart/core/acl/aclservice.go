@@ -48,10 +48,10 @@ import (
 	"github.com/ipfs/go-cid"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/invitecleanup"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inviteservice"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/crossspacesub"
 	"github.com/hoangtrung1801/loom/loom-heart/core/wallet"

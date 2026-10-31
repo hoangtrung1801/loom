@@ -23,7 +23,7 @@ import (
 	"github.com/anyproto/anytype-push-server/pushclient/pushapi"
 	"storj.io/drpc"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 )
 
 func New() Client {

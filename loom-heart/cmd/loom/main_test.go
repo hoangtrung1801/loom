@@ -260,8 +260,8 @@ func stubServer(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	t.Setenv("ANYTYPE_API_URL", server.URL)
-	t.Setenv("ANYTYPE_API_KEY", "test-key")
+	t.Setenv("LOOM_API_URL", server.URL)
+	t.Setenv("LOOM_API_KEY", "test-key")
 	t.Setenv("LOOM_SESSION", t.TempDir()+"/session.json")
 	t.Setenv("LOOM_CONFIG", t.TempDir()+"/config.json")
 }

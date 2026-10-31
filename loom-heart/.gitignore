@@ -18,7 +18,7 @@ tests/.cache/
 .env
 staging.yml
 build
-/core/anytype/config/nodes/custom.yml
+/core/loom/config/nodes/custom.yml
 /.direnv/
 /.envrc
 *.swp

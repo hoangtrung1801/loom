@@ -5,8 +5,8 @@ import (
 
 	"github.com/anyproto/any-sync/net"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/application"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/session"
 	walletComp "github.com/hoangtrung1801/loom/loom-heart/core/wallet"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"

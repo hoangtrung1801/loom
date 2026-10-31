@@ -10,7 +10,7 @@ import (
 	"github.com/anyproto/any-sync/nodeconf"
 	"gopkg.in/yaml.v3"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/pushnotification"
 	walletComp "github.com/hoangtrung1801/loom/loom-heart/core/wallet"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"

@@ -13,11 +13,11 @@ import (
 	"github.com/anyproto/any-sync/app"
 	"github.com/anyproto/any-sync/util/crypto"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/detailservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/metrics"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/bundle"
@@ -140,7 +140,7 @@ func (s *Service) RecoverFromLegacy(req *pb.RpcAccountRecoverFromLegacyExportReq
 func (s *Service) startApp(cfg *config.Config, derivationResult crypto.DerivationResult) error {
 	comps := []app.Component{
 		cfg,
-		anytype.BootstrapWallet(s.rootPath, derivationResult, s.fulltextPrimaryLanguage),
+		loom.BootstrapWallet(s.rootPath, derivationResult, s.fulltextPrimaryLanguage),
 		s.eventSender,
 	}
 

@@ -301,7 +301,7 @@ func TestMCPRepairLoop(t *testing.T) {
 		tip, isErr := callText(t, resps[0])
 		assert.True(t, isErr)
 		assert.Contains(t, tip, "invalid api key")
-		assert.Contains(t, tip, "ask the user to check ANYTYPE_API_KEY")
+		assert.Contains(t, tip, "ask the user to check LOOM_API_KEY")
 		assert.Contains(t, tip, "no change to the call will help")
 	})
 

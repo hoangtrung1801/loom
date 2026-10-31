@@ -41,11 +41,11 @@ import (
 	"google.golang.org/protobuf/proto"
 	"storj.io/drpc"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account/mock_account"
 	"github.com/hoangtrung1801/loom/loom-heart/core/domain"
 	"github.com/hoangtrung1801/loom/loom-heart/core/invitecleanup/mock_invitecleanup"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inviteservice"
 	"github.com/hoangtrung1801/loom/loom-heart/core/inviteservice/mock_inviteservice"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account/mock_account"
 	subscriptionservice "github.com/hoangtrung1801/loom/loom-heart/core/subscription"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/crossspacesub/mock_crossspacesub"
 	"github.com/hoangtrung1801/loom/loom-heart/core/subscription/mock_subscription"

@@ -1,7 +1,7 @@
 //go:build appdebug
 // +build appdebug
 
-package anytype
+package loom
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func (cc *componentCollector) printGraph() {
 	graph := map[string][]string{}
 	nogo := []string{
 		"anytype-heart/core/block.Service",
-		"anytype-heart/core/anytype/config.Config",
+		"anytype-heart/core/loom/config.Config",
 		"anytype-heart/core/wallet.wallet",
 		"anytype-heart/core/block.Service",
 		"anytype-heart/pkg/lib/localstore/objectstore.dsObjectStore",

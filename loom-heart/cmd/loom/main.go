@@ -19,8 +19,8 @@
 //	loom api list_types space_id=bafy…        # run one, key=value or JSON
 //	loom mcp --tier full                      # all of them over MCP stdio
 //
-// Configuration: ANYTYPE_API_URL (default http://127.0.0.1:31009) and
-// ANYTYPE_API_KEY (bearer key from the app's API settings). Instead of the
+// Configuration: LOOM_API_URL (default http://127.0.0.1:31009) and
+// LOOM_API_KEY (bearer key from the app's API settings). Instead of the
 // variables, `loom auth` pairs with the running app and saves the key to
 // a config file (config.json under the user config dir, LOOM_CONFIG
 // overrides; it may also hold an "api_url"); the variables win over the
@@ -297,7 +297,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintf(w, "  %-15s %s\n", "tools", "print the machine-readable tool manifest (JSON); --tier small|large|full")
 	fmt.Fprintf(w, "  %-15s %s\n", "mcp", "serve the tools over MCP stdio for AI agents; --tier small|large|full")
 	fmt.Fprintln(w, "\ncross-verb flags: --json, --dry-run, --if-match <etag>, --create-missing")
-	fmt.Fprintln(w, "environment: ANYTYPE_API_URL (default "+wrapper.DefaultBaseURL+"), ANYTYPE_API_KEY (or loom auth), LOOM_CONFIG, LOOM_SESSION")
+	fmt.Fprintln(w, "environment: LOOM_API_URL (default "+wrapper.DefaultBaseURL+"), LOOM_API_KEY (or loom auth), LOOM_CONFIG, LOOM_SESSION")
 	fmt.Fprintln(w, "\nstart with: loom spaces (lists space ids), then loom find --space <spaceId> --query … ; find's results are numbered handles the other verbs take as --object")
 }
 

@@ -12,8 +12,8 @@ import (
 	"github.com/anyproto/any-sync/commonspace/spacesyncproto"
 	"github.com/anyproto/any-sync/net/secureservice/handshake"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype"
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/account"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/account"
 	walletComp "github.com/hoangtrung1801/loom/loom-heart/core/wallet"
 	"github.com/hoangtrung1801/loom/loom-heart/metrics"
 	"github.com/hoangtrung1801/loom/loom-heart/pb"
@@ -151,7 +151,7 @@ func (s *Service) start(
 			}
 		}
 	}()
-	cfg := anytype.BootstrapConfig(false, joinStreamUrl)
+	cfg := loom.BootstrapConfig(false, joinStreamUrl)
 	if disableLocalNetworkSync {
 		cfg.DontStartLocalNetworkSyncAutomatically = true
 	}
@@ -172,7 +172,7 @@ func (s *Service) start(
 	}
 	comps := []app.Component{
 		cfg,
-		anytype.BootstrapWallet(s.rootPath, *s.derivedKeys, s.fulltextPrimaryLanguage),
+		loom.BootstrapWallet(s.rootPath, *s.derivedKeys, s.fulltextPrimaryLanguage),
 		s.eventSender,
 	}
 

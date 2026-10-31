@@ -63,9 +63,9 @@ func makeIteration() error {
 		return err
 	}
 
-	reportMemory := os.Getenv("ANYTYPE_REPORT_MEMORY")
+	reportMemory := os.Getenv("LOOM_REPORT_MEMORY")
 	if reportMemory == "" {
-		fmt.Println("Environment variable ANYTYPE_REPORT_MEMORY is not set.")
+		fmt.Println("Environment variable LOOM_REPORT_MEMORY is not set.")
 		return err
 	}
 

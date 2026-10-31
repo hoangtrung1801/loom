@@ -47,7 +47,6 @@ import (
 	"github.com/anyproto/any-sync/app"
 	"github.com/ipfs/go-cid"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/fileobject"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/smartblock"
 	"github.com/hoangtrung1801/loom/loom-heart/core/block/editor/state"
@@ -62,6 +61,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileobject/filemodels"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/fileoffloader"
 	"github.com/hoangtrung1801/loom/loom-heart/core/files/filesync"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/core/relationutils"
 	"github.com/hoangtrung1801/loom/loom-heart/core/session"
 	"github.com/hoangtrung1801/loom/loom-heart/core/syncstatus/filesyncstatus"

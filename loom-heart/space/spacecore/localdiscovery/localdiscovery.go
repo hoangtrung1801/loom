@@ -20,7 +20,7 @@ import (
 	"github.com/libp2p/zeroconf/v2"
 	"go.uber.org/zap"
 
-	"github.com/hoangtrung1801/loom/loom-heart/core/anytype/config"
+	"github.com/hoangtrung1801/loom/loom-heart/core/loom/config"
 	"github.com/hoangtrung1801/loom/loom-heart/net/addrs"
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
 	"github.com/hoangtrung1801/loom/loom-heart/space/spacecore/clientserver"
