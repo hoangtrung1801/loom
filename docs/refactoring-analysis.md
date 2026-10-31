@@ -234,12 +234,12 @@ These break the clean `Component → Lib → Store` dependency hierarchy.
 
 | Global | Usage | Risk |
 |--------|-------|------|
-| `window.Anytype` | `app.tsx:53` -- dev-only debug interface | Low |
-| `window.AnytypeGlobalConfig` | Read in `common.ts`, `menu/index.tsx` -- config from host environment | Low |
+| `window.Loom` | `app.tsx:53` -- dev-only debug interface | Low |
+| `window.LoomGlobalConfig` | Read in `common.ts`, `menu/index.tsx` -- config from host environment | Low |
 | `window.isExtension` | Read in `keyboard.ts`, `survey.ts`, `popup.ts` -- feature flag | Low |
 | `window.isWebVersion` | Read in `app.tsx` -- platform detection | Low |
 
-All are read-only or dev-only. `window.Electron` and `window.AnytypeGlobalConfig` assignments now only in test setup.
+All are read-only or dev-only. `window.Electron` and `window.LoomGlobalConfig` assignments now only in test setup.
 
 ### 7.4 Store Isolation
 

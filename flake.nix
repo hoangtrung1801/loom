@@ -68,7 +68,7 @@
       XDG_ICONS_PATH = "${pkgs.hicolor-icon-theme}/share:${pkgs.adwaita-icon-theme}/share";
     in {
       devShell = pkgs.mkShell {
-        name = "anytype-ts-dev";
+        name = "loom-dev";
         SERVER_PORT = 8080;
         # ANY_SYNC_NETWORK = "/home/zarkone/anytype/local-network-config.yml";
         LD_LIBRARY_PATH = "${pkgs.lib.strings.makeLibraryPath deps}";

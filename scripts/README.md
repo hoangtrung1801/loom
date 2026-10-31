@@ -12,7 +12,7 @@ Polls a localhost port until it responds. Used internally by the dev scripts to 
 
 ## start-web.js
 
-Starts anytypeHelper + Vite for browser-only development (no Electron). See `bun run start:web`.
+Starts loomHelper + Vite for browser-only development (no Electron). See `bun run start:web`.
 
 ---
 
@@ -35,7 +35,7 @@ Two modes:
 
 The bundled backend is imported from `anyproto/anytype-heart` commit `cfed14bd90e5d3fccd8f7a0809b1c61ee7c3f453`. It is regular source in this repository, not a submodule; backend and frontend changes are committed and pushed together. Its license remains in `anytype-heart/LICENSE.md`.
 
-For local full-stack development, run `bun install`, `bun run generate:protos`, then `bun run start:dev` from the repository root. The generator builds the native helper and installs it into the root `dist/` directory. Backend native-library prerequisites are documented in `anytype-heart/docs/Build.md`. Set `HEART_DIR` (or `ANYTYPE_HEART_PATH`) only to use a different backend checkout.
+For local full-stack development, run `bun install`, `bun run generate:protos`, then `bun run start:dev` from the repository root. The generator builds the native helper and installs it into the root `dist/` directory. Backend native-library prerequisites are documented in `anytype-heart/docs/Build.md`. Set `HEART_DIR` (or `LOOM_HEART_PATH`) only to use a different backend checkout.
 
 ### Linux first-time setup (Fedora / Ubuntu)
 
@@ -73,7 +73,7 @@ bun run start:dev
 | `protoc not found` | Install `protobuf-compiler` |
 | `ts-proto not found at .../protoc-gen-ts_proto` | Run `bun install` first |
 | `dist/lib/protos not found` (with `--from-dist`) | Run `./update.sh <platform> <arch>` first |
-| `anytype-heart repo not found` (local mode) | Ensure the bundled `anytype-heart/` directory exists, or check the `HEART_DIR` / `ANYTYPE_HEART_PATH` override |
+| `anytype-heart repo not found` (local mode) | Ensure the bundled `anytype-heart/` directory exists, or check the `HEART_DIR` / `LOOM_HEART_PATH` override |
 | `runtime/cgo ... exit status 2` when `cc` resolves to a wrapper | On macOS, use `CC=/usr/bin/clang CXX=/usr/bin/clang++ bun run generate:protos` to select the system compiler |
 
 ## generate-service-registry.js
@@ -383,4 +383,4 @@ node --inspect scripts/generate-release-notes.js
 
 ## License
 
-This script is part of the Anytype project. See the main LICENSE.md for details.
+This script is part of the Loom project. See the main LICENSE.md for details.

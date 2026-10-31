@@ -8,7 +8,7 @@ Electron main process files for desktop app integration. TypeScript source in `t
 - `api.ts` - IPC API handlers for renderer-to-main communication
 - `config.ts` - App configuration management
 - `menu.ts` - Native application menu (File, Edit, View, etc.)
-- `server.ts` - Local gRPC server management (anytypeHelper): spawn, stdin parent lifeline (`secret <base64url>` first, then `shutdown`), graceful stop
+- `server.ts` - Local gRPC server management (loomHelper): spawn, stdin parent lifeline (`secret <base64url>` first, then `shutdown`), graceful stop
 - `update.ts` - Auto-update logic
 - `util.ts` - Utility functions (paths, platform detection, logging)
 - `window.ts` - Window management (create, close, focus, tabs, local-link approval window)

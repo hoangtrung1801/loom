@@ -142,7 +142,7 @@ The middleware version is pinned in `middleware.version`. To fetch a pre-built m
 ./update.sh <macos-latest|ubuntu-latest|windows-latest> <arm|amd>
 ```
 
-This downloads the `anytype-heart` release matching the version in `middleware.version`, extracts the `anytypeHelper` binary into `dist/`, and copies protobuf definitions and generated JSON into `dist/lib/`.
+This downloads the `anytype-heart` release matching the version in `middleware.version`, extracts the `loomHelper` binary into `dist/`, and copies protobuf definitions and generated JSON into `dist/lib/`.
 
 For CI environments (requires GitHub credentials):
 

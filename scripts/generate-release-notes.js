@@ -373,7 +373,7 @@ async function fetchMergedPRs(fromDate, toDate, githubToken) {
 			path: `/search/issues?${params.toString()}`,
 			method: 'GET',
 			headers: {
-				'User-Agent': 'anytype-release-notes-generator',
+				'User-Agent': 'loom-release-notes-generator',
 				'Accept': 'application/vnd.github+json',
 				'X-GitHub-Api-Version': '2022-11-28'
 			}

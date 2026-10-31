@@ -31,7 +31,7 @@ ELECTRON_SKIP_NOTARIZE=1 bun run dist:mac
 
 The build output is in `dist/mac-arm64` (or `dist/mac` for x64). You can run the app directly from terminal:
 ```bash
-./dist/mac-arm64/Anytype.app/Contents/MacOS/Anytype
+./dist/mac-arm64/Loom.app/Contents/MacOS/Loom
 ```
 
 ### Build Dependencies
@@ -40,13 +40,13 @@ Dependencies included in the packaged app are whitelisted. The `bun run build:de
 ### Development Setup
 Before development, you need the anytype-heart middleware:
 1. Run `./update.sh <platform> <arch>` to fetch middleware
-2. Start anytypeHelper binary in background
+2. Start loomHelper binary in background
 3. Use `SERVER_PORT` env var to specify gRPC port
 
 ## Architecture Overview
 
 ### High-Level Structure
-Anytype is an Electron-based desktop application with TypeScript/React frontend communicating with a Go-based middleware (anytype-heart) via gRPC.
+Loom is an Electron-based desktop application with TypeScript/React frontend communicating with a Go-based middleware (anytype-heart) via gRPC.
 
 **Key Components:**
 - **Electron Main Process** (`electron.js`) - Window management, IPC, system integration
@@ -298,7 +298,7 @@ Detailed documentation is available in `docs/` for deeper context on each module
 
 ## Web Mode Development
 
-Run in browser without Electron: `bun run start:web` (starts anytypeHelper + Vite dev server). Use `ANYTYPE_USE_SIDE_SERVER=http://...` to skip helper start. See `docs/src/ts/lib/web/README.md` for details.
+Run in browser without Electron: `bun run start:web` (starts loomHelper + Vite dev server). Use `LOOM_USE_SIDE_SERVER=http://...` to skip helper start. See `docs/src/ts/lib/web/README.md` for details.
 
 ## Linear API Integration
 

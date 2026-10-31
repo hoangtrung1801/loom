@@ -11,7 +11,7 @@ const path = require('path');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 // Honor the same checkout overrides as generate-protos.sh.
-const heartPath = process.env.HEART_DIR || process.env.ANYTYPE_HEART_PATH;
+const heartPath = process.env.HEART_DIR || process.env.LOOM_HEART_PATH;
 const HEART_DIR = heartPath
 	? path.resolve(heartPath)
 	: path.resolve(ROOT_DIR, 'anytype-heart');
