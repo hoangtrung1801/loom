@@ -10,6 +10,13 @@ on:
   push:
     tags:
       - 'loom-app-v*'
+    # Self-test: rebuild when the build recipe itself changes.
+    branches:
+      - develop
+    paths:
+      - '.github/workflows/loom-app.yml'
+      - 'scripts/generate-protos.sh'
+      - 'loom-heart/scripts/fetch-tantivy.sh'
 
 permissions:
   contents: read
