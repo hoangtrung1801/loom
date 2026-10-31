@@ -1,0 +1,114 @@
+name: loom CLI
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'loom-v*'
+  pull_request:
+    paths:
+      - 'anytype-heart/cmd/loom/**'
+      - '.github/workflows/loom-cli.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (linux-${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: amd64
+            tantivy: linux-amd64-musl
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            tantivy: linux-arm64-musl
+    defaults:
+      run:
+        working-directory: anytype-heart
+    env:
+      GOPRIVATE: github.com/anyproto
+      GOTOOLCHAIN: local
+    steps:
+      # Only needed if a dependency is private; skipped when the secret is absent
+      # (e.g. pull requests from forks) so public modules still download.
+      - name: git config
+        env:
+          ANYTYPE_PAT: ${{ secrets.ANYTYPE_PAT }}
+        run: |
+          if [ -n "$ANYTYPE_PAT" ]; then
+            git config --global url."https://${ANYTYPE_PAT}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: anytype-heart/go.mod
+
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      # tantivy-go links prebuilt Rust static libs (cgo), so a plain
+      # CGO_ENABLED=0 cross-compile is impossible. Fetch + sha256-verify them.
+      - name: Fetch tantivy libs
+        run: make check-tantivy-version
+
+      - name: Build loom
+        env:
+          CGO_ENABLED: '1'
+          CC: musl-gcc
+          # The tantivy-go "remote" cgo variant has no -L; point it at the musl lib.
+          CGO_LDFLAGS: -L${{ github.workspace }}/anytype-heart/deps/libs/${{ matrix.tantivy }}
+        run: |
+          # Tags/flags mirror makefiles/ci-cross-compile-library.mk (linux targets).
+          go build \
+            -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
+            -ldflags="-linkmode external -extldflags '-static -Wl,-z stack-size=1000000'" \
+            -o loom ./cmd/loom
+
+      - name: Smoke test
+        run: |
+          file loom
+          ./loom --help
+
+      - name: Package
+        run: |
+          name=loom-linux-${{ matrix.arch }}
+          tar -czf "$name.tar.gz" loom
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: loom-linux-${{ matrix.arch }}
+          path: |
+            anytype-heart/loom-linux-${{ matrix.arch }}.tar.gz
+            anytype-heart/loom-linux-${{ matrix.arch }}.tar.gz.sha256
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/loom-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
