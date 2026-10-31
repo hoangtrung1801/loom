@@ -277,7 +277,7 @@
 			"dist/index.html",
 			"dist/tabs.html",
 			"dist/embed/**/*",
-			"dist/linkApproval/**/*",
+			"dist/challenge/**/*",
 			"dist/lib/**/*",
 			"!dist/lib/pb/**/*",
 			"!dist/lib/pkg/**/*",

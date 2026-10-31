@@ -54,3 +54,5 @@ dist/lib/json/systemTypes.json
 *.pprof
 trace_*.out
 coldsync*.log
+
+dist/*
