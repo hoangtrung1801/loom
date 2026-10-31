@@ -105,6 +105,27 @@ underscores (`Due_date` for "Due date"); a name no identifier can spell
 - Errors are self-describing and name valid alternatives — read them, fix
   the named field, retry once. Do not loop blindly.
 
+## Running without the app: `loom serve`
+
+`loom serve` runs the middleware inside the CLI, so a server needs no
+desktop app. It syncs one account through the any-sync network and serves
+the JSON API for the other verbs (it saves a key for them in the CLI config).
+
+- New account: `loom serve --new` prints the recovery phrase once and
+  stores it (0600) in the data dir; later starts need only `loom serve`.
+- Existing account: `LOOM_MNEMONIC="…" loom serve` (or `--mnemonic-file`);
+  add `--remember` to keep the phrase for restarts. The first start fetches
+  the account's data from the network and can take a while.
+- The desktop app on your own machine signs in to the same account with the
+  recovery phrase and stays in sync with the server.
+- `--network-config file.yml` points at a self-hosted any-sync network
+  instead of the built-in one; `--api-addr` moves the API off
+  `127.0.0.1:31009` (use another port if the desktop app runs on the same
+  machine); `--data-dir` moves the storage; `--no-lan-sync` turns off direct
+  sync with devices on the same network.
+- The recovery phrase is full access to the account: keep it and the data
+  dir private.
+
 ## References
 
 - `loom tools` — the machine-readable manifest: per-tool JSON schema,
