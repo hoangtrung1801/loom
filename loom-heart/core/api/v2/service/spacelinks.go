@@ -13,7 +13,7 @@ import (
 )
 
 // A cross-space object reference is the platform's own two-parameter deep
-// link, `loom://object?objectId=<id>&spaceId=<space id>`
+// link, `anytype://object?objectId=<id>&spaceId=<space id>`
 // (core/block/export/writer.go). The codec keeps it as an ordinary Link
 // mark, destination verbatim — a second parameter makes it not a same-space
 // object link, and nothing guesses. The API serves space ids SHORT (§8.35)
@@ -22,7 +22,8 @@ import (
 // client can open: the short reference is expanded to the full id on every
 // path that turns caller text into marks.
 const (
-	crossSpaceLinkPrefix = "loom://object?"
+	// The scheme is part of the any-block inline link syntax (an external module), not the app URL scheme.
+	crossSpaceLinkPrefix = "anytype://object?"
 	crossSpaceLinkParam  = "spaceId"
 	// maxCrossSpaceLinkDest is the codec's destination bound (INLINE_MARKUP:
 	// 2048 code points AS SPELLED in the document). Expanding a short
@@ -98,7 +99,7 @@ func (e *spaceLinkExpander) destination(dest string) string {
 		return dest
 	}
 	u, err := url.Parse(dest)
-	if err != nil || u.Scheme != "loom" || u.Host != "object" {
+	if err != nil || u.Scheme != "anytype" || u.Host != "object" {
 		return dest
 	}
 	q, err := url.ParseQuery(u.RawQuery)
