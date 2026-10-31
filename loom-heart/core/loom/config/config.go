@@ -464,7 +464,7 @@ func (c *Config) initFromFileAndEnv(repoPath string) error {
 
 	}
 
-	err := envconfig.Process("ANYTYPE", c)
+	err := envconfig.Process("LOOM", c)
 	if err != nil {
 		log.Errorf("failed to read config from env: %v", err)
 	}
