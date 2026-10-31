@@ -185,7 +185,7 @@ class UtilMenu {
 		if (config.experimental) {
 			ret = ret.concat([
 				{ id: I.EmbedProcessor.Image, name: translate('blockEmbedExternalImage') },
-				{ id: I.EmbedProcessor.AnytypeMiniApp, name: 'Anytype Mini App' },
+				{ id: I.EmbedProcessor.LoomMiniApp, name: 'Loom Mini App' },
 			]);
 		};
 
@@ -789,7 +789,7 @@ class UtilMenu {
 		r[I.ImportType.Markdown] = 'Markdown';
 		r[I.ImportType.Html] = 'HTML';
 		r[I.ImportType.Text] = 'TXT';
-		r[I.ImportType.Protobuf] = 'Anytype';
+		r[I.ImportType.Protobuf] = 'Loom';
 		r[I.ImportType.Csv] = 'CSV';
 		r[I.ImportType.Obsidian] = 'Obsidian';
 		return r;

@@ -65,7 +65,7 @@ class UtilCommon {
 	 * Returns the global configuration object from the window.
 	 */
 	getGlobalConfig () {
-		return window.AnytypeGlobalConfig || {};
+		return window.LoomGlobalConfig || {};
 	};
 
 	/**
@@ -258,7 +258,7 @@ class UtilCommon {
 
 	/**
 	 * Copies data to the clipboard and optionally calls a callback.
-	 * @param {any} data - The data to copy (text, html, anytype).
+	 * @param {any} data - The data to copy (text, html, loom).
 	 * @param {function} [callBack] - Optional callback after copy.
 	 */
 	clipboardCopy (data: any, callBack?: () => void) {
@@ -273,8 +273,8 @@ class UtilCommon {
 			if (data.html) {
 				e.clipboardData.setData('text/html', data.html.replace(/\u200B/g, ''));
 			};
-			if (data.anytype) {
-				e.clipboardData.setData('application/json', JSON.stringify(data.anytype));
+			if (data.loom) {
+				e.clipboardData.setData('application/json', JSON.stringify(data.loom));
 			};
 
 			removed = true;
@@ -528,7 +528,7 @@ class UtilCommon {
 
 		// App is already working
 		if (code == J.Error.Code.ANOTHER_ANYTYPE_PROCESS_IS_RUNNING) {
-			alert('You have another instance of anytype running on this machine. Closing...');
+			alert('You have another instance of loom running on this machine. Closing...');
 			Renderer.send('exit', false);
 			return false;
 		};

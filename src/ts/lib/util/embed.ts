@@ -552,7 +552,7 @@ class UtilEmbed {
 			I.EmbedProcessor.Spotify,
 			I.EmbedProcessor.AppleMusic,
 			I.EmbedProcessor.Bandcamp,
-			I.EmbedProcessor.AnytypeMiniApp,
+			I.EmbedProcessor.LoomMiniApp,
 		].includes(p);
 	};
 
@@ -572,7 +572,7 @@ class UtilEmbed {
 			I.EmbedProcessor.Kroki,
 			I.EmbedProcessor.Drawio,
 			I.EmbedProcessor.Image,
-			I.EmbedProcessor.AnytypeMiniApp,
+			I.EmbedProcessor.LoomMiniApp,
 		].includes(p);
 	};
 
@@ -606,7 +606,7 @@ class UtilEmbed {
 	allowEmptyContent (p: I.EmbedProcessor) {
 		return [
 			I.EmbedProcessor.Excalidraw,
-			I.EmbedProcessor.AnytypeMiniApp,
+			I.EmbedProcessor.LoomMiniApp,
 		].includes(p);
 	};
 

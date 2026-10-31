@@ -30,7 +30,7 @@ describe('UtilCommon.saveClipboardFiles', () => {
 
 	it('writes same-named files into separate unique paths keeping the name', async () => {
 		let n = 0;
-		const fileWrite = vi.fn((name: string) => `/tmp/anytype-${++n}/${name}`);
+		const fileWrite = vi.fn((name: string) => `/tmp/loom-${++n}/${name}`);
 
 		vi.stubGlobal('FileReader', FakeReader);
 		electron.fileWrite = fileWrite;
@@ -44,7 +44,7 @@ describe('UtilCommon.saveClipboardFiles', () => {
 			[ 'image.png', 'first', { encoding: 'binary', unique: true } ],
 			[ 'image.png', 'second', { encoding: 'binary', unique: true } ],
 		]);
-		expect(files.map(it => it.path)).toEqual([ '/tmp/anytype-1/image.png', '/tmp/anytype-2/image.png' ]);
+		expect(files.map(it => it.path)).toEqual([ '/tmp/loom-1/image.png', '/tmp/loom-2/image.png' ]);
 	});
 
 	it('passes files that already have a path through unchanged', async () => {
@@ -66,7 +66,7 @@ describe('UtilCommon.saveClipboardFiles', () => {
 			if (name == 'broken.png') {
 				throw new Error('ENOSPC');
 			};
-			return `/tmp/anytype-1/${name}`;
+			return `/tmp/loom-1/${name}`;
 		});
 
 		const files = await save([
@@ -74,7 +74,7 @@ describe('UtilCommon.saveClipboardFiles', () => {
 			{ name: 'ok.png', file: { content: 'b' } },
 		]);
 
-		expect(files.map(it => it.path)).toEqual([ '/tmp/anytype-1/ok.png' ]);
+		expect(files.map(it => it.path)).toEqual([ '/tmp/loom-1/ok.png' ]);
 	});
 
 });

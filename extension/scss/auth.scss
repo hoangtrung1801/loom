@@ -1,6 +1,6 @@
-html.anytypeWebclipper-auth { width: 640px; position: absolute; left: 50%; top: 50%; transform: translate3d(-50%, -50%, 0px); }
+html.loomWebclipper-auth { width: 640px; position: absolute; left: 50%; top: 50%; transform: translate3d(-50%, -50%, 0px); }
 
-#anytypeWebclipper-auth {
+#loomWebclipper-auth {
 	@import "~scss/_mixins";
 
 	.input, .select, .textarea { @include text-small; border: 1px solid var(--color-shape-secondary); width: 100%; border-radius: 1px; }

@@ -14,7 +14,7 @@ const meta: Meta<typeof ApiKeyEditor> = {
 		spaces,
 		t: key => text[key] || key,
 		formatDate: timestamp => new Date(timestamp * 1000).toLocaleDateString(),
-		onCreate: (_, callback) => callback({ key: 'anytype_preview_key_for_storybook_only', error: { code: 0 } }),
+		onCreate: (_, callback) => callback({ key: 'loom_preview_key_for_storybook_only', error: { code: 0 } }),
 		onUpdate: (_, __, callback) => callback({ error: { code: 0 } }),
 		onCopy: () => {},
 		onClose: () => {},

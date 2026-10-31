@@ -570,7 +570,7 @@ export const BlockPaste = (contextId: string, focusedId: string, range: I.TextRa
 		selectedBlockIds: blockIds,
 		textSlot: data.text,
 		htmlSlot: data.html,
-		anySlot: (data.anytype || []).map(Mapper.To.Block),
+		anySlot: (data.loom || []).map(Mapper.To.Block),
 		fileSlot: (data.files || []).map(Mapper.To.PasteFile),
 		url,
 	}, callBack);

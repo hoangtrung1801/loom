@@ -1689,7 +1689,7 @@ class UtilData {
 	 * The typeof guard covers environments without the build-time defines (unit tests).
 	 */
 	isImportAiAnytypeAvailable (): boolean {
-		return ('undefined' != typeof IMPORT_AI_ANYTYPE_ENDPOINT) && Boolean(IMPORT_AI_ANYTYPE_ENDPOINT && IMPORT_AI_ANYTYPE_MODEL);
+		return ('undefined' != typeof IMPORT_AI_LOOM_ENDPOINT) && Boolean(IMPORT_AI_LOOM_ENDPOINT && IMPORT_AI_LOOM_MODEL);
 	};
 
 	/**
@@ -1723,10 +1723,10 @@ class UtilData {
 			return {
 				config: {
 					provider: I.AiProvider.OpenAi,
-					endpoint: IMPORT_AI_ANYTYPE_ENDPOINT,
-					model: IMPORT_AI_ANYTYPE_MODEL,
+					endpoint: IMPORT_AI_LOOM_ENDPOINT,
+					model: IMPORT_AI_LOOM_MODEL,
 					// OPENAI provider requires a non-empty token middleware-side; the proxy may not check it
-					token: IMPORT_AI_ANYTYPE_TOKEN || 'anytype',
+					token: IMPORT_AI_LOOM_TOKEN || 'anytype',
 					temperature: 0,
 				},
 				includeContentSamples: settings.includeContentSamples,
