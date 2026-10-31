@@ -50,10 +50,12 @@ jobs:
             os: macos-15
             tantivy: darwin-arm64
             builder: --macos --arm64
+            mac_arch: arm64
           - name: macos-x64
             os: macos-15-intel
             tantivy: darwin-amd64
             builder: --macos --x64
+            mac_arch: x64
           - name: windows-x64
             os: windows-2022
             tantivy: windows-amd64
@@ -201,7 +203,9 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           USE_HARD_LINKS: 'false'
         # The package.json mac.identity is the upstream team's signing identity; null skips signing.
-        run: bunx electron-builder ${{ matrix.builder }} --publish never -c.mac.identity=null
+        # package.json also lists both mac archs, which electron-builder builds whatever --arm64/--x64
+        # says; each job only has its own native helper, so pin the arch (-c.mac.target.arch).
+        run: bunx electron-builder ${{ matrix.builder }} --publish never -c.mac.identity=null -c.mac.target.arch=${{ matrix.mac_arch }}
 
       - name: Package (Linux, Windows)
         if: runner.os != 'macOS'
