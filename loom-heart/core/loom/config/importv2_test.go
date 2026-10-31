@@ -30,7 +30,7 @@ func TestImportV2DefaultsAndKillSwitch(t *testing.T) {
 		t.Setenv("LOOM_IMPORTV2NOTION", "false")
 
 		// when — the same call initFromFileAndEnv makes
-		err := envconfig.Process("ANYTYPE", cfg)
+		err := envconfig.Process("LOOM", cfg)
 
 		// then
 		require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestImportV2DefaultsAndKillSwitch(t *testing.T) {
 		cfg := New()
 
 		// when
-		require.NoError(t, envconfig.Process("ANYTYPE", cfg))
+		require.NoError(t, envconfig.Process("LOOM", cfg))
 
 		// then
 		assert.True(t, cfg.ImportV2Markdown)
