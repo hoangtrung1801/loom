@@ -381,7 +381,7 @@ class WindowManager {
 
 		const win = this.create({ ...options, isApproval: true, approvalKey: options.key, approvalPayload: options }, {
 			width: 424,
-			// The heights below include the 34px the Anytype wordmark adds above the title.
+			// The heights below include the 34px the Loom wordmark adds above the title.
 			height: options.scope == 1 ? Math.min(602, height - 40) : 322,
 			x: Math.floor(width / 2 - 212),
 			y: Math.max(20, Math.floor(height - (options.scope == 1 ? 652 : 372))),

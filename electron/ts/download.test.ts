@@ -100,8 +100,8 @@ let manager: DownloadManager;
 
 beforeEach(() => {
 	manager = new DownloadManager();
-	directory = fs.mkdtempSync(path.join(os.tmpdir(), 'anytype-reuse-'));
-	electron.tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'anytype-scope-'));
+	directory = fs.mkdtempSync(path.join(os.tmpdir(), 'loom-reuse-'));
+	electron.tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'loom-scope-'));
 
 	Object.keys(ledger.data).forEach(key => delete ledger.data[key]);
 	ledger.get.mockClear();

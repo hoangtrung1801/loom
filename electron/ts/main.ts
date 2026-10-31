@@ -31,8 +31,8 @@ import Util from './util';
 import Cors from '../json/cors.json';
 import { AppWindow } from './types';
 
-const protocol = 'anytype';
-const binPath = fixPathForAsarUnpack(path.join(__dirname, 'dist', `anytypeHelper${is.windows ? '.exe' : ''}`));
+const protocol = 'loom';
+const binPath = fixPathForAsarUnpack(path.join(__dirname, 'dist', `loomHelper${is.windows ? '.exe' : ''}`));
 const store = getSafeStorage();
 registerChatStatus();
 
@@ -169,12 +169,12 @@ Util.setAppPath(path.join(__dirname));
  * Captures a full cold-start Chromium trace (main + renderer + GPU + network + CPU samples),
  * including the renderer's own User Timing marks (U.Perf — blink.user_timing category).
  *
- * Enable by launching with ANYTYPE_TRACE_STARTUP=1. Optional ANYTYPE_TRACE_DURATION (ms,
+ * Enable by launching with LOOM_TRACE_STARTUP=1. Optional LOOM_TRACE_DURATION (ms,
  * default 20000) bounds the capture window — bump it if the middleware/server is slow to start.
  * The resulting .json opens in https://ui.perfetto.dev (preferred) or chrome://tracing.
  */
 async function maybeStartStartupTrace () {
-	const flag = String(process.env.ANYTYPE_TRACE_STARTUP || '').toLowerCase();
+	const flag = String(process.env.LOOM_TRACE_STARTUP || '').toLowerCase();
 	if (![ '1', 'true', 'yes', 'on' ].includes(flag)) {
 		return;
 	};
@@ -187,11 +187,11 @@ async function maybeStartStartupTrace () {
 	// here: use DevTools Performance (reload-record) in dev, and capture a real cold start
 	// from a packaged build.
 	if (is.development) {
-		console.warn('[Trace] Startup tracing skipped in dev — it breaks Vite module loading (ERR_CONNECTION_TIMED_OUT). Use DevTools Performance reload-record in dev, or run a packaged build with ANYTYPE_TRACE_STARTUP=1.');
+		console.warn('[Trace] Startup tracing skipped in dev — it breaks Vite module loading (ERR_CONNECTION_TIMED_OUT). Use DevTools Performance reload-record in dev, or run a packaged build with LOOM_TRACE_STARTUP=1.');
 		return;
 	};
 
-	const duration = Number(process.env.ANYTYPE_TRACE_DURATION) || 20000;
+	const duration = Number(process.env.LOOM_TRACE_DURATION) || 20000;
 
 	try {
 		// Kept lean on purpose: 'toplevel' and 'disabled-by-default-devtools.timeline'
@@ -241,9 +241,9 @@ function waitForLibraryAndCreateWindows () {
 		app.setPath('userData', userDataPath);
 	};
 
-	if (process.env.ANYTYPE_USE_SIDE_SERVER) {
+	if (process.env.LOOM_USE_SIDE_SERVER) {
 		// use the grpc server started from the outside
-		Server.setAddress(process.env.ANYTYPE_USE_SIDE_SERVER);
+		Server.setAddress(process.env.LOOM_USE_SIDE_SERVER);
 		waitLibraryPromise = Promise.resolve();
 	} else {
 		waitLibraryPromise = Server.start(binPath, currentPath);

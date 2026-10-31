@@ -10,7 +10,7 @@ import { AppWindow, TabView } from './types';
 import { isTrustedUrl } from './lib/trustedUrl';
 import { USER_DATA_NAME } from './userData';
 
-const protocol = 'anytype';
+const protocol = 'loom';
 
 logger.initialize();
 logger.transports.console.level = 'error';
@@ -347,7 +347,7 @@ class Util {
 			'Categories=Utility;Office;Calendar;ProjectManagement;',
 			'StartupWMClass=loom',
 			'Keywords=project management;',
-			'MimeType=x-scheme-handler/anytype;',
+			'MimeType=x-scheme-handler/loom;',
 		].join('\n');
 
 		const xwaylandContent = [
@@ -361,7 +361,7 @@ class Util {
 			'Categories=Utility;Office;Calendar;ProjectManagement;',
 			'StartupWMClass=loom',
 			'Keywords=project management;',
-			'MimeType=x-scheme-handler/anytype;',
+			'MimeType=x-scheme-handler/loom;',
 			'NoDisplay=true',
 		].join('\n');
 
@@ -373,7 +373,7 @@ class Util {
 			if (!fs.existsSync(desktopFilePath)) {
 				fs.writeFileSync(desktopFilePath, content, 'utf-8');
 
-				execFile('xdg-mime', [ 'default', 'loom.desktop', 'x-scheme-handler/anytype' ], (err: any) => {
+				execFile('xdg-mime', [ 'default', 'loom.desktop', 'x-scheme-handler/loom' ], (err: any) => {
 					if (err) {
 						this.log('info', `xdg-mime default failed: ${err.message}`);
 					};

@@ -8,4 +8,4 @@ Icon=loom
 Categories=Utility;Office;Calendar;ProjectManagement;
 StartupWMClass=loom
 Keywords=project management;
-MimeType=x-scheme-handler/anytype;
+MimeType=x-scheme-handler/loom;

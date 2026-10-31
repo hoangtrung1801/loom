@@ -355,7 +355,7 @@ contextBridge.exposeInMainWorld('Electron', {
 		options = options || {};
 
 		// A fresh folder per file keeps the original name while files with the same name never overwrite each other
-		const dir = options.unique ? fs.mkdtempSync(path.join(tmpPath(), 'anytype-')) : tmpPath();
+		const dir = options.unique ? fs.mkdtempSync(path.join(tmpPath(), 'loom-')) : tmpPath();
 		// Windows drops trailing dots and spaces when the path is opened, and '.' or '..' would resolve to a folder
 		const fn = path.parse(name).base.replace(/[. ]+$/, '') || 'temp';
 		const fp = path.join(dir, fn);

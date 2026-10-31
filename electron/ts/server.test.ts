@@ -48,7 +48,7 @@ vi.mock('./util', () => ({
 
 import { Server } from './server';
 
-const binPath = '/tmp/anytypeHelper';
+const binPath = '/tmp/loomHelper';
 const workingDir = '/tmp';
 const readyLine = (port: number) => `gRPC Web proxy started at: 127.0.0.1:${port}\n`;
 
@@ -117,7 +117,7 @@ describe('Server.start', () => {
 		const spawnOptions = mocks.spawn.mock.calls[0][2];
 
 		expect(spawnOptions.stdio).toEqual([ 'pipe', 'pipe', 'pipe' ]);
-		expect(spawnOptions.env.ANYTYPE_PARENT_LIFELINE).toBe('stdin');
+		expect(spawnOptions.env.LOOM_PARENT_LIFELINE).toBe('stdin');
 
 		// The lifeline depends on stdin staying open for the helper's whole life
 		expect(cp.stdin.writableEnded).toBe(false);
@@ -214,7 +214,7 @@ describe('Server.start', () => {
 	});
 
 	test('has no local api secret for an externally started helper', () => {
-		// ANYTYPE_USE_SIDE_SERVER adopts a helper we never spawned: no parent pipe
+		// LOOM_USE_SIDE_SERVER adopts a helper we never spawned: no parent pipe
 		// to prove ownership with, so there is nothing to attach to calls
 		const server = new Server();
 
@@ -270,8 +270,8 @@ describe('Server.start', () => {
 
 		cp.exit(1);
 
-		await expect(started).rejects.toThrow('Anytype helper exited before it was ready');
-		await expect(server.whenReady()).rejects.toThrow('Anytype helper exited before it was ready');
+		await expect(started).rejects.toThrow('Loom helper exited before it was ready');
+		await expect(server.whenReady()).rejects.toThrow('Loom helper exited before it was ready');
 	});
 
 	test('aborts instead of spawning a second helper when the previous one cannot be stopped', async () => {
@@ -286,8 +286,8 @@ describe('Server.start', () => {
 
 		await vi.advanceTimersByTimeAsync(gracefulShutdownTimeoutMs + forceShutdownTimeoutMs);
 
-		await expect(started).rejects.toThrow('Failed to stop the previous Anytype helper process');
-		await expect(server.whenReady()).rejects.toThrow('Failed to stop the previous Anytype helper process');
+		await expect(started).rejects.toThrow('Failed to stop the previous Loom helper process');
+		await expect(server.whenReady()).rejects.toThrow('Failed to stop the previous Loom helper process');
 		expect(mocks.spawn).not.toHaveBeenCalled();
 		expect(server.cp).toBe(stuck);
 	});

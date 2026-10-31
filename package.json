@@ -210,7 +210,7 @@
 		"beforeBuild": "./electron/hook/beforebuild.js",
 		"afterSign": "./electron/hook/aftersign.js",
 		"afterPack": "./electron/hook/afterpack.js",
-		"appId": "com.anytype.anytype",
+		"appId": "com.loom.app",
 		"compression": "normal",
 		"productName": "Loom",
 		"protocols": [
@@ -218,7 +218,7 @@
 				"name": "Loom",
 				"role": "Editor",
 				"schemes": [
-					"anytype"
+					"loom"
 				]
 			}
 		],
@@ -226,8 +226,8 @@
 			"dist/index.html",
 			"dist/tabs.html",
 			"dist/lib",
-			"dist/anytypeHelper",
-			"dist/anytypeHelper.exe",
+			"dist/loomHelper",
+			"dist/loomHelper.exe",
 			"dist/nativeMessagingHost.exe",
 			"dist/nativeMessagingHost",
 			"dist/font/**/*",
@@ -289,8 +289,8 @@
 			"dist/assets/**/*",
 			"dist/*.js",
 			"!dist/js/main.js.map",
-			"dist/anytypeHelper.exe",
-			"dist/anytypeHelper",
+			"dist/loomHelper.exe",
+			"dist/loomHelper",
 			"dist/nativeMessagingHost.exe",
 			"dist/nativeMessagingHost",
 			"dist/*.node",
@@ -1168,7 +1168,7 @@
 					"Categories": "Utility;Office;Calendar;ProjectManagement;",
 					"Keywords": "project management;",
 					"StartupWMClass": "loom",
-					"MimeType": "x-scheme-handler/anytype;"
+					"MimeType": "x-scheme-handler/loom;"
 				}
 			},
 			"extraFiles": [

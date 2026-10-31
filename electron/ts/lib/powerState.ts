@@ -14,12 +14,12 @@ export const POWER_EVENTS: PowerEvent[] = [ 'suspend', 'resume' ];
 /**
  * Debug-only drop hook for QA (Windows wake gate): drops the chosen power events and their replay.
  * - Packaged builds: only the explicit command line switch, e.g.
- *   `Anytype.exe --debug-drop-power-event=suspend` (values: suspend, resume, all; comma-separated).
+ *   `Loom.exe --debug-drop-power-event=suspend` (values: suspend, resume, all; comma-separated).
  *   A switch is per launch and is never inherited from the environment; a deeplink is a single
- *   `anytype://` argument and can not carry it.
- * - Development builds: the switch or ANYTYPE_DEBUG_DROP_POWER_EVENT.
+ *   `loom://` argument and can not carry it.
+ * - Development builds: the switch or LOOM_DEBUG_DROP_POWER_EVENT.
  */
-export const DROP_ENV = 'ANYTYPE_DEBUG_DROP_POWER_EVENT';
+export const DROP_ENV = 'LOOM_DEBUG_DROP_POWER_EVENT';
 export const DROP_SWITCH = '--debug-drop-power-event=';
 
 /**
