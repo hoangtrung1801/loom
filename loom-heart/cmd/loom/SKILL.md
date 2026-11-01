@@ -129,6 +129,10 @@ the JSON API for the other verbs (it saves a key for them in the CLI config).
   `127.0.0.1:31009` (use another port if the desktop app runs on the same
   machine); `--data-dir` moves the storage; `--no-lan-sync` turns off direct
   sync with devices on the same network.
+- `--backup-dir DIR [--backup-git] [--backup-push] [--backup-remote URL]` exports every
+  space to Markdown (one folder per space) a minute after start and then every
+  `--backup-every` (default 1h); with git it commits the changes and can push them, so a
+  **private** GitHub repo keeps a readable copy.
 - The recovery phrase is full access to the account: keep it and the data
   dir private.
 

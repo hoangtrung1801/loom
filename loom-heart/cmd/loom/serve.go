@@ -47,7 +47,12 @@ const (
 
   The account comes from, in order: LOOM_MNEMONIC, --mnemonic-file, the phrase
   remembered in the data dir, or --new (creates one and prints the phrase once).
-  Sign in to the same account in the desktop app with that phrase to sync with it.`
+  Sign in to the same account in the desktop app with that phrase to sync with it.
+
+  --backup-dir exports every space to Markdown into DIR (one folder per space) after the
+  first minute and then every --backup-every. --backup-git also commits the changes to a
+  git repository in DIR (created if needed); --backup-push pushes them, to --backup-remote
+  if origin is not set yet. Use a PRIVATE repository: the export is plain text.`
 
 	serveClientPlatform = "loom-serve"
 	serveClientVersion  = "0.0.0-loom-serve"
@@ -82,6 +87,7 @@ type serveOptions struct {
 	remember      bool
 	noLanSync     bool
 	localOnly     bool
+	backup        backupOptions
 }
 
 func (o serveOptions) networkMode() pb.RpcAccountNetworkMode {
@@ -128,11 +134,34 @@ func parseServeFlags(argv []string, stderr io.Writer) (serveOptions, error) {
 	fs.BoolVar(&opt.remember, "remember", false, "store a recovery phrase given by env or file in the data dir, so restarts need no input")
 	fs.BoolVar(&opt.noLanSync, "no-lan-sync", false, "do not sync directly with devices on the local network")
 	fs.BoolVar(&opt.localOnly, "local-only", false, "do not sync at all (offline testing)")
+	fs.StringVar(&opt.backup.dir, "backup-dir", "", "export every space to Markdown into this directory on a schedule")
+	fs.DurationVar(&opt.backup.every, "backup-every", time.Hour, "how often to back up (at least 1m)")
+	fs.BoolVar(&opt.backup.git, "backup-git", false, "commit the backup's changes to git (the repository is created if needed)")
+	fs.BoolVar(&opt.backup.push, "backup-push", false, "push the backup commits (implies --backup-git)")
+	fs.StringVar(&opt.backup.remote, "backup-remote", "", "URL to add as origin when the backup repository has none")
 	if err := fs.Parse(argv); err != nil {
 		return opt, err
 	}
 	if fs.NArg() > 0 {
 		return opt, fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+	if opt.backup.dir == "" {
+		if opt.backup.git || opt.backup.push || opt.backup.remote != "" {
+			return opt, errors.New("--backup-git, --backup-push and --backup-remote need --backup-dir")
+		}
+	} else {
+		if opt.backup.every < backupMinInterval {
+			return opt, fmt.Errorf("--backup-every must be at least %s", backupMinInterval)
+		}
+		if opt.backup.push {
+			opt.backup.git = true
+		}
+		abs, absErr := filepath.Abs(opt.backup.dir)
+		if absErr != nil {
+			return opt, fmt.Errorf("resolve backup dir: %w", absErr)
+		}
+		opt.backup.dir = abs
+		opt.backup.firstRun = backupFirstDelay
 	}
 	if opt.localOnly && opt.networkConfig != "" {
 		return opt, errors.New("--local-only and --network-config cannot be combined")
@@ -445,7 +474,8 @@ func runServe(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "error:", err)
 		return 1
 	}
-	if _, _, err = ensureAPIKey(ctx, mw, baseURL); err != nil {
+	key, _, err := ensureAPIKey(ctx, mw, baseURL)
+	if err != nil {
 		fmt.Fprintln(stderr, "error:", err)
 		return 1
 	}
@@ -460,6 +490,19 @@ func runServe(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "sync is off (--local-only); this server's data will not reach other devices")
 	} else {
 		fmt.Fprintln(stdout, "sign in to this account in the desktop app with the recovery phrase to sync with it; Ctrl-C to stop")
+	}
+
+	if opt.backup.dir != "" {
+		fmt.Fprintf(stdout, "backup:  Markdown export of every space into %s every %s", opt.backup.dir, opt.backup.every)
+		switch {
+		case opt.backup.push:
+			fmt.Fprintln(stdout, ", committed and pushed (use a private repository)")
+		case opt.backup.git:
+			fmt.Fprintln(stdout, ", committed to git")
+		default:
+			fmt.Fprintln(stdout)
+		}
+		go backupLoop(ctx, mw, baseURL, key, opt.backup, stderr)
 	}
 
 	<-ctx.Done()
