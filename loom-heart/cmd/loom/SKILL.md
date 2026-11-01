@@ -1,17 +1,23 @@
 ---
 name: loom
-description: Read, search, create and edit Anytype objects through the loom CLI. Use when the user asks to find notes/tasks/pages in Anytype, create objects, tick checkboxes, edit document text, fill tables, or reorganize content. Task-shaped verbs over the local API; results are numbered handles you pass back — never copy long ids.
+description: Read, search, create and edit Loom objects through the loom CLI. Use when the user asks to find notes/tasks/pages in Loom, create objects, tick checkboxes, edit document text, fill tables, or reorganize content. Task-shaped verbs over the local API; results are numbered handles you pass back — never copy long ids.
 ---
 
-# Anytype task tools
+# Loom task tools
 
-Twelve verbs over the local Anytype API. Everything composes through a
+Twelve verbs over the local Loom API. Everything composes through a
 session: `find` numbers its results (1, 2, …) and sets the working space;
 every other verb takes `--object <number>`.
 
-Setup: the local Anytype app must be running; `LOOM_API_KEY` holds an
+Setup: a Loom API must be reachable — the Loom app running, or `loom serve` on a server; `LOOM_API_KEY` holds an
 API key from the app's settings, or run `loom auth` to pair and save one
 (`LOOM_API_URL` defaults to `http://127.0.0.1:31009`).
+
+## Install this skill
+
+`loom skill install` copies this file into the agent's skills folder (default Claude Code;
+`--agent claude,codex`, `--project` for the current repo, `--dir DIR` for another agent).
+Run it again after upgrading `loom`.
 
 ## Setup
 
