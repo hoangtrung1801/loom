@@ -1,0 +1,28 @@
+.textColor-default { color: var(--color-text-primary) !important; }
+.textColor-black { color: var(--color-text-primary) !important; }
+.textColor-grey { color: var(--color-grey) !important; }
+.textColor-yellow { color: var(--color-yellow) !important; }
+.textColor-orange { color: var(--color-orange) !important; }
+.textColor-red { color: var(--color-red) !important; }
+.textColor-pink { color: var(--color-pink) !important; }
+.textColor-purple { color: var(--color-purple) !important; }
+.textColor-blue { color: var(--color-blue) !important; }
+.textColor-ice { color: var(--color-ice) !important; }
+.textColor-teal { color: var(--color-teal) !important; }
+.textColor-lime { color: var(--color-lime) !important; }
+.textColor-destructive { color: var(--color-system-destructive-100) !important; }
+
+.bgColor-default { background: var(--color-shape-tertiary) !important; }
+.bgColor-black { background: var(--color-shape-tertiary) !important; }
+.bgColor-grey { background: var(--color-light-grey) !important; }
+.bgColor-yellow { background: var(--color-light-yellow) !important; }
+.bgColor-orange { background: var(--color-light-orange) !important; }
+.bgColor-red { background: var(--color-light-red) !important; }
+.bgColor-pink { background: var(--color-light-pink) !important; }
+.bgColor-purple { background: var(--color-light-purple) !important; }
+.bgColor-blue { background: var(--color-light-blue) !important; }
+.bgColor-ice { background: var(--color-light-ice) !important; }
+.bgColor-teal { background: var(--color-light-teal) !important; }
+.bgColor-lime { background: var(--color-light-lime) !important; }
+
+.isMultiSelect.archive { color: var(--color-text-secondary); background: var(--color-shape-tertiary); }

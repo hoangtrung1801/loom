@@ -1,0 +1,162 @@
+@import "~scss/_mixins";
+
+.blocks {
+	.block.blockMedia { padding: 6px 0px; }
+	.block.blockMedia.isResizing * { cursor: nwse-resize; }
+	
+	.block.blockMedia {
+		.focusable { line-height: 0px; }
+		.focusable.isFocused { background: none; }
+		.focusable.isFocused::before {
+			content: ""; position: absolute; left: -2px; top: 0px; width: calc(100% + 4px); height: 100%; z-index: 1;
+			pointer-events: none; border-radius: 6px;
+		}
+		.focusable.isResizing {
+			* { cursor: nwse-resize; }
+
+			&::after {
+				content: ""; position: absolute; top: 0px; left: 0px; width: 100%; height: 100%; pointer-events: none; z-index: 99;
+				background-image: repeating-linear-gradient(to right, rgba(255, 255, 255, 0.2) 0, rgba(255, 255, 255, 0.2) 1px, transparent 1px, transparent calc(100% / 12));
+				mix-blend-mode: difference;
+			}
+		}
+
+		.mediaState { @include text-small; color: var(--color-control-active); display: flex; flex-direction: column; gap: 12px 0px; align-items: center; justify-content: center; }
+		.mediaState {
+			.icon.ghost { width: 48px; height: 48px; }
+			.name { text-align: center; color: var(--color-text-secondary); font-weight: 500; }
+		}
+
+		.mediaState.isDeleted { height: 264px; background: var(--color-bg-primary); border: 1px solid var(--color-shape-highlight-medium); border-radius: 8px; }
+
+		.mediaState.isArchived {
+			position: absolute; left: 0px; top: 0px; width: 100%; height: 100%; z-index: 2;
+			background: var(--color-bg-primary-90); border: 1px solid var(--color-shape-highlight-medium); border-radius: inherit;
+		}
+
+		.icon.resize, .icon.commonDownload { position: absolute; z-index: 1; opacity: 0; cursor: default; transition: $transitionAllCommon; }
+		.icon.resize { width: 20px; height: 20px; right: 0px; bottom: 0px; cursor: nwse-resize; }
+		.icon.commonDownload { width: 28px; height: 28px; right: 8px; top: 8px; }
+		.icon.downloading {
+			width: 28px; height: 28px; right: 8px; top: 8px; position: absolute; z-index: 1; opacity: 1;
+			background-image: url('~img/icon/loader.svg'); background-size: 28px; animation: rotate 1.2s infinite linear;
+		}
+
+		.loaderWrapper { height: 48px; width: 100%; }
+		.error { margin: 0px; @include text-small; line-height: 22px; }
+		
+		.wrap { max-width: 100%; position: relative; display: inline-block; overflow: hidden; }
+		.wrap {
+			> .loader { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1; }
+			> .loaderWrapper { position: absolute; inset: 0; z-index: 1; width: auto; height: auto; margin: 0; background: var(--color-shape-highlight-light); border-radius: 8px; }
+		}
+		.mediaImage { width: 100%; display: block; cursor: zoom-in; }
+		.mediaVideo {
+			.icon.syncStatus { display: none; }
+			video { width: 100%; object-fit: contain; max-height: 704px; }
+		}
+
+		.pdfWrapper { 
+			width: 100%; overflow: hidden; position: relative; padding: 12px; box-shadow: 0px 0px 0px 1px var(--color-shape-primary) inset;
+			border-radius: 8px; display: inline-flex; flex-direction: column; gap: 6px 0px;
+		}
+		.pdfWrapper {
+			.info { @include text-common; flex-shrink: 0; display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 0px 8px; }
+			.info {
+				.name { height: 24px; line-height: 24px; display: inline-block; vertical-align: top; @include text-overflow-nw; }
+				.size {
+					@include text-common; max-width: 100px; height: 24px; line-height: 24px; color: var(--color-control-active);
+					display: inline-block; vertical-align: top; flex-shrink: 0;
+				}
+				.icon.downloading {
+					width: 20px; height: 20px;
+					background-image: url('~img/icon/loader.svg'); background-size: 20px; animation: rotate 1.2s infinite linear;
+				}
+
+				&.isDownloading { opacity: 0.6; }
+			}
+
+			.pager { flex-shrink: 0; cursor: default; }
+			.pager {
+				.icon { opacity: 0 !important; }
+			}
+
+			.loaderWrapper { width: 100%; height: 48px; position: relative; left: 0px; top: 0px; }
+
+			.react-pdf__Document { width: 100%; display: inline-block; position: relative; flex-grow: 1; }
+			.react-pdf__Page { position: static !important; }
+			.react-pdf__Page__svg, .react-pdf__Page__canvas { overflow: hidden; }
+			.react-pdf__Page__svg svg { width: 100%; height: auto; }
+			.react-pdf__Page__textContent { display: none; }
+			.react-pdf__Page__annotations { display: none; }
+			.react-pdf__message { @include text-common; text-align: center; }
+			.react-pdf__message--error { color: var(--color-red); }
+		}
+		.pdfWrapper:hover {
+			.pager {
+				.icon.disabled { opacity: 0.5 !important; }
+				.icon { opacity: 1 !important; }
+			}
+		}
+				
+
+		.mediaBlockLoader { 
+			display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; height: 320px; 
+			background-color: var(--color-shape-highlight-light); padding: 24px;
+		}
+		.mediaBlockLoader {
+			.icon.loading { width: 20px; height: 20px; background: url('~img/icon/loader.svg'); animation: rotate 0.8s infinite linear; }
+			.name { @include text-small; color: var(--color-text-tertiary); text-align: center; }
+		}
+	}
+
+	.block.blockMedia.isImage, .block.blockMedia.isVideo {
+		.mediaState.isArchived { border: 0px; }
+	}
+
+	.block.blockMedia.isAudio {
+		.mediaBlockLoader { height: 80px; }
+
+		.mediaState { height: 73px; border: 0px; border-radius: 8px; flex-direction: row; gap: 0px 8px; }
+		.mediaState {
+			.icon.ghost { width: 24px; height: 24px; }
+		}
+		.mediaState.isDeleted { background: var(--color-bg-primary); border: 1px solid var(--color-shape-highlight-medium); }
+		.mediaState.isArchived { background: var(--color-bg-primary); }
+	}
+	.block.blockMedia.isAudio > .wrapContent { height: 75px; }
+	.block.blockMedia.isAudio.withContent:not(.isLoading) > .wrapContent  { border: 1px solid var(--color-shape-highlight-medium); border-radius: 8px; }
+	.block.blockMedia.isAudio > .wrapContent > .selectionTarget > .dropTarget > .focusable > .wrap { width: 100%; padding: 12px 12px 7px 14px; }
+
+	.block.blockMedia.isReadonly {
+		.icon.resize { display: none; }
+	}
+
+	.block.blockMedia:hover {
+		.icon.resize { opacity: 1; }
+		.icon.commonDownload { opacity: 1; }
+	}
+	
+	.block.blockMedia > .wrapContent > .selectionTarget.isSelectionSelected > .dropTarget > .focusable > .wrap,
+	.block.blockMedia > .wrapContent > .selectionTarget.isKeyboardFocused > .dropTarget > .focusable > .wrap {
+		.icon.resize { opacity: 1; }
+		.icon.commonDownload { opacity: 1; }
+	}
+	
+	.block.blockMedia.isVideo > .wrapContent > .selectionTarget > .dropTarget > .focusable.isPlaying > .wrap {
+		.icon.resize { display: none; }
+		.icon.commonDownload { display: none; }
+		.icon.play { display: none; }
+	}
+
+	.block.blockMedia > .wrapContent > .selectionTarget.isSelectionSelected::after,
+	.block.blockMedia > .wrapContent > .selectionTarget.isKeyboardFocused::after { left: 0px; width: 100%; border-radius: 8px; }
+	.block.blockMedia.isPdf.withContent > .wrapContent > .selectionTarget.isSelectionSelected::after,
+	.block.blockMedia.isPdf.withContent > .wrapContent > .selectionTarget.isKeyboardFocused::after { border-radius: 0px; }
+	.block.blockMedia.isImage.withContent > .wrapContent > .selectionTarget.isSelectionSelected::after,
+	.block.blockMedia.isImage.withContent > .wrapContent > .selectionTarget.isKeyboardFocused::after { border-radius: 0px; }
+	.block.blockMedia.isVideo.withContent > .wrapContent > .selectionTarget.isSelectionSelected::after,
+	.block.blockMedia.isVideo.withContent > .wrapContent > .selectionTarget.isKeyboardFocused::after { border-radius: 0px; }
+	.block.blockMedia.isAudio.withContent > .wrapContent > .selectionTarget.isSelectionSelected::after,
+	.block.blockMedia.isAudio.withContent > .wrapContent > .selectionTarget.isKeyboardFocused::after { border-radius: 0px; }
+}

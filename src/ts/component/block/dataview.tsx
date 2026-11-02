@@ -1,0 +1,1966 @@
+import React, { forwardRef, useState, useRef, useEffect, MouseEvent, useImperativeHandle } from 'react';
+import raf from 'raf';
+import { motion, AnimatePresence } from 'motion/react';
+import { arrayMove } from '@dnd-kit/sortable';
+import { set } from 'mobx';
+import { LayoutPlug, Icon, Label } from 'Component';
+
+import Controls from './dataview/controls';
+import Selection from './dataview/selection';
+import Filters from './dataview/filters';
+import Empty from './dataview/empty';
+import AddRow from './dataview/view/grid/body/add';
+
+import ViewGrid from './dataview/view/grid';
+import ViewBoard from './dataview/view/board';
+import ViewGallery from './dataview/view/gallery';
+import ViewList from './dataview/view/list';
+import ViewCalendar from './dataview/view/calendar';
+import ViewGraph from './dataview/view/graph';
+import ViewTimeline from './dataview/view/timeline';
+import * as I from 'Interface';
+import Storage from 'Lib/storage';
+import { focus } from 'Lib/focus';
+
+interface Props extends I.BlockComponent {
+	isInline?: boolean;
+};
+
+const BlockDataview = forwardRef<I.BlockRef, Props>((props, ref) => {
+
+	const { rootId, block, isPopup, isInline, readonly, onKeyDown, onKeyUp, getWrapperWidth } = props;
+	const views = S.Record.getViews(rootId, block.id);
+	const nodeRef = useRef(null);
+	const viewRef = useRef(null);
+	const controlsRef = useRef(null);
+	const selectRef = useRef(null);
+	const filtersRef = useRef(null);
+	const isCollection = Dataview.isCollection(rootId, block.id);
+	const isCreating = useRef(false);
+	const frame = useRef(0);
+	const timeoutFilter = useRef(0);
+	const timeoutDrag = useRef(0);
+	const editingRecordId = useRef('');
+	const filterRef = useRef('');
+	const viewIdRef = useRef('');
+	const viewTypeRef = useRef<I.ViewType | null>(null);
+	const menuContext = useRef(null);
+	const cellRefs = useRef<Map<string, any>>(new Map());
+	const recordRefs = useRef<Map<string, any>>(new Map());
+	const [ searchIds, setSearchIds ] = useState<string[] | null>(null);
+	const [ dummy, setDummy ] = useState<number>(0);
+	const resizeHandlerRef = useRef<(() => void) | null>(null);
+	const sidebarResizeHandlerRef = useRef<(() => void) | null>(null);
+	const updateDataviewDataHandlerRef = useRef<(() => void) | null>(null);
+	const setDataviewSourceHandlerRef = useRef<(() => void) | null>(null);
+	const selectionEndHandlerRef = useRef<(() => void) | null>(null);
+	const selectionClearHandlerRef = useRef<(() => void) | null>(null);
+	const selectionSetHandlerRef = useRef<(() => void) | null>(null);
+	const recordMouseDownHandlerRef = useRef<((e: globalThis.MouseEvent) => void) | null>(null);
+	const recordKeyDownHandlerRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+	const analyticsRoute = isCollection ? analytics.route.collection : analytics.route.set;
+
+	useEffect(() => {
+		const match = keyboard.getMatch(isPopup);
+		const subId = getSubId();
+		const viewId = match.params.viewId || block.content.viewId;
+		const object = getTarget();
+
+		if (viewId) {
+			S.Record.metaSet(subId, '', { viewId });
+		};
+
+		reloadData(() => {
+			if (isInline) {
+				return;
+			};
+
+			const { total } = S.Record.getMeta(subId, '');
+			const isCompletedSets = Onboarding.isCompleted('sets');
+
+			window.setTimeout(() => {
+				if (isCollection && !total) {
+					Onboarding.start('collections', isPopup);
+				} else 
+				if (
+					(isCollection || (isCompletedSets && !isCollection)) && 
+					isAllowedObject() && 
+					isAllowedDefaultType() && 
+					total
+				) {
+					Onboarding.start('setSettings', isPopup);
+				};
+			}, J.Constant.delay.menu);
+		});
+
+		init();
+		resize();
+		rebind();
+
+		if (!U.Object.isTypeLayout(object.layout)) {
+			const view = getView();
+			const eventName = isCollection ? 'ScreenCollection' : 'ScreenSet';
+
+			analytics.event(eventName, { embedType: analytics.embedType(isInline), type: view?.type });
+		};
+
+		return () => {
+			unbind();
+			window.clearTimeout(timeoutFilter.current);
+			cellRefs.current.clear();
+			recordRefs.current.clear();
+
+			// A dangling lock would keep deferring subscription events after the view
+			// is gone; the record order re-syncs on the next subscribe (GO-7387)
+			S.Record.positionLockClear(getSubId(), '');
+		};
+	}, []);
+
+	useEffect(() => {
+		const { routeParam } = S.Common;
+		const view = getView();
+		const viewTypeChanged = view && (view.type !== viewTypeRef.current);
+
+		if (view) {
+			viewTypeRef.current = view.type;
+		};
+
+		let viewId = S.Record.getMeta(getSubId(), '').viewId;
+
+		if ((routeParam.ref == 'widget') && routeParam.viewId) {
+			viewId = routeParam.viewId;
+			S.Common.routeParam = {};
+		};
+
+		if (viewId && ((viewId != viewIdRef.current) || viewTypeChanged)) {
+			loadData(viewId, 0, true);
+		};
+
+		init();
+		resize();
+		rebind();
+	});
+
+	useEffect(() => {
+		reloadData();
+	}, [ searchIds ]);
+
+	const init = () => {
+		const node = nodeRef.current;
+		const head = node ? U.Dom.select(`#block-head-${block.id}`, node) : null;
+		const object = getTarget();
+
+		if (head) {
+			U.Dom.toggleClass(head, 'isDeleted', object.isDeleted);
+		};
+	};
+
+	const unbind = () => {
+		if (resizeHandlerRef.current) {
+			U.Dom.removeEvent(window, 'resize', resizeHandlerRef.current);
+			resizeHandlerRef.current = null;
+		};
+		if (sidebarResizeHandlerRef.current) {
+			U.Dom.removeEvent(window, 'sidebarResize', sidebarResizeHandlerRef.current);
+			sidebarResizeHandlerRef.current = null;
+		};
+		if (updateDataviewDataHandlerRef.current) {
+			U.Dom.removeEvent(window, 'updateDataviewData', updateDataviewDataHandlerRef.current);
+			updateDataviewDataHandlerRef.current = null;
+		};
+		if (setDataviewSourceHandlerRef.current) {
+			U.Dom.removeEvent(window, 'setDataviewSource', setDataviewSourceHandlerRef.current);
+			setDataviewSourceHandlerRef.current = null;
+		};
+		if (selectionEndHandlerRef.current) {
+			U.Dom.removeEvent(window, 'selectionEnd', selectionEndHandlerRef.current);
+			selectionEndHandlerRef.current = null;
+		};
+		if (selectionClearHandlerRef.current) {
+			U.Dom.removeEvent(window, 'selectionClear', selectionClearHandlerRef.current);
+			selectionClearHandlerRef.current = null;
+		};
+		if (selectionSetHandlerRef.current) {
+			U.Dom.removeEvent(window, 'selectionSet', selectionSetHandlerRef.current);
+			selectionSetHandlerRef.current = null;
+		};
+	};
+
+	const rebind = () => {
+		unbind();
+
+		resizeHandlerRef.current = () => resize();
+		sidebarResizeHandlerRef.current = () => resize();
+		updateDataviewDataHandlerRef.current = () => {
+			const view = getView();
+			if (view) {
+				loadData(view.id, 0, true);
+			};
+		};
+		setDataviewSourceHandlerRef.current = () => onSourceSelect(`#block-head-${block.id} #value`, { offsetY: 36 });
+		selectionEndHandlerRef.current = () => onSelectEnd();
+		selectionClearHandlerRef.current = () => onSelectEnd();
+		selectionSetHandlerRef.current = () => onSelectEnd();
+
+		U.Dom.addEvents(window, [
+			['resize', resizeHandlerRef.current],
+			['sidebarResize', sidebarResizeHandlerRef.current],
+			['updateDataviewData', updateDataviewDataHandlerRef.current],
+			['setDataviewSource', setDataviewSourceHandlerRef.current],
+			['selectionEnd', selectionEndHandlerRef.current],
+			['selectionClear', selectionClearHandlerRef.current],
+			['selectionSet', selectionSetHandlerRef.current],
+		]);
+	};
+
+	const onKeyDownHandler = (e: any) => {
+		if (!keyboard.isFocused) {
+			onKeyDown?.(e, '', [], { from: 0, to: 0 }, props);
+		};
+	};
+
+	const onKeyUpHandler = (e: any) => {
+		onKeyUp?.(e, '', [], { from: 0, to: 0 }, props);
+	};
+
+	const onFocus = () => {
+		if (isInline) {
+			focus.set(block.id, { from: 0, to: 0 });
+		};
+	};
+
+	const loadData = (viewId: string, offset: number, clear: boolean, callBack?: (message: any) => void) => {
+		if (!viewId) {
+			console.log('[BlockDataview.loadData] No view id');
+			return;
+		};
+
+		const view = getView(viewId);
+		if (!view) {
+			console.log('[BlockDataview.loadData] No view');
+			return;
+		};
+
+		viewIdRef.current = viewId;
+
+		const subId = getSubId();
+		const keys = getKeys(viewId);
+		const sources = getSources();
+
+		if (!sources.length && !isCollection) {
+			console.log('[BlockDataview.loadData] No sources');
+			return;
+		};
+
+		S.Record.metaSet(subId, '', { offset, viewId });
+
+		if ([ I.ViewType.Calendar, I.ViewType.Timeline, I.ViewType.Graph, I.ViewType.Board ].includes(view.type)) {
+			if (view.type !== viewTypeRef.current) {
+				viewIdRef.current = '';
+			} else
+			if (viewRef.current && viewRef.current.load) {
+				viewRef.current.load();
+			} else {
+				viewIdRef.current = '';
+			};
+		} else {
+			const filters = [];
+
+			if (searchIds) {
+				filters.push({ relationKey: 'id', condition: I.FilterCondition.In, value: searchIds || [] });
+			};
+
+			Dataview.getData({
+				isInline,
+				rootId, 
+				subId,
+				blockId: block.id, 
+				newViewId: viewId, 
+				keys, 
+				offset: 0, 
+				limit: offset + getLimit(view), 
+				clear,
+				sources,
+				filters,
+				collectionId: (isCollection ? getObjectId() : ''),
+			}, callBack);
+		};
+	};
+
+	const reloadData = (cb?: () => void) => {
+		const view = getView();
+
+		if (view) {
+			S.Record.metaSet(getSubId(), '', { viewId: view.id, offset: 0, total: 0 });
+			loadData(view.id, 0, true, cb);
+		};
+	};
+
+	const getObjectId = (): string => {
+		let ret = block.getTargetObjectId();
+		if (!isInline && !ret) {
+			ret = rootId;
+		};
+
+		return ret;
+	};
+
+	const getKeys = (id: string): string[] => {
+		const view = getView(id);
+
+		let keys = J.Relation.default.concat(J.Relation.cover);
+		if (view) {
+			keys = keys.concat((view.relations || []).map(it => it && it.relationKey));
+
+			if (view.coverRelationKey && (view.coverRelationKey != J.Relation.pageCover)) {
+				keys.push(view.coverRelationKey);
+			};
+
+			if (view.groupRelationKey) {
+				keys.push(view.groupRelationKey);
+			};
+
+			if (view.endRelationKey) {
+				keys.push(view.endRelationKey);
+			};
+		};
+
+		return U.Common.arrayUnique(keys);
+	};
+
+	const getLimit = (view: I.View): number => {
+		if (!view) {
+			return 0;
+		};
+
+		const options = Relation.getPageLimitOptions(view.type, isInline);
+		const pageLimit = Number(view.pageLimit) || options[0].id;
+
+		let limit = 0;
+
+		switch (view.type) {
+			default: {
+				limit = isInline ? pageLimit : 500;
+				break;
+			};
+
+			case I.ViewType.Gallery:
+			case I.ViewType.Board: {
+				limit = pageLimit || 50;
+				break;
+			};
+
+		};
+		return limit;
+	};
+
+	const getSubId = (groupId?: string): string => {
+		let ret = '';
+		if (groupId) {
+			ret = S.Record.getGroupSubId(rootId, block.id, groupId);
+		} else {
+			ret = S.Record.getSubId(rootId, block.id);
+		};
+		return ret;
+	};
+
+	const getRecords = (groupId?: string): string[] => {
+		const subId = getSubId(groupId);
+		const records = S.Record.getRecordIds(subId, '');
+
+		return applyObjectOrder(groupId || '', [ ...records ]);
+	};
+
+	const getRecord = (id: string) => {
+		const view = getView();
+		if (!view) {
+			return {};
+		};
+
+		const skip = [ 'restrictions' ];
+		const keys = getKeys(view.id).filter(it => !skip.includes(it));
+		const subId = getSubId();
+		const item = S.Detail.get(subId, id, keys, true);
+		const { layout, isReadonly, isDeleted, snippet } = item;
+
+		if (item.name == translate('defaultNamePage')) {
+			item.name = '';
+		};
+		if (U.Object.isNoteLayout(layout)) {
+			item.name = snippet;
+		};
+
+		item.isReadonly = isDeleted || isReadonly;
+		return item;
+	};
+
+	const getView = (viewId?: string): I.View => {
+		return Dataview.getView(rootId, block.id, viewId);
+	};
+
+	const getSources = (): string[] => {
+		if (isCollection) {
+			return [];
+		};
+
+		const target = getTarget();
+		const types = Relation.getSetOfObjects(rootId, target.id, I.ObjectLayout.Type).map(it => it.id);
+		const relations = Relation.getSetOfObjects(rootId, target.id, I.ObjectLayout.Relation).map(it => it.id);
+
+		return [].concat(types).concat(relations);
+	};
+
+	const getTarget = () => {
+		return S.Detail.get(rootId, getObjectId(), [ 'setOf' ]);
+	};
+
+	const getTypeId = (): string => {
+		return Dataview.getTypeId(rootId, block.id, getObjectId(), getView()?.id);
+	};
+
+	const getDetails = (groupId?: string): any => {
+		return Dataview.getDetails(rootId, block.id, getObjectId(), getView()?.id, groupId);
+	};
+
+	const getMenuParam = (e: any, dir: number): any => {
+		const node = nodeRef.current;
+		const hoverArea = node ? U.Dom.select('.hoverArea', node) : null;
+
+		const menuParam: any = {
+			classNameWrap: 'fromBlock',
+			onOpen: (context: any) => {
+				menuContext.current = context;
+				U.Dom.addClass(hoverArea, 'active');
+			},
+			onClose: () => {
+				isCreating.current = false;
+				U.Dom.removeClass(hoverArea, 'active');
+			},
+		};
+
+		if (dir) {
+			menuParam.element = e.currentTarget;
+		} else {
+			menuParam.horizontal = I.MenuDirection.Center;
+			menuParam.recalcRect = () => {
+				const { ww, wh } = U.Dom.getWindowDimensions();
+				return { x: ww / 2, y: wh / 2, width: 200, height: 0 };
+			};
+		};
+
+		return menuParam;
+	};
+
+	const getDefaultTemplateId = (typeId?: string): string => {
+		const view = getView();
+		const type = S.Record.getTypeById(typeId || getTypeId());
+
+		if (view && view.defaultTemplateId) {
+			return view.defaultTemplateId;
+		} else
+		if (type && type.defaultTemplateId) {
+			return type.defaultTemplateId;
+		};
+		return '';
+	};
+
+	const recordCreate = (e: any, template: any, dir: number, groupId?: string, idx?: number) => {
+		const objectId = getObjectId();
+		const view = getView();
+
+		if (!view || isCreating.current) {
+			return;
+		};
+
+		const isViewGraph = view.type == I.ViewType.Graph;
+		const isViewCalendar = view.type == I.ViewType.Calendar;
+		const isViewBoard = view.type == I.ViewType.Board;
+
+		// Board creation paths without an explicit group (toolbar New button,
+		// template menu) target the "empty" group like onRecordAdd does, so the
+		// optimistic insert below works for them as well (JS-9764)
+		if (isViewBoard && !groupId) {
+			groupId = 'empty';
+		};
+
+		const subId = getSubId(groupId);
+		const details = getDetails(groupId);
+		const flags: I.ObjectFlag[] = [ I.ObjectFlag.SelectTemplate ];
+
+		if (isCollection) {
+			details.createdInContext = objectId;
+		};
+
+		let typeId = '';
+		let templateId = '';
+
+		if (template) {
+			templateId = template.id;
+
+			if (template.targetObjectType) {
+				typeId = template.targetObjectType;
+			};
+		};
+
+		if (!typeId) {
+			typeId = getTypeId();
+		};
+
+		if (!templateId) {
+			templateId = getDefaultTemplateId(typeId);
+		};
+
+		const type = S.Record.getTypeById(typeId);
+		if (!type) {
+			console.error('[BlockDataview.recordCreate] No type');
+			return;
+		};
+
+		const templateObject = S.Detail.get(rootId, templateId);
+		if (templateObject.isArchived || templateObject.isDeleted) {
+			templateId = '';
+		};
+
+		isCreating.current = true;
+
+		C.ObjectCreate(details, flags, templateId, type.uniqueKey, S.Common.space, (message: any) => {
+			isCreating.current = false;
+
+			if (message.error.code) {
+				return;
+			};
+
+			const object = message.details;
+
+			S.Detail.update(subId, { id: object.id, details: object }, true);
+
+			const isSorted = !isViewBoard && S.Record.getMeta(subId, '').isSorted;
+
+			if (!isViewCalendar) {
+				// Board columns render from the group subscription record list as is:
+				// use the raw list, getRecords would apply the object order of the
+				// first matching group (JS-9747, JS-9764)
+				let records = isViewBoard ? [ ...S.Record.getRecordIds(subId, '') ] : getRecords(groupId);
+
+				const oldIndex = records.indexOf(message.objectId);
+
+				// If idx present use idx otherwise use dir to add record to the beginning or end of the list
+				if (oldIndex < 0) {
+					if (idx >= 0) {
+						records.splice(idx, 0, message.objectId);
+					} else {
+						dir > 0 ? records.push(message.objectId) : records.unshift(message.objectId);
+					};
+				} else {
+					const newIndex = idx >= 0 ? idx : (dir > 0 ? records.length : 0);
+					records = arrayMove(records, oldIndex, newIndex);
+				};
+
+				// Insert the new record into the group's custom order (if any), so the
+				// card keeps its position and stays visible after the column
+				// re-subscribes with a limited window. The local order is updated
+				// optimistically before recordsSet triggers a re-render — otherwise
+				// applyObjectOrder sorts the unknown id to the top of the column
+				// until the RPC round-trip completes (JS-9747, JS-9764)
+				if (isViewBoard) {
+					const order = block.content.objectOrder.find(it => (it.viewId == view.id) && (it.groupId == groupId));
+					const objectIds = [ ...(order?.objectIds || []) ];
+
+					if (order && !objectIds.includes(message.objectId)) {
+						if (idx >= 0) {
+							objectIds.splice(idx, 0, message.objectId);
+						} else {
+							dir > 0 ? objectIds.push(message.objectId) : objectIds.unshift(message.objectId);
+						};
+
+						set(order, { objectIds });
+						objectOrderUpdate([ { viewId: view.id, groupId, objectIds } ], records);
+					};
+				};
+
+				S.Record.recordsSet(subId, '', records);
+			};
+
+			if (isCollection) {
+				C.ObjectCollectionAdd(objectId, [ object.id ]);
+			};
+
+			if (isViewGraph) {
+				const refGraph = viewRef.current?.refGraph;
+				if (refGraph) {
+					refGraph.addNewNode(object.id, '', null, () => {
+						U.Dom.eventDispatch(window, 'updateGraphRoot', { id: object.id });
+					});
+				};
+			};
+
+			if (isViewGraph || isViewCalendar || (U.Object.isNoteLayout(object.layout))) {
+				U.Object.openConfig(e, object);
+			} else {
+				// On sorted subscriptions the middleware repositions the new record right
+				// away (an empty name sorts to the top under Name Asc), which would move
+				// the row while its name is being typed: hold the reposition until editing
+				// ends — setRecordEditingOff applies the stashed position (GO-7387)
+				if (isSorted) {
+					S.Record.positionLockSet(subId, '', object.id);
+				};
+
+				window.setTimeout(() => setRecordEditingOn(e, object.id), 15);
+			};
+
+			analytics.createObject(object.type, object.layout, analyticsRoute, message.middleTime);
+		});
+	};
+
+	const onEmpty = (e: any) => {
+		if (isInline) {
+			onSourceSelect(`#block-${U.Common.esc(block.id)} #head-source-select`, { horizontal: I.MenuDirection.Center });
+		} else {
+			// The featured setOf cell is not rendered on an empty Query page, so the menu is anchored
+			// to the clicked placeholder and only falls back to the cell when there is no event (JS-9856)
+			const element = e?.currentTarget || U.Dom.select(`#${U.Common.esc(Relation.cellId('blockFeatured', 'setOf', rootId))}`);
+
+			onSourceTypeSelect(element);
+		};
+	};
+
+	const onRecordAdd = (e: any, dir: number, groupId?: string, menuParam?: any, idx?: number) => {
+		if (e.persist) {
+			e.persist();
+		};
+
+		const typeId = getTypeId();
+		const type = S.Record.getTypeById(typeId);
+		const view = getView();
+
+		if ((view.type == I.ViewType.Board) && !groupId) {
+			groupId = 'empty';
+		};
+
+		if (type && U.Object.getFileLayouts().includes(type.recommendedLayout)) {
+			const objectId = getObjectId();
+			const details = getDetails(groupId);
+
+			U.Menu.onFileUploadPopup(type.recommendedLayout, isCollection ? objectId : '', details, (objects) => {
+				if (isCollection && objects?.length) {
+					// Collection add is handled inside the popup for each file
+				};
+			}, analytics.route.uploadTypePage);
+		} else
+		if (type && (U.Object.isBookmarkLayout(type.recommendedLayout) || U.Object.isChatLayout(type.recommendedLayout))) {
+			onObjectMenu(e, dir, type.recommendedLayout, groupId, menuParam);
+		} else {
+			recordCreate(e, { id: getDefaultTemplateId() }, dir, groupId, idx);
+		};
+	};
+
+	const onObjectMenu = (e: any, dir: number, layout: I.ObjectLayout, groupId?: string, param?: Partial<I.MenuParam>) => {
+		param = param || {};
+		param.vertical = dir > 0 ? I.MenuDirection.Top : I.MenuDirection.Bottom;
+		param.horizontal = dir > 0 ? I.MenuDirection.Left : I.MenuDirection.Right;
+		param.offsetX = dir < 0 ? -24 : 0;
+		param.offsetY = 4 * -dir;
+
+		param.data = param.data || {};
+		param.data.details = getDetails(groupId);
+
+		if (isCollection) {
+			param.data.details.createdInContext = getObjectId();
+		};
+
+		const objectId = getObjectId();
+		const menuParam = {
+			horizontal: I.MenuDirection.Center,
+			...getMenuParam(e, dir),
+			...param,
+		};
+		const cb = object => {
+			if (isCollection) {
+				C.ObjectCollectionAdd(objectId, [ object.id ]);
+			};
+		};
+
+		switch (layout) {
+			case I.ObjectLayout.Bookmark: {
+				U.Menu.onBookmarkMenu(menuParam, cb);
+				break;
+			};
+
+			case I.ObjectLayout.Chat: {
+				U.Menu.onChatMenu(menuParam, analyticsRoute, cb);
+				break;
+			};
+		};
+	};
+
+	const onTemplateMenu = (e: any, dir: number) => {
+		if (e.persist) {
+			e.persist();
+		};
+
+		const menuParam = getMenuParam(e, dir);
+		const route = analyticsRoute;
+		const hasSources = isCollection || getSources().length;
+		const view = getView();
+		const typeId = getTypeId();
+
+		analytics.event('ClickNewOption', { route });
+
+		let menuContext = null;
+
+		S.Menu.open('dataviewNew', {
+			...menuParam,
+			classNameWrap: 'fromBlock',
+			offsetY: 10,
+			noAnimation: true,
+			subIds: J.Menu.dataviewTemplate.concat([ 'dataviewTemplateContext' ]),
+			vertical: dir > 0 ? I.MenuDirection.Top : I.MenuDirection.Bottom,
+			horizontal: dir > 0 ? I.MenuDirection.Left : I.MenuDirection.Right,
+			onOpen: context => {
+				menuContext = context;
+				controlsRef.current?.toggleHoverArea(true);
+			},
+			onClose: () => {
+				menuContext = null;
+				controlsRef.current?.toggleHoverArea(false);
+			},
+			data: {
+				blockId: block.id,
+				subId: getSubId(),
+				targetId: getObjectId(),
+				hasSources,
+				getView: getView,
+				withTypeSelect: isAllowedDefaultType(),
+				typeId,
+				templateId: getDefaultTemplateId(),
+				route,
+				isAllowedObject: isAllowedObject(),
+				isCollection,
+				onTypeChange: (id) => {
+					if (id != getTypeId()) {
+						const newType = S.Record.getTypeById(id);
+
+						Dataview.viewUpdate(rootId, block.id, view.id, { defaultTypeId: id, defaultTemplateId: newType?.defaultTemplateId });
+						analytics.event('DefaultTypeChange', { route });
+					};
+				},
+				onSetDefault: id => {
+					Dataview.viewUpdate(rootId, block.id, view.id, { defaultTemplateId: id });
+				},
+				onSelect: (item: any) => {
+					if (!view) {
+						return;
+					};
+
+					const typeId = getTypeId();
+					const type = S.Record.getTypeById(typeId);
+
+					if (!type) {
+						return;
+					};
+
+					if (U.Object.getFileLayouts().includes(type.recommendedLayout)) {
+						menuContext?.close();
+						const objectId = getObjectId();
+						const details = getDetails('');
+						U.Menu.onFileUploadPopup(type.recommendedLayout, isCollection ? objectId : '', details, undefined, analytics.route.uploadTypePage);
+					} else
+					if (U.Object.isBookmarkLayout(type.recommendedLayout) || U.Object.isChatLayout(type.recommendedLayout)) {
+						menuContext?.close();
+						onObjectMenu(e, dir, type.recommendedLayout, '', { element: `#button-${U.Common.esc(block.id)}-add-record` });
+					} else
+					if (item.id == J.Constant.templateId.new) {
+						onTemplateAdd(item.targetObjectType);
+					} else {
+						recordCreate(e, item, dir);
+						Dataview.viewUpdate(rootId, block.id, view.id, { defaultTemplateId: item.id });
+
+						menuContext?.close();
+						analytics.event('ChangeDefaultTemplate', { route });
+					};
+				},
+			}
+		});
+	};
+
+	const onTemplateAdd = (id?: string) => {
+		const typeId = id || getTypeId();
+		const type = S.Record.getTypeById(typeId);
+		const details: any = {
+			targetObjectType: typeId,
+			layout: type.recommendedLayout,
+		};
+
+		C.ObjectCreate(details, [], '', J.Constant.typeKey.template, S.Common.space, (message) => {
+			if (message.error.code) {
+				return;
+			};
+
+			const object = message.details;
+
+			focus.clear(true);
+			analytics.event('CreateTemplate', { objectType: typeId, route: analyticsRoute });
+
+			U.Object.openConfig(null, object);
+		});
+	};
+
+	const canCellEdit = (relation: any, record: any): boolean => {
+		if (readonly) {
+			return false;
+		};
+		if (!relation || !record || relation.isReadonlyValue || record.isReadonly) {
+			return false;
+		};
+		if (U.Object.isNoteLayout(record.layout) && (relation.relationKey == 'name')) {
+			return false;
+		};
+		return true;
+	};
+
+	const onCellClick = (e: any, relationKey: string, recordId: string, record?: any) => {
+		if (U.Common.checkAuxButton(e)) {
+			return;
+		};
+
+		if (!record) {
+			record = getRecord(recordId);
+		};
+
+		const selection = S.Common.getRef('selectionProvider');
+		const relation = S.Record.getRelationByKey(relationKey);
+		const id = Relation.cellId(getIdPrefix(), relationKey, record.id);
+		const ref = cellRefs.current.get(id);
+		const view = getView();
+		const isRecordEditing = (editingRecordId.current == recordId);
+		const isName = relationKey == 'name';
+
+		if (!relation || !ref || !record) {
+			return;
+		};
+
+		if (isName && (relation.isReadonlyValue || record.isReadonly)) {
+			U.Object.openConfig(e, record);
+			return;
+		};
+
+		if (!view.isGrid() && Relation.isUrl(relation.format) && !isRecordEditing) {
+			Action.openUrl(Relation.checkUrlScheme(relation.format, record[relationKey]));
+			return;
+		};
+
+		if (isName && ref.isEditing && !ref.isEditing() && !isRecordEditing) {
+			const ids = selection?.get(I.SelectType.Record) || [];
+
+			if (keyboard.withCommand(e)) {
+				if (!ids.length) {
+					U.Object.openEvent(e, record);
+				};
+			} else {
+				U.Object.openConfig(e, record);
+			};
+		} else {
+			ref.onClick(e);
+		};
+	};
+
+	const onCellChange = (id: string, relationKey: string, value: any, callBack?: (message: any) => void) => {
+		const subId = getSubId();
+		const relation = S.Record.getRelationByKey(relationKey);
+		const record = getRecord(id);
+
+		if (!record || !relation) {
+			return;
+		};
+
+		value = Relation.formatValue(relation, value, true);
+
+		const details: any = {};
+		details[relationKey] = value;
+		S.Detail.update(subId, { id, details }, false);
+
+		C.ObjectListSetDetails([ id ], [ { key: relationKey, value } ], callBack);
+
+		if ((undefined !== record[relationKey]) && !U.Common.compareJSON(record[relationKey], value)) {
+			analytics.changeRelationValue(relation, value, { type: 'dataview', id: 'Single' });
+		};
+	};
+
+	const onContext = (e: any, id: string, subId?: string): void => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		if (keyboard.isCmd(e)) {
+			return;
+		};
+
+		subId = subId || getSubId();
+
+		const selection = S.Common.getRef('selectionProvider');
+		const view = getView();
+		const { x, y } = keyboard.mouse.page;
+
+		if (!view) {
+			return;
+		};
+		
+		let objectIds = selection?.get(I.SelectType.Record) || [];
+		if (!objectIds.length || !objectIds.includes(id)) {
+			objectIds = [ id ];
+			selection?.set(I.SelectType.Record, objectIds);
+		};
+
+		S.Menu.open('objectContext', {
+			classNameWrap: 'fromBlock',
+			rect: { width: 0, height: 0, x: x + 4, y: y },
+			onClose: () => selection.clear(),
+			data: {
+				blockId: block.id,
+				targetId: getObjectId(),
+				objectIds,
+				subId,
+				isCollection,
+				route: analyticsRoute,
+				relationKeys: getVisibleRelations().map(it => it.relationKey),
+				view,
+				allowedLinkTo: true,
+				allowedOpen: true,
+				allowedNewTab: true,
+				allowedRelation: true,
+				allowedCollection: true,
+				allowedExport: true,
+				allowedType: true,
+			}
+		});
+	};
+
+	const onSourceSelect = (element: any, param: Partial<I.MenuParam>) => {
+		const { targetObjectId } = block.content;
+		const collectionType = S.Record.getCollectionType();
+		const addParam: any = {};
+
+		let filters: I.Filter[] = [];
+		
+		if (isCollection) {
+			filters = filters.concat([
+				{ relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Collection },
+			]);
+
+			addParam.name = translate('blockDataviewCreateNewCollection');
+			addParam.nameWithFilter = translate('blockDataviewCreateNewCollectionWithName');
+			addParam.onClick = (details: any) => {
+				details = Object.assign(details, { createdInContext: rootId });
+				C.ObjectCreate(details, [], '', collectionType?.uniqueKey, S.Common.space, message => onSelect(message.details, true));
+			};
+		} else {
+			filters = filters.concat([
+				{ relationKey: 'resolvedLayout', condition: I.FilterCondition.In, value: [ I.ObjectLayout.Set, I.ObjectLayout.Type ] },
+				{ relationKey: 'setOf', condition: I.FilterCondition.NotEmpty, value: null },
+			]);
+
+			addParam.name = translate('blockDataviewCreateNewSet');
+			addParam.nameWithFilter = translate('blockDataviewCreateNewSetWithName');
+			addParam.onClick = (details: any) => {
+				C.ObjectCreateSet([], details, '', S.Common.space, message => onSelect(message.details, true));
+			};
+		};
+
+		const onSelect = (item: any, isNew: boolean) => {
+			C.BlockDataviewCreateFromExistingObject(rootId, block.id, item.id, (message: any) => {
+				const button = nodeRef.current ? U.Dom.select('#head-source-select', nodeRef.current) : null;
+
+				S.Detail.update(rootId, { id: item.id, details: item }, false);
+
+				if (!isCollection && isNew && button) {
+					button.click();
+				};
+
+				if (message.views && message.views.length) {
+					loadData(message.views[0].id, 0, true);
+				};
+
+				if (isNew) {
+					const ref = controlsRef.current?.getHeadRef();
+					const l = String(item.name || '').length;
+
+					if (ref) {
+						ref.setValue(item.name);
+						ref.setRange({ from: l, to: l });
+						ref.setEditing(true);
+					};
+				};
+
+				if (isInline) {
+					Onboarding.start(isCollection ? 'inlineCollection' : 'inlineSet', isPopup, false, {
+						parseParam: param => ({
+							...param,
+							element: [ `#block-${U.Common.esc(block.id)}`, param.element ].join(' '),
+						}),
+					});
+				};
+			});
+
+			analytics.event('InlineSetSetSource', { type: isNew ? 'newObject': 'externalObject' });
+		};
+
+		S.Menu.open('searchObject', Object.assign({
+			element,
+			className: 'single',
+			classNameWrap: 'fromBlock',
+			data: {
+				rootId,
+				blockId: block.id,
+				blockIds: [ block.id ],
+				value: [ targetObjectId ],
+				canAdd: true,
+				filters,
+				addParam,
+				onSelect,
+				withPlural: true,
+				keys: J.Relation.default.concat('setOf'),
+			}
+		}, param || {}));
+	};
+
+	const onSourceTypeSelect = (obj: any) => {
+		const objectId = getObjectId();
+		const element = (typeof obj === 'string') ? U.Dom.select(obj) : obj;
+
+		S.Menu.closeAll(null, () => {
+			S.Menu.open('dataviewSource', {
+				classNameWrap: 'fromBlock',
+				element,
+				horizontal: I.MenuDirection.Center,
+				onOpen: () => U.Dom.addClass(element, 'active'),
+				onClose: () => U.Dom.removeClass(element, 'active'),
+				data: {
+					rootId,
+					objectId,
+					blockId: block.id,
+				}
+			});
+		});
+	};
+
+	const onDragRecordStart = (e: any, recordId: string) => {
+		e.stopPropagation();
+
+		const dragProvider = S.Common.getRef('dragProvider');
+		const selection = S.Common.getRef('selectionProvider');
+		const record = getRecord(recordId);
+		const ids = selection?.get(I.SelectType.Record) || [];
+		const con = controlsRef.current?.getNode();
+		const sel = selectRef.current?.getNode();
+
+		if (!ids.length) {
+			ids.push(record.id);
+		};
+
+		if (!block.isDraggable()) {
+			e.preventDefault();
+			return;
+		};
+
+		keyboard.disableSelection(true);
+		keyboard.setSelectionClearDisabled(false);
+
+		dragProvider?.onDragStart(e, I.DropType.Record, ids, {
+			getNode: () => nodeRef.current,
+			onRecordDrop: onRecordDrop,
+			onViewDrop: onViewDrop,
+		});
+
+		if (con) U.Dom.css(con, { display: 'block' });
+		if (sel) U.Dom.css(sel, { display: 'none' });
+	};
+
+	const onRecordDrop = (targetId: string, ids: string[], position: I.BlockPosition) => {
+		keyboard.disableSelection(false);
+
+		const selection = S.Common.getRef('selectionProvider');
+		const subId = getSubId();
+		const view = getView();
+
+		if (!ids.length) {
+			return;
+		};
+
+		selection?.clear();
+
+		let records = getRecords();
+		if (records.indexOf(targetId) > records.indexOf(ids[0])) {
+			ids = ids.reverse();
+		};
+
+		ids.forEach(id => {
+			const oldIndex = records.indexOf(id);
+			
+			let targetIndex = records.indexOf(targetId);
+
+			if ((position == I.BlockPosition.Top) && (oldIndex < targetIndex)) {
+				targetIndex--;
+			};
+
+			records = arrayMove(records, oldIndex, targetIndex);
+		});
+
+		const cb = () => {
+			S.Record.recordsSet(subId, '', records);
+			objectOrderUpdate([ { viewId: view.id, groupId: '', objectIds: records } ], records, () => S.Record.recordsSet(subId, '', records));
+		};
+
+		if (view.sorts.length) {
+			S.Popup.open('confirm', {
+				data: {
+					title: translate('popupConfirmSortRemoveTitle'),
+					textConfirm: translate('commonRemove'),
+					onConfirm: () => {
+						C.BlockDataviewSortRemove(rootId, block.id, view.id, view.sorts.map(it => it.id), cb);
+					},
+				},
+			});
+		} else {
+			cb();
+		};
+	};
+
+	const onViewDrop = (targetId: string, ids: string[]) => {
+		if (!targetId || !ids.length) {
+			return;
+		};
+
+		const view = getView(targetId);
+		const details = Dataview.getDetails(rootId, block.id, getObjectId(), targetId);
+		const operations: any[] = []; 
+		const removeConditions = [
+			I.FilterCondition.NotIn,
+			I.FilterCondition.NotEqual,
+			I.FilterCondition.NotAllIn,
+			I.FilterCondition.NotExactIn,
+		];
+		const filters = Dataview.flattenFilters(view.filters);
+
+		for (const k in details) {
+			const relation = S.Record.getRelationByKey(k);
+
+			if (!relation) {
+				continue;
+			};
+
+			const value = Relation.formatValue(relation, details[k], true);
+
+			if (Relation.isArrayType(relation.format) && (relation.format != I.RelationType.Select)) {
+				operations.push({ relationKey: k, add: value });
+			} else {
+				operations.push({ relationKey: k, set: value });
+			};
+		};
+
+		for (const filter of filters) {
+			if (!removeConditions.includes(filter.condition)) {
+				continue;
+			};
+
+			const relation = S.Record.getRelationByKey(filter.relationKey);
+			if (!relation || relation.isReadonlyValue) {
+				continue;
+			};
+
+			const value = Relation.formatValue(relation, filter.value, true);
+			if (!value) {
+				continue;
+			};
+
+			if (Relation.isArrayType(relation.format)) {
+				operations.push({ relationKey: filter.relationKey, remove: value });
+			};
+		};
+
+		C.ObjectListModifyDetailValues(ids, operations);
+		S.Common.getRef('selectionProvider')?.clear();
+		selectionCheck();
+	};
+
+	const onSortAdd = (item: any, callBack?: () => void) => {
+		const view = getView();
+		const object = getTarget();
+
+		C.BlockDataviewSortAdd(rootId, block.id, view.id, item, () => {
+			callBack?.();
+
+			analytics.event('AddSort', {
+				objectType: object.type,
+				embedType: analytics.embedType(isInline)
+			});
+		});
+	};
+
+	const toggleFilters = () => {
+		Storage.toggleViewFilter(rootId, view.id);
+		setDummy(dummy + 1);
+	};
+
+	const onFilterAddClick = (menuParam: I.MenuParam) => {
+		U.Menu.sortOrFilterRelationSelect(menuParam, {
+			rootId,
+			blockId: block.id,
+			getView,
+			onSelect: item => {
+				onFilterAdd({
+					relationKey: item.relationKey || item.id,
+					...Dataview.getDefaultFilterValues(item),
+				}, (message: any) => {
+					onFilterOpen(message.filterId);
+				});
+			},
+			onAdvancedFilterAdd: () => {
+				onFilterAdd(Dataview.getDefaultAdvancedFilter(), (message: any) => {
+					onFilterOpen(message.filterId);
+				});
+			},
+		});
+	};
+
+	const onFilterOpen = (filterId: string) => {
+		if (!filterId) {
+			return;
+		};
+
+		window.setTimeout(() => filtersRef.current?.openFilterMenu(filterId), J.Constant.delay.menu);
+	};
+
+	const closeFilters = () => {
+		const view = getView();
+		if (!view) {
+			return;
+		};
+
+		const filters = Dataview.getFilteredFilters(view.filters);
+		const sorts = Dataview.getFilteredSorts(view.sorts);
+
+		if (sorts.length || filters.length) {
+			return;
+		};
+
+		Storage.toggleViewFilter(rootId, view.id, false);
+		setDummy(dummy + 1);
+	};
+
+	const onFilterAdd = (item: any, callBack?: (message: any) => void) => {
+		const view = getView();
+		const object = getTarget();
+		const relation = S.Record.getRelationByKey(item.relationKey);
+
+		Dataview.addFilter(rootId, block.id, view.id, item, (message: any) => {
+			callBack?.(message);
+
+			analytics.event('AddFilter', {
+				condition: item.condition,
+				format: relation?.format,
+				relationKey: item.relationKey,
+				objectType: object.type,
+				embedType: analytics.embedType(isInline),
+			});
+		});
+	};
+
+	const getIdPrefix = () => {
+		return [ 'dataviewCell', block.id ].join('-');
+	};
+
+	const getVisibleRelations = () => {
+		const view = getView();
+		if (!view) {
+			return [];
+		};
+
+		const keys = S.Record.getDataviewRelationKeys(rootId, block.id);
+		return view.getVisibleRelations().filter(it => keys.includes(it.relationKey));
+	};
+
+	const getEmpty = (type: string) => {
+		const view = getView();
+		const cn = [];
+
+		if (isInline) {
+			cn.push('withHead');
+		};
+
+		let emptyProps: any = {};
+
+		switch (type) {
+			case 'target': {
+				const name = translate(isCollection ? 'blockDataviewEmptyTargetCollections' : 'blockDataviewEmptyTargetSets');
+				emptyProps = {
+					title: translate('blockDataviewEmptyTargetTitle'),
+					description: U.String.sprintf(translate('blockDataviewEmptyTargetDescription'), name),
+					button: translate('blockDataviewEmptyTargetButton'),
+					onClick: () => onSourceSelect(`#block-${U.Common.esc(block.id)} .dataviewEmpty .button`, {}),
+				};
+				break;
+			};
+
+			case 'view': {
+				if (view.type != I.ViewType.Grid) {
+					cn.push('withHead');
+				};
+
+				emptyProps.title = translate('commonNoObjects');
+
+				if (isAllowedObject()) {
+					emptyProps.description = translate('blockDataviewEmptyViewDescription');
+					emptyProps.button = translate('commonCreateObject');
+					emptyProps.onClick = e => onRecordAdd(e, 1, '', { horizontal: I.MenuDirection.Center });
+				};
+				break;
+			};
+		};
+
+		return (
+			<Empty
+				{...props}
+				{...emptyProps}
+				className={cn.join(' ')}
+				withButton={emptyProps.button && !readonly ? true : false}
+			/>
+		);
+	};
+
+	const getEmptyView = (type: I.ViewType) => {
+		if (!isAllowedObject()) {
+			return getEmpty('view');
+		};
+
+		const cn = [ 'viewContent', `view${I.ViewType[type]}` ];
+		const onAdd = (e: any) => {
+			if (!isCollection && !getSources().length) {
+				onEmpty(e);
+			} else {
+				onRecordAdd(e, 1);
+			};
+		};
+
+		let inner: any = null;
+
+		switch (type) {
+			case I.ViewType.List: {
+				inner = <AddRow onClick={onAdd} />;
+				break;
+			};
+
+			case I.ViewType.Gallery: {
+				inner = (
+					<AnimatePresence mode="popLayout">
+						<motion.div
+							className="row empty"
+							{...U.Common.animationProps({
+								transition: { duration: 0.2, delay: 0.1 },
+							})}
+						>
+							<div className="card add" onClick={onAdd} />
+						</motion.div>
+					</AnimatePresence>
+				);
+				break;
+			};
+
+			case I.ViewType.Board: {
+				break;
+			};
+		};
+
+		return (
+			<div className={cn.join(' ')}>
+				{inner}
+			</div>
+		);
+	};
+
+	const isAllowedObject = () => {
+		const root = S.Block.getLeaf(rootId, rootId);
+
+		if (root && root.isLocked()) {
+			return false;
+		};
+
+		let isAllowed = !readonly && S.Block.checkFlags(rootId, block.id, [ I.RestrictionDataview.Object ]);
+		if (!isAllowed) {
+			const typeId = getTypeId();
+			const type = S.Record.getTypeById(typeId);
+
+			if (!readonly && type && U.Object.isInFileLayouts(type.recommendedLayout)) {
+				return true;
+			};
+			return false;
+		};
+
+		if (isAllowed && isCollection) {
+			return true;
+		};
+
+		const sources = getSources();
+		if (!sources.length) {
+			return false;
+		};
+
+		const targetId = getObjectId();
+		const types = Relation.getSetOfObjects(rootId, targetId, I.ObjectLayout.Type);
+		const skipLayouts = [ I.ObjectLayout.Participant ].concat(U.Object.getSystemLayouts());
+
+		for (const type of types) {
+			if (skipLayouts.includes(type.recommendedLayout)) {
+				isAllowed = false;
+				break;
+			};
+
+			if (type.uniqueKey == J.Constant.typeKey.template) {
+				isAllowed = false;
+				break;
+			};
+		};
+
+		return isAllowed;
+	};
+
+	const isAllowedDefaultType = (): boolean => {
+		if (isCollection) {
+			return true;
+		};
+
+		return !!Relation.getSetOfObjects(rootId, getTarget().id, I.ObjectLayout.Relation).map(it => it.id).length;
+	};
+
+	const objectOrderUpdate = (orders: any[], records: any[], callBack?: (message0: any) => void) => {
+		const view = getView();
+
+		C.BlockDataviewObjectOrderUpdate(rootId, block.id, orders, (message) => {
+			if (message.error.code) {
+				return;
+			};
+
+			orders.forEach((it: any) => {
+				const old = block.content.objectOrder.find(item => (view.id == item.viewId) && (item.groupId == it.groupId));
+				if (old) {
+					set(old, it);
+				} else {
+					block.content.objectOrder.push(it);
+				};
+
+				window.setTimeout(() => applyObjectOrder(it.groupId, records), 30);
+			});
+
+			callBack?.(message);
+		});
+	};
+
+	const applyObjectOrder = (groupId: string, records: any[]): string[] => {
+		if (!block) {
+			return [];
+		};
+
+		const view = getView();
+		if (!view) {
+			return [];
+		};
+
+		return Dataview.applyObjectOrder(rootId, block.id, view.id, groupId, records);
+	};
+
+	const onSelectToggle = (e: MouseEvent, id: string) => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		const selection = S.Common.getRef('selectionProvider');
+
+		if (!selection || isInline) {
+			return;
+		};
+
+		let ids = selection.get(I.SelectType.Record);
+		ids = ids.includes(id) ? ids.filter(it => it != id) : ids.concat([ id ]);
+		selection.set(I.SelectType.Record, ids);
+
+		setSelected(ids);
+		selectionCheck();
+	};
+
+	const selectionCheck = () => {
+		const selection = S.Common.getRef('selectionProvider');
+		if (!selection || !controlsRef.current || !selectRef.current) {
+			return;
+		};
+
+		const con = controlsRef.current.getNode();
+		const sel = selectRef.current.getNode();
+		const ids = selection.get(I.SelectType.Record) || [];
+		const length = ids.length;
+
+		if (con) U.Dom.css(con, { display: length ? 'none' : 'block' });
+		if (sel) U.Dom.css(sel, { display: length ? 'block' : 'none' });
+	};
+
+	const onSelectEnd = () => {
+		const selection = S.Common.getRef('selectionProvider');
+
+		if (!selection || isInline || readonly) {
+			return;
+		};
+
+		setSelected(selection.get(I.SelectType.Record));
+		selectionCheck();
+	};
+
+	const onFilterChange = (v: string) => {
+		window.clearTimeout(timeoutFilter.current);
+		timeoutFilter.current = window.setTimeout(() => {
+			if (filterRef.current == v) {
+				return;
+			};
+
+			filterRef.current = v;
+
+			if (v) {
+				U.Subscription.search({
+					filters: [],
+					sorts: [],
+					fullText: v,
+					keys: [ 'id' ],
+				}, (message: any) => {
+					setSearchIds((message.records || []).map(it => it.id));
+				});
+			} else {
+				setSearchIds(null);
+			};
+
+			analytics.event('ScreenSearchDataview', { route: analyticsRoute });
+		}, J.Constant.delay.keyboard);
+	};
+
+	const setSelected = (ids: string[]) => {
+		selectRef.current?.setIds(ids);
+	};
+
+	const onEditModeClick = (e: any, id: string) => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		if (editingRecordId.current == id) {
+			setRecordEditingOff(id);
+		} else {
+			setRecordEditingOn(e, id);
+		};
+	};
+
+	const setRecordEditingOn = (e: any, id: string, retries?: number) => {
+		const ref = recordRefs.current.get(id);
+		const nameId = Relation.cellId(getIdPrefix(), 'name', id);
+		const nameRef = cellRefs.current.get(nameId);
+
+		if (!nameRef && (retries === undefined || retries > 0)) {
+			window.setTimeout(() => setRecordEditingOn(e, id, (retries ?? 5) - 1), 50);
+			return;
+		};
+
+		if (ref && ref.setIsEditing) {
+			ref.setIsEditing(true);
+			editingRecordId.current = id;
+		};
+
+		nameRef?.onClick(e);
+
+		if (recordMouseDownHandlerRef.current) {
+			U.Dom.removeEvent(window, 'mousedown', recordMouseDownHandlerRef.current);
+		};
+		if (recordKeyDownHandlerRef.current) {
+			U.Dom.removeEvent(window, 'keydown', recordKeyDownHandlerRef.current);
+		};
+
+		recordMouseDownHandlerRef.current = (e: globalThis.MouseEvent) => {
+			if ((e.target as HTMLElement)?.closest(`#record-${U.Common.esc(id)}, .menu`)) {
+				return;
+			};
+
+			setRecordEditingOff(id);
+		};
+
+		recordKeyDownHandlerRef.current = (e: KeyboardEvent) => {
+			keyboard.shortcut('escape, enter', e, () => setRecordEditingOff(id));
+		};
+
+		U.Dom.addEvents(window, [
+			['mousedown', recordMouseDownHandlerRef.current],
+			['keydown', recordKeyDownHandlerRef.current],
+		]);
+	};
+
+	const setRecordEditingOff = (id: string) => {
+		const ref = recordRefs.current.get(id);
+
+		if (recordMouseDownHandlerRef.current) {
+			U.Dom.removeEvent(window, 'mousedown', recordMouseDownHandlerRef.current);
+			recordMouseDownHandlerRef.current = null;
+		};
+		if (recordKeyDownHandlerRef.current) {
+			U.Dom.removeEvent(window, 'keydown', recordKeyDownHandlerRef.current);
+			recordKeyDownHandlerRef.current = null;
+		};
+
+		const nameId = Relation.cellId(getIdPrefix(), 'name', id);
+		const nameRef = cellRefs.current.get(nameId);
+
+		if (ref && ref.setIsEditing) {
+			ref.setIsEditing(false);
+			editingRecordId.current = '';
+		};
+
+		nameRef?.onBlur();
+
+		// Apply any subscription reposition stashed while the name was being edited (GO-7387)
+		U.Subscription.applyPendingPosition(getSubId());
+	};
+
+	const multiSelectAction = (id: string) => {
+		const selection = S.Common.getRef('selectionProvider');
+
+		if (!selection || isInline) {
+			return;
+		};
+
+		const objectId = getObjectId();
+		const ids = selection.get(I.SelectType.Record);
+		const count = ids.length;
+
+		switch (id) {
+			case 'archive': {
+				Action.archiveCheckType(getSubId(), ids, analyticsRoute);
+				break;
+			};
+
+			case 'unlink': {
+				C.ObjectCollectionRemove(objectId, ids, () => {
+					analytics.event('UnlinkFromCollection', { count });
+				});
+				break;
+			};
+		};
+
+		selection.clear();
+	};
+
+	const resize = () => {
+		if (frame.current) {
+			raf.cancel(frame.current);
+		};
+
+		frame.current = raf(() => {
+			if (getWrapperWidth) {
+				const node = nodeRef.current;
+				const obj = U.Dom.get(`block-${block.id}`);
+
+				if (obj && node) {
+					const cw = U.Dom.contentWidth(node);
+
+					U.Dom.toggleClass(obj, 'isVertical', cw <= getWrapperWidth() / 2);
+					U.Dom.toggleClass(obj, 'isNarrow', cw <= 250);
+				};
+			};
+
+			controlsRef.current?.resize?.();
+			viewRef.current?.resize?.();
+		});
+	};
+
+	if (!views.length) {
+		return null;
+	};
+
+	const view = getView();
+	if (!view) {
+		return null;
+	};
+
+	const sources = getSources();
+	const targetId = getTarget();
+	const cn = [ 'focusable', `c${block.id}` ];
+
+	const { groupRelationKey, endRelationKey, pageLimit, defaultTemplateId } = view;
+	const className = [ U.String.toCamelCase(`view-${I.ViewType[view.type]}`) ];
+	const filtersToggleId = U.String.toCamelCase(`view-${view.id}-filters`);
+	const filters = Dataview.getFilteredFilters(view.filters);
+	const sorts = Dataview.getFilteredSorts(view.sorts);
+
+	const showFilters = Storage.checkToggle(rootId, filtersToggleId)
+		&& ((sorts.length > 0) || (filters.length > 0));
+	let ViewComponent: any = null;
+	let body = null;
+
+	if (isCollection) {
+		className.push('isCollection');
+	};
+
+	switch (view.type) {
+		default:
+		case I.ViewType.Grid:
+			ViewComponent = ViewGrid;
+			break;
+			
+		case I.ViewType.Board:
+			ViewComponent = ViewBoard;
+			break;
+			
+		case I.ViewType.Gallery:
+			ViewComponent = ViewGallery;
+			break;
+		
+		case I.ViewType.List:
+			ViewComponent = ViewList;
+			break;
+
+		case I.ViewType.Calendar:
+			ViewComponent = ViewCalendar;
+			break;
+
+		case I.ViewType.Graph:
+			ViewComponent = ViewGraph;
+			break;
+
+		case I.ViewType.Timeline:
+			ViewComponent = ViewTimeline;
+			break;
+	};
+
+	const dataviewProps = {
+		readonly,
+		isCollection,
+		isInline,
+		className: className.join(' '),
+		getRecord,
+		loadData,
+		getView,
+		getTarget,
+		getSources,
+		getRecords,
+		getKeys,
+		getIdPrefix,
+		getLimit: () => getLimit(view),
+		getVisibleRelations,
+		getTypeId,
+		getTemplateId: getDefaultTemplateId,
+		getEmpty,
+		getEmptyView,
+		getSubId,
+		onRecordAdd,
+		onTemplateMenu,
+		onTemplateAdd,
+		onSortAdd,
+		onFilterAdd,
+		onFilterAddClick,
+		toggleFilters,
+		closeFilters,
+		isAllowedObject,
+		isAllowedDefaultType,
+		onSourceSelect,
+		onSourceTypeSelect,
+		onViewSettings: () => controlsRef.current?.onViewSettings?.(),
+		getSearchIds: () => searchIds,
+		canCellEdit,
+		onEditModeClick,
+		setRecordEditingOn,
+		setRecordEditingOff,
+	};
+
+	if (isInline && !targetId) {
+		body = getEmpty('target');
+	} else
+	if (!isCollection && !sources.length) {
+		body = (
+			<LayoutPlug
+				layoutFormat={I.LayoutFormat.List}
+				recommendedLayout={I.ObjectLayout.Set}
+				viewType={view.type}
+				isPopup={isPopup}
+				onClick={onEmpty}
+			/>
+		);
+	} else {
+		body = (
+			<div className="content">
+				<ViewComponent 
+					key={`view${view.id}`}
+					ref={viewRef} 
+					onRefCell={(ref: any, id: string) => cellRefs.current.set(id, ref)}
+					onRefRecord={(ref: any, id: string) => recordRefs.current.set(id, ref)}
+					{...props}
+					{...dataviewProps}
+					onCellClick={onCellClick}
+					onCellChange={onCellChange}
+					onContext={onContext}
+					objectOrderUpdate={objectOrderUpdate}
+					applyObjectOrder={applyObjectOrder}
+					onDragRecordStart={onDragRecordStart}
+					onSelectEnd={onSelectEnd}
+					onSelectToggle={onSelectToggle}
+				/>
+			</div>
+		);
+	};
+
+	const getEditorWrapper = (): HTMLElement | null => {
+		return nodeRef.current?.closest('.editorWrapper') ?? null;
+	};
+
+	const getBlockNode = (): HTMLElement | null => {
+		return nodeRef.current?.closest('.block.blockDataview') ?? null;
+	};
+
+	const onFileDragOver = (e: any) => {
+		if (!U.File.checkDropFiles(e)) {
+			return;
+		};
+
+		e.preventDefault();
+		e.stopPropagation();
+
+		window.clearTimeout(timeoutDrag.current);
+
+		const blockNode = getBlockNode();
+		const wrapper = getEditorWrapper();
+		const container = U.Dom.getScrollContainer(isPopup);
+		const hoverArea = blockNode ? U.Dom.select('.hoverArea', blockNode) : null;
+
+		if (hoverArea && container) {
+			const rect = hoverArea.getBoundingClientRect();
+			const top = rect.bottom;
+			const containerBottom = container.getBoundingClientRect().bottom;
+			const height = containerBottom - top;
+
+			const dragOverlay = blockNode ? U.Dom.select('.dragOverlay', blockNode) : null;
+			if (dragOverlay) {
+				U.Dom.css(dragOverlay, { height: height + 'px' });
+			};
+		};
+
+		U.Dom.addClass(wrapper, 'isDraggingOver');
+	};
+
+	const onFileDragLeave = (e: any) => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		window.clearTimeout(timeoutDrag.current);
+		timeoutDrag.current = window.setTimeout(() => {
+			U.Dom.removeClass(getEditorWrapper(), 'isDraggingOver');
+		}, 100);
+	};
+
+	const onFileDrop = (e: any) => {
+		e.preventDefault();
+		e.stopPropagation();
+		window.clearTimeout(timeoutDrag.current);
+		U.Dom.removeClass(getEditorWrapper(), 'isDraggingOver');
+
+		const electron = U.Common.getElectron();
+		const files = e.dataTransfer?.files;
+		if (!files || !files.length) {
+			return;
+		};
+
+		const paths: string[] = [];
+		for (let i = 0; i < files.length; i++) {
+			const path = electron.webFilePath(files[i]);
+			if (path) {
+				paths.push(path);
+			};
+		};
+
+		if (paths.length) {
+			C.FileDrop(rootId, block.id, I.BlockPosition.Inner, paths, (message: any) => {
+				U.File.showFileDropError(message);
+
+				if (!message.error.code) {
+					analytics.event('UploadFile', { route: analytics.route.uploadDnDSet, count: paths.length });
+				};
+			});
+		};
+	};
+
+	useImperativeHandle(ref, () => ({
+		getNode: () => nodeRef.current,
+		onRecordAdd,
+		resize,
+	}));
+
+	useEffect(() => {
+		if (isInline || readonly || !isCollection) {
+			return;
+		};
+
+		const wrapper = getEditorWrapper();
+
+		if (wrapper) {
+			U.Dom.addEvents(wrapper, [
+				['dragover', onFileDragOver],
+				['dragleave', onFileDragLeave],
+				['drop', onFileDrop],
+			]);
+		};
+
+		return () => {
+			if (wrapper) {
+				U.Dom.removeEvents(wrapper, [
+					['dragover', onFileDragOver],
+					['dragleave', onFileDragLeave],
+					['drop', onFileDrop],
+				]);
+			};
+			window.clearTimeout(timeoutDrag.current);
+		};
+	}, [ readonly ]);
+
+	return (
+		<div
+			ref={nodeRef}
+			tabIndex={0}
+			className={cn.join(' ')}
+			onKeyDown={onKeyDownHandler}
+			onKeyUp={onKeyUpHandler}
+			onFocus={onFocus}
+		>
+			<div className="hoverArea">
+				<Controls
+					ref={controlsRef}
+					{...props}
+					{...dataviewProps}
+					onFilterChange={onFilterChange}
+				/>
+				<Selection
+					ref={selectRef}
+					{...props}
+					{...dataviewProps}
+					multiSelectAction={multiSelectAction}
+				/>
+			</div>
+
+			{showFilters ? (
+				<Filters
+					ref={filtersRef}
+					{...props}
+					{...dataviewProps}
+					onClear={closeFilters}
+				/>
+			) : ''}
+
+			<div className="dragOverlay">
+				<div className="inner">
+					<Icon name="state/drag" size={56} />
+					<Label text={translate('commonDropFiles')} />
+				</div>
+			</div>
+
+			{body}
+		</div>
+	);
+
+});
+
+export default BlockDataview;

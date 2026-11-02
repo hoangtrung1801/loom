@@ -1,0 +1,952 @@
+import React, { forwardRef, useRef, useEffect, useImperativeHandle, useState, CSSProperties, MouseEvent, ReactElement } from 'react';
+import { AutoSizer, CellMeasurer, InfiniteLoader, List, CellMeasurerCache } from 'react-virtualized';
+import { DndContext, closestCenter, useSensors, useSensor, PointerSensor, KeyboardSensor, DragOverlay } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates, arrayMove, useSortable } from '@dnd-kit/sortable';
+import { restrictToVerticalAxis, restrictToFirstScrollableAncestor } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
+import { Icon, Tag, Filter, IconObject, ObjectName, Loader } from 'Component';
+import * as I from 'Interface';
+
+const HEIGHT = 32;
+const HEIGHT_DIV = 16;
+const LIMIT = 40;
+const LIMIT_TYPE = 2;
+
+interface SelectItem {
+	id: string;
+	name: string;
+	color?: string;
+	isSection?: boolean;
+	isDiv?: boolean;
+	icon?: string;
+	iconParam?: I.IconParam;
+	isArchived?: boolean;
+	isDeleted?: boolean;
+	_empty_?: boolean;
+	restrictions?: any[];
+	style?: CSSProperties;
+};
+
+interface SearchParam {
+	types?: string[];
+	filters?: I.Filter[];
+	sorts?: I.Sort[];
+	keys?: string[];
+	limit?: number;
+};
+
+interface AddParamDetails {
+	type?: string;
+	[key: string]: any;
+};
+
+interface AddParam {
+	details?: AddParamDetails;
+};
+
+interface Props {
+	subId: string;
+	relationKey: string;
+	value: string[];
+	onChange: (value: string[]) => void;
+
+	// Display options
+	isReadonly?: boolean;
+	noFilter?: boolean;
+	noSelect?: boolean;
+	maxHeight?: number;
+
+	// Selection behavior
+	maxCount?: number;
+	skipIds?: string[];
+	filterMapper?: (item: any) => boolean;
+
+	canAdd?: boolean;
+	canSort?: boolean;
+	canEdit?: boolean;
+
+	// Callbacks
+	setActive?: (item?: any, scroll?: boolean) => void;
+	onClose?: () => void;
+	dataChange?: (items: any) => any[];
+
+	// Menu context (for edit menu)
+	menuId?: string;
+	menuClassName?: string;
+	menuClassNameWrap?: string;
+	getSize?: () => { width: number; height: number };
+	position?: () => void;
+
+	// Cell reference (for clearing cell on click)
+	cellRef?: { clear: () => void };
+
+	// Rebind callback (for edit menu keyboard handling)
+	rebind?: () => void;
+
+	// Object mode (when searchParam is provided)
+	searchParam?: SearchParam;
+	addParam?: AddParam;
+	rootId?: string;
+};
+
+export interface OptionSelectRefProps {
+	getItems: () => SelectItem[];
+	getIndex: () => number;
+	setIndex: (i: number) => void;
+	getFilterRef: () => any;
+	getListRef: () => any;
+	onOver: (e: MouseEvent, item: SelectItem) => void;
+	onClick: (e: MouseEvent | { stopPropagation: () => void }, item: SelectItem) => void;
+	onSortEnd?: (result: any) => void;
+	setFilter: (filter: string) => void;
+};
+
+const OptionSelect = forwardRef<OptionSelectRefProps, Props>((props, ref) => {
+
+	const {
+		subId, relationKey, value, onChange, isReadonly, noFilter, noSelect, maxHeight, maxCount, skipIds, filterMapper, canAdd,
+		canSort, canEdit, setActive, onClose, dataChange, menuId, menuClassName, menuClassNameWrap, getSize, position, cellRef, rebind,
+		searchParam, addParam, rootId,
+	} = props;
+
+	const relation = S.Record.getRelationByKey(relationKey);
+	const cache = useRef(new CellMeasurerCache({ fixedWidth: true, defaultHeight: HEIGHT }));
+	const listRef = useRef(null);
+	const filterRef = useRef(null);
+	const nodeRef = useRef(null);
+	const n = useRef(-1);
+	const [ filter, setFilter ] = useState('');
+	const [ activeId, setActiveId ] = useState<string | null>(null);
+	const [ isLoading, setIsLoading ] = useState(false);
+	const offsetRef = useRef(0);
+	const itemsRef = useRef<any[]>([]);
+	const hasMoreRef = useRef(true);
+	const timeoutFilterRef = useRef(0);
+	const objectFilterRef = useRef('');
+	const isObjectMode = !!searchParam;
+
+	const sensors = useSensors(
+		useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
+		useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+	);
+
+	useEffect(() => {
+		load();
+		resize();
+
+		return () => {
+			U.Subscription.destroyList([ subId ]);
+			window.clearTimeout(timeoutFilterRef.current);
+		};
+	}, []);
+
+	useEffect(() => {
+		load();
+	}, [ relationKey ]);
+
+	useEffect(() => {
+		n.current = -1;
+	}, [ filter ]);
+
+	useEffect(() => {
+		setActive();
+		resize();
+	});
+
+	const loadObjects = (clear: boolean = true, callBack?: () => void): void => {
+		if (!searchParam) {
+			return;
+		};
+
+		const filters: I.Filter[] = [
+			{ relationKey: 'resolvedLayout', condition: I.FilterCondition.NotIn, value: U.Object.excludeFromSet() },
+		].concat(searchParam.filters || []);
+
+		if (searchParam.types?.length) {
+			const types = searchParam.types.map(id => S.Record.getTypeById(id)).filter(it => it);
+			if (types.length) {
+				filters.push({ relationKey: 'type.uniqueKey', condition: I.FilterCondition.In, value: types.map(it => it.uniqueKey) });
+			};
+		};
+
+		const pageSize = searchParam.limit || J.Constant.limit.menuRecords;
+
+		U.Subscription.search({
+			filters,
+			sorts: searchParam.sorts || [
+				{ relationKey: 'lastModifiedDate', type: I.SortType.Desc },
+			],
+			keys: searchParam.keys || J.Relation.default,
+			fullText: objectFilterRef.current,
+			offset: offsetRef.current,
+			limit: pageSize,
+		}, (message: any) => {
+			if (message.error.code) {
+				setIsLoading(false);
+				callBack?.();
+				return;
+			};
+
+			const records = message.records || [];
+
+			if (clear) {
+				itemsRef.current = [];
+			};
+
+			itemsRef.current = itemsRef.current.concat(records);
+			hasMoreRef.current = records.length >= pageSize;
+			setIsLoading(false);
+			callBack?.();
+		});
+	};
+
+	const loadOptions = (): void => {
+		U.Subscription.subscribe({
+			subId,
+			filters: [
+				{ relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Option },
+				{ relationKey: 'relationKey', condition: I.FilterCondition.Equal, value: relationKey },
+			],
+			sorts: [
+				{ relationKey: 'orderId', type: I.SortType.Asc },
+				{ relationKey: 'createdDate', type: I.SortType.Desc, format: I.RelationType.Date, includeTime: true },
+			] as I.Sort[],
+			keys: U.Subscription.optionRelationKeys(false),
+		}, () => setIsLoading(false));
+	};
+
+	const load = (): void => {
+		if (!relationKey && !searchParam) {
+			return;
+		};
+
+		setIsLoading(true);
+
+		if (isObjectMode) {
+			offsetRef.current = 0;
+			itemsRef.current = [];
+			hasMoreRef.current = true;
+			loadObjects();
+		} else {
+			U.Subscription.destroyList([ subId ], false, () => {
+				loadOptions();
+			});
+		};
+	};
+
+	const injectValueSections = (items: SelectItem[]): SelectItem[] => {
+		if (!value.length) {
+			return items;
+		};
+
+		const selectedSet = new Set(value);
+		const itemsById = new Map(items.map(it => [ it.id, it ]));
+		const selected: SelectItem[] = value.map(id => itemsById.get(id)).filter((it): it is SelectItem => !!it);
+		const rest: SelectItem[] = items.filter(it => !selectedSet.has(it.id));
+
+		const ret: SelectItem[] = [];
+		if (selected.length) {
+			ret.push({ id: 'section-selected', name: translate('commonSelected'), isSection: true });
+			ret.push(...selected);
+		};
+		if (rest.length) {
+			ret.push({ id: 'section-all', name: translate('commonAllValues'), isSection: true });
+			ret.push(...rest);
+		};
+		return ret;
+	};
+
+	const getObjectItems = (): SelectItem[] => {
+		if (!searchParam) {
+			return [];
+		};
+
+		const skip = Relation.getArrayValue(skipIds);
+		const ret: SelectItem[] = [];
+
+		let items = [...itemsRef.current];
+		items = items.filter(it => !it._empty_ && !it.isArchived && !it.isDeleted && !skip.includes(it.id));
+
+		if (filterMapper) {
+			items = items.filter(filterMapper);
+		};
+
+		if (filter) {
+			const reg = new RegExp(U.String.regexEscape(filter), 'gi');
+			items = items.filter(it => it.name?.match(reg));
+
+			if (canAdd && !isReadonly) {
+				const check = items.filter(it => it.name?.toLowerCase() == filter.toLowerCase());
+				if (!check.length) {
+					ret.push({
+						id: 'add',
+						name: U.String.sprintf(translate('commonCreateObjectWithName'), filter),
+					});
+				};
+			};
+		} else {
+			items = injectValueSections(items);
+		};
+
+		return items.concat(ret);
+	};
+
+	const getOptionItems = (): SelectItem[] => {
+		const isSelect = relation?.format == I.RelationType.Select;
+		const skip = Relation.getArrayValue(skipIds);
+		const ret: SelectItem[] = [];
+
+		let items = S.Record.getRecords(subId, U.Subscription.optionRelationKeys(true));
+		let check: SelectItem[] = [];
+
+		items = items.filter(it => !it._empty_ && !skip.includes(it.id));
+
+		if (filterMapper) {
+			items = items.filter(filterMapper);
+		};
+
+		items.sort((c1, c2) => U.Data.sortByOrderId(c1, c2) || U.Data.sortByNumericKey('createdDate', c1, c2, I.SortType.Desc));
+
+		if (filter) {
+			const reg = new RegExp(U.String.regexEscape(filter), 'gi');
+
+			check = items.filter(it => it.name.toLowerCase() == filter.toLowerCase());
+			items = items.filter(it => it.name.match(reg));
+
+			if (canAdd && !isReadonly && !check.length) {
+				ret.unshift({
+					id: 'add',
+					name: U.String.sprintf(isSelect && !noSelect ? translate('menuDataviewOptionListSetStatus') : translate('menuDataviewOptionListCreateOption'), filter),
+				});
+			};
+		} else {
+			items = injectValueSections(items);
+		};
+
+		return items.concat(ret);
+	};
+
+	const getItems = (): SelectItem[] => {
+		let items = isObjectMode ? getObjectItems() : getOptionItems();
+
+		if (dataChange) {
+			items = dataChange(items);
+		};
+
+		const typeNames = U.Data.getTypeNames(searchParam?.types || [], LIMIT_TYPE);
+		if (typeNames) {
+			items.unshift({ id: 'section-types', name: typeNames, isSection: true });
+		};
+
+		return items;
+	};
+
+	const getRowHeight = (item: any) => {
+		if (item.isDiv) return HEIGHT_DIV;
+		return HEIGHT;
+	};
+
+	const loadMoreRows = (): Promise<void> => {
+		return new Promise((resolve) => {
+			offsetRef.current += J.Constant.limit.menuRecords;
+			loadObjects(false, resolve);
+		});
+	};
+
+	const onFilterChange = (v: string): void => {
+		setFilter(v);
+
+		if (isObjectMode) {
+			objectFilterRef.current = v;
+			window.clearTimeout(timeoutFilterRef.current);
+			timeoutFilterRef.current = window.setTimeout(() => {
+				offsetRef.current = 0;
+				hasMoreRef.current = true;
+				setIsLoading(true);
+				loadObjects();
+			}, J.Constant.delay.keyboard);
+		};
+	};
+
+	const onClick = (e: MouseEvent | { stopPropagation: () => void }, item: SelectItem): void => {
+		e.stopPropagation();
+
+		if (cellRef) {
+			cellRef.clear();
+		};
+
+		if (isReadonly) {
+			return;
+		};
+
+		if (item.id == 'add') {
+			isObjectMode ? onObjectAdd() : onOptionAdd();
+			return;
+		};
+
+		if (noSelect) {
+			return;
+		};
+
+		let newValue = [ ...value ];
+
+		if (newValue.includes(item.id)) {
+			newValue = newValue.filter(id => id !== item.id);
+		} else {
+			newValue = [ ...newValue, item.id ];
+
+			// Persist object details to rootId so DataviewFilterItem can access them
+			if (isObjectMode && rootId && (item.id != rootId)) {
+				S.Detail.update(rootId, { id: item.id, details: item }, false);
+			};
+		};
+
+		if (maxCount) {
+			newValue = newValue.slice(newValue.length - maxCount, newValue.length);
+
+			if (maxCount == 1) {
+				onClose?.();
+			};
+		};
+
+		onChange(U.Common.arrayUnique(newValue));
+		filterRef.current?.setValue('');
+		setFilter('');
+	};
+
+	const onOptionAdd = (): void => {
+		if (!relation) {
+			return;
+		};
+
+		const colors = U.Menu.getBgColors();
+		const option = {
+			name: String(filter || '').trim(),
+			color: colors[U.Common.rand(1, colors.length - 1)].value,
+		};
+
+		if (!option.name) {
+			return;
+		};
+
+		const items = getItems();
+		const match = items.find(it => it.name == option.name);
+
+		if (match) {
+			onClick({ stopPropagation: () => {} }, match);
+			return;
+		};
+
+		C.ObjectCreateRelationOption({
+			relationKey: relation.relationKey,
+			name: option.name,
+			relationOptionColor: option.color,
+		}, S.Common.space, (message: any) => {
+			if (message.error.code) {
+				return;
+			};
+
+			const newOptionId = message.objectId;
+
+			// Ensure option details are available in the global option subscription store
+			// so that S.Record.getOption() can find them immediately
+			if (message.details) {
+				const globalSubId = U.Subscription.spaceSubId(J.Constant.subId.option);
+				S.Detail.update(globalSubId, { id: newOptionId, details: message.details }, false);
+			};
+
+			filterRef.current?.setValue('');
+			setFilter('');
+
+			// Add newly created option to value
+			let newValue = [ ...value, newOptionId ];
+			newValue = U.Common.arrayUnique(newValue);
+
+			if (maxCount) {
+				newValue = newValue.slice(newValue.length - maxCount, newValue.length);
+			};
+
+			onChange(newValue);
+
+			if (maxCount == 1) {
+				onClose?.();
+			};
+
+			// Restore hover state on newly created option
+			window.setTimeout(() => {
+				const items = getItems();
+				const index = items.findIndex(it => it.id == newOptionId);
+
+				if (index >= 0) {
+					n.current = index;
+					setActive?.(items[index], false);
+				};
+			}, 50);
+		});
+	};
+
+	const onObjectAdd = (): void => {
+		if (!filter?.trim()) {
+			return;
+		};
+
+		const types = searchParam?.types || [];
+		const typeKey = types.length ? (S.Record.getTypeById(types[0])?.uniqueKey ?? '') : '';
+		const details: AddParamDetails = {
+			...(addParam?.details || {}),
+			name: filter.trim(),
+		};
+
+		U.Object.create('', typeKey, details, I.BlockPosition.Bottom, '', [], analytics.route.relation, (message: any) => {
+			if (!message.targetId) {
+				return;
+			};
+
+			const newId = message.targetId;
+
+			filterRef.current?.setValue('');
+			setFilter('');
+
+			let newValue = [ ...value, newId ];
+			newValue = U.Common.arrayUnique(newValue);
+
+			if (maxCount) {
+				newValue = newValue.slice(newValue.length - maxCount, newValue.length);
+
+				if (maxCount == 1) {
+					onClose?.();
+				};
+			};
+
+			onChange(newValue);
+		});
+	};
+
+	const onEdit = (e: MouseEvent, item: SelectItem): void => {
+		e.stopPropagation();
+
+		if (!item || item.id == 'add' || !canEdit || !menuId) {
+			return;
+		};
+
+		const isAllowed = S.Block.isAllowed(item.restrictions, [ I.RestrictionObject.Details ]);
+		if (!isAllowed) {
+			return;
+		};
+
+		const element = `#utilOptionSelect #item-${U.Common.esc(item.id)}`;
+
+		S.Menu.open('dataviewOptionEdit', {
+			element,
+			offsetX: getSize?.().width || (U.Dom.select(element)?.offsetWidth ?? 0),
+			vertical: I.MenuDirection.Center,
+			passThrough: false,
+			noFlipY: true,
+			noAnimation: true,
+			className: menuClassName,
+			classNameWrap: menuClassNameWrap,
+			rebind,
+			parentId: menuId,
+			data: {
+				option: item,
+				relationKey,
+			}
+		});
+	};
+
+	const onOver = (e: MouseEvent, item: SelectItem): void => {
+		if (setActive) {
+			setActive(item, false);
+		};
+
+		const el = U.Dom.select(`#item-${U.Common.esc(item.id)}`, nodeRef.current);
+		if (el) {
+			Preview.tooltipShow({ text: item.name, element: el });
+		};
+	};
+
+	const onMouseEnter = (e: MouseEvent, item: SelectItem): void => {
+		if (!keyboard.isMouseDisabled && setActive) {
+			setActive(item, false);
+		};
+
+		const el = U.Dom.select(`#item-${U.Common.esc(item.id)}`, nodeRef.current);
+		if (el) {
+			Preview.tooltipShow({ text: item.name, element: el });
+		};
+	};
+
+	const onMouseLeave = (): void => {
+		Preview.tooltipHide(false);
+	};
+
+	// DnD handlers
+	const onSortStart = (e: any): void => {
+		keyboard.disableSelection(true);
+		setActiveId(e.active.id);
+	};
+
+	const onSortCancel = (): void => {
+		keyboard.disableSelection(false);
+		setActiveId(null);
+	};
+
+	const onSortEndObjects = (active: any, over: any): void => {
+		let newValue = [ ...value ];
+		const oldIndex = newValue.indexOf(active.id);
+		const newIndex = newValue.indexOf(over.id);
+
+		if (oldIndex === -1 || newIndex === -1) {
+			return;
+		};
+
+		newValue = arrayMove(newValue, oldIndex, newIndex);
+		onChange(newValue);
+	};
+
+	const onSortEndOptions = (active: any, over: any): void => {
+		if (!relation) {
+			return;
+		};
+
+		const valueSet = new Set(value);
+		const isActiveSelected = valueSet.has(active.id);
+		const isOverSelected = valueSet.has(over.id);
+
+		// Cross-section drags are a no-op
+		if (isActiveSelected !== isOverSelected) {
+			return;
+		};
+
+		// Reorder within "Selected" section — update value array only
+		if (isActiveSelected) {
+			onSortEndObjects(active, over);
+			return;
+		};
+
+		// Reorder within "All values" section — update global option order
+		const items = getItems().filter(it => (it.id != 'add') && !it.isSection && !it.isDiv);
+		const oldIndex = items.findIndex(it => it.id == active.id);
+		const newIndex = items.findIndex(it => it.id == over.id);
+		const newItems = arrayMove(items, oldIndex, newIndex);
+
+		U.Data.sortByOrderIdRequest(subId, newItems, callBack => {
+			C.RelationOptionSetOrder(S.Common.space, relation.relationKey, newItems.map(it => it.id), callBack);
+		});
+	};
+
+	const onSortEnd = (result: any): void => {
+		const { active, over } = result;
+
+		setActiveId(null);
+		keyboard.disableSelection(false);
+
+		if (!active || !over) {
+			return;
+		};
+
+		isObjectMode ? onSortEndObjects(active, over) : onSortEndOptions(active, over);
+	};
+
+	const resize = (): void => {
+		const items = getItems();
+		const obj = nodeRef.current;
+		const offset = !isReadonly && !noFilter ? 44 : 16;
+		const itemsHeight = items.reduce((res: number, current: any) => res + getRowHeight(current), 0);
+		const height = Math.max(HEIGHT + offset, Math.min(360, itemsHeight + offset));
+
+		if (obj) {
+			U.Dom.css(obj, { height: `${height}px` });
+		};
+		position?.();
+	};
+
+	const items = getItems();
+
+	// Placeholder and empty text
+	let placeholder = '';
+	let empty = '';
+
+	if (isObjectMode) {
+		placeholder = translate('commonFilterObjects');
+		empty = translate('menuDataviewOptionListTypeToSearch');
+	} else if (canAdd) {
+		placeholder = translate('menuDataviewOptionListFilterOrCreateOptions');
+		empty = translate('menuDataviewOptionListTypeToCreate');
+	} else {
+		placeholder = translate('menuDataviewOptionListFilterOptions');
+		empty = translate('menuDataviewOptionListTypeToSearch');
+	};
+
+	if (isReadonly) {
+		empty = translate('placeholderCellCommon');
+	};
+
+	const Item = (item: SelectItem): ReactElement | null => {
+		const sortable = useSortable({ id: item.id, disabled: !canSort || (item.id == 'add') || item.isSection || item.isDiv });
+		const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortable;
+		const isAllowed = S.Block.isAllowed(item.restrictions, [ I.RestrictionObject.Details ]) && canEdit;
+
+		const style: any = {
+			...item.style,
+		};
+
+		if (canSort && item.id != 'add') {
+			style.transform = CSS.Transform.toString(transform);
+			style.transition = transition;
+			style.opacity = isDragging ? 0 : 1;
+		};
+
+		// Add item
+		if (item.id == 'add') {
+			return (
+				<div
+					id="item-add"
+					className="item add"
+					style={item.style}
+					onClick={e => onClick(e, item)}
+					onMouseEnter={e => onMouseEnter(e, item)}
+				>
+					<Icon name="plus/menu" className="plus" />
+					<div className="name">{item.name}</div>
+				</div>
+			);
+		};
+
+		// Section item
+		if (item.isSection) {
+			return <div className="sectionName" style={item.style}>{item.name}</div>;
+		};
+
+		if (item.isDiv) {
+			return (
+				<div className="separator" style={item.style}>
+					<div className="inner" />
+				</div>
+			);
+		};
+
+		// Regular item
+		const cn = [ 'item' ];
+
+		if (isReadonly) {
+			cn.push('isReadonly');
+		};
+		if (isDragging) {
+			cn.push('isDragging');
+		};
+		if (canSort) {
+			cn.push('withHandle');
+		};
+
+		let icon = null;
+		if (item.iconParam) {
+			icon = <Icon name={item.iconParam.name} />;
+		} else
+		if (item.icon) {
+			icon = <Icon className={item.icon} />;
+		} else {
+			icon = <IconObject object={item} />;
+		};
+
+		return (
+			<div
+				id={`item-${item.id}`}
+				className={cn.join(' ')}
+				style={style}
+				onMouseEnter={e => onMouseEnter(e, item)}
+				onMouseLeave={onMouseLeave}
+				ref={canSort ? setNodeRef : undefined}
+				{...(canSort ? attributes : {})}
+				{...(canSort ? listeners : {})}
+			>
+
+				{canSort && !isReadonly ? <Icon name="common/dnd" /> : ''}
+
+				<div className="clickable" onClick={e => onClick(e, item)}>
+					{isObjectMode ? (
+						<>
+							{icon}
+							<ObjectName object={item} />
+						</>
+					) : (
+						<Tag
+							text={item.name}
+							color={item.color}
+							className={Relation.selectClassName(relation?.format)}
+						/>
+					)}
+				</div>
+
+				{canEdit && isAllowed ? (
+					<div className="buttons">
+						<Icon name="common/more" className="more" onClick={e => onEdit(e, item)} />
+					</div>
+				) : ''}
+			</div>
+		);
+	};
+
+	const DragOverlayContent = ({ item }: { item: SelectItem | undefined }): ReactElement | null => {
+		if (!item || item.id == 'add' || item.isSection) {
+			return null;
+		};
+
+		const isAllowed = S.Block.isAllowed(item.restrictions, [ I.RestrictionObject.Details ]) && canEdit;
+		const cn = [ 'item', 'isDragging' ];
+
+		return (
+			<div
+				id={`item-${item.id}`}
+				className={cn.join(' ')}
+				style={{ height: HEIGHT }}
+			>
+				{canSort && !isReadonly ? <Icon name="common/dnd" /> : ''}
+				<div className="clickable">
+					{isObjectMode ? (
+						<>
+							<IconObject object={item} />
+							<ObjectName object={item} />
+						</>
+					) : (
+						<Tag
+							text={item.name}
+							color={item.color}
+							className={Relation.selectClassName(relation?.format)}
+						/>
+					)}
+				</div>
+				{canEdit && isAllowed ? (
+					<div className="buttons">
+						<Icon name="common/more" className="more" />
+					</div>
+				) : ''}
+			</div>
+		);
+	};
+
+	const rowRenderer = ({ key, parent, index, style }) => {
+		const item = items[index];
+
+		return (
+			<CellMeasurer
+				key={key}
+				parent={parent}
+				cache={cache.current}
+				columnIndex={0}
+				rowIndex={index}
+			>
+				<Item {...item} style={style} />
+			</CellMeasurer>
+		);
+	};
+
+	const renderList = (): ReactElement => {
+		if (!items.length) {
+			return <div className="item empty">{empty}</div>;
+		};
+
+		const list = (
+			<InfiniteLoader
+				rowCount={(isObjectMode && hasMoreRef.current) ? items.length + 1 : items.length}
+				loadMoreRows={isObjectMode ? loadMoreRows : () => {}}
+				isRowLoaded={isObjectMode ? ({ index }) => !!items[index] : () => true}
+				threshold={LIMIT}
+			>
+				{({ onRowsRendered }) => (
+					<AutoSizer className="scrollArea">
+						{({ width, height }) => (
+							<List
+								ref={listRef}
+								width={width}
+								height={height}
+								deferredMeasurmentCache={cache.current}
+								rowCount={items.length}
+								rowHeight={({ index }) => getRowHeight(items[index])}
+								rowRenderer={rowRenderer}
+								onRowsRendered={onRowsRendered}
+								overscanRowCount={10}
+								scrollToAlignment="center"
+							/>
+						)}
+					</AutoSizer>
+				)}
+			</InfiniteLoader>
+		);
+
+		if (canSort) {
+			return (
+				<DndContext
+					sensors={sensors}
+					collisionDetection={closestCenter}
+					onDragStart={onSortStart}
+					onDragEnd={onSortEnd}
+					onDragCancel={onSortCancel}
+					modifiers={[ restrictToVerticalAxis, restrictToFirstScrollableAncestor ]}
+				>
+					<SortableContext
+						items={items.filter(it => !it.isSection && !it.isDiv).map(item => item.id)}
+						strategy={verticalListSortingStrategy}
+					>
+						{list}
+					</SortableContext>
+					<DragOverlay>
+						{activeId ? <DragOverlayContent item={items.find(it => it.id === activeId)} /> : null}
+					</DragOverlay>
+				</DndContext>
+			);
+		};
+
+		return list;
+	};
+
+	const cn = [ 'utilOptionSelect' ];
+
+	if (!noSelect) {
+		cn.push('canSelect');
+	};
+	if (canEdit) {
+		cn.push('canEdit');
+	};
+	if (canSort) {
+		cn.push('canSort');
+	};
+	if (noFilter) {
+		cn.push('noFilter');
+	};
+
+	useImperativeHandle(ref, () => ({
+		getItems,
+		getIndex: () => n.current,
+		setIndex: (i: number) => n.current = i,
+		getFilterRef: () => filterRef.current,
+		getListRef: () => listRef.current,
+		setFilter,
+		onOver,
+		onClick,
+		onSortEnd,
+	}));
+
+	return (
+		<div id="utilOptionSelect" ref={nodeRef} className={cn.join(' ')}>
+			{!noFilter ? (
+				<Filter
+					ref={filterRef}
+					placeholder={placeholder}
+					value={filter}
+					onChange={onFilterChange}
+					focusOnMount={true}
+				/>
+			) : ''}
+
+			{isLoading ? <Loader /> : ''}
+
+			<div className="items">
+				{!isLoading ? renderList() : ''}
+			</div>
+		</div>
+	);
+
+});
+
+export default OptionSelect;

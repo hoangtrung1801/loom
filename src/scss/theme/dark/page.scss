@@ -1,0 +1,86 @@
+@import "~scss/_mixins";
+
+/* PageAuth */
+.pageAuth, .pageIndex {
+	.buttons {
+		.button.accent { color: var(--color-text-primary); }
+	}
+
+	.bubbleWrapper {
+		.bubble {
+			.img { background-image: url('~img/theme/dark/icon/bubble.svg'); }
+		}
+	}
+};
+
+/* PageMainNavigation */
+
+.pageMainNavigation {
+    .items {
+        .item {
+			.iconObject.isTask { background: none; }
+        }
+    }
+}
+
+/* PageMainSettings */
+.settingsPageContainer {
+	.pageSettingsSpaceIndex .sectionIntegrations .item:hover,
+	.pageSettingsPinIndex .actionItems > .item.cp:hover { background-color: rgba(166, 166, 166, 0.04) !important; }
+
+	.pageSettingsPersonal {
+		.colorScheme {
+			.btn.light {
+				.bg { background-color: #fff; }
+			}
+
+			.btn.dark {
+				.bg { background: var(--color-bg-primary); box-shadow: 0px 0px 0px 1px var(--color-shape-primary); }
+			}
+			.btn.system {
+				.bg::before, .bg::after {
+					content: ''; position: absolute; top: 0px; width: 50%; height: 100%;
+				}
+				.bg::before { background: var(--color-control-bg); }
+				.bg::after { background: var(--color-bg-primary); }
+			}
+
+			.btn.active {
+				.bg { box-shadow: 0px 0px 0px 2px var(--color-system-accent-25); }
+			}
+			.btn.system.active {
+				.bg::before { box-shadow: 0px 0px; }
+			}
+		}
+	}
+
+	.pageSettingsImportIndex,
+	.pageSettingsExportIndex {
+		.item:hover { border-color: var(--color-shape-primary); }
+	}
+
+	.pageSettingsImportIndex {
+		// Rows inside .actionItems draw only a divider, so the tile hover border above
+		// must not recolour it.
+		.actionItems .item:hover { border-color: var(--color-shape-secondary); }
+	}
+
+	.pageSettingsMembership {
+		.membershipPurchased {
+			.section {
+				.item { background: var(--color-bg-secondary); }
+				.item.current {
+					&.blue { box-shadow: 0px 0px 32px 0px rgba(54, 56, 78, 0.50); }
+					&.red { box-shadow: 0px 0px 32px 0px rgba(68, 42, 42, 0.50); }
+					&.purple,
+					&.default { box-shadow: 0px 0px 32px 0px rgba(158, 105, 156, 0.20); }
+				}
+			}
+		}
+	}
+
+
+	.pageSettingsSpaceNotifications {
+        .section { display: flex; flex-direction: column; gap: 8px 0px; }
+    }
+}

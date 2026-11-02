@@ -1,0 +1,1500 @@
+import { action, computed, makeObservable, observable, set } from 'mobx';
+import { setReactionsPaused } from 'Lib/reactionScheduler';
+import * as I from 'Interface';
+import Storage from 'Lib/storage';
+
+interface Filter {
+	from: number;
+	text: string;
+};
+
+interface SpaceStorage {
+	bytesLimit: number;
+	localUsage: number;
+	spaces: {
+		spaceId: string;
+		bytesUsage: number;
+	}[],
+};
+
+class CommonStore {
+
+	public dataPathValue = '';
+	public progressObj: I.Progress = null;
+	public filterObj: Filter = { from: 0, text: '' };
+	public gatewayUrl = '';
+	public toastObj: I.Toast = null;
+	public configObj: I.AppConfig = {};
+	public cellId = '';
+	public themeId = '';
+	public nativeThemeIsDark = false;
+	public defaultType = null;
+	public pinTimeId = null;
+	public isFullScreen = false;
+	public singleTabValue = false;
+	public redirect = '';
+	public languages: string[] = [];
+	public spaceId = '';
+	// Space chosen on the Import screen. Lives here rather than in page state because the
+	// format sub-pages are separate routes; read it through U.Space.getImportTargetId().
+	public importSpaceId = '';
+	public notionToken = '';
+	public showRelativeDatesValue = null;
+	public fullscreenObjectValue = null;
+	public linkStyleValue = null;
+	public fileStyleValue = null;
+	public dateFormatValue = null;
+	public timeFormatValue = null;
+	public isOnlineValue = false;
+	public globalShortcutStatusValue: { registered: boolean; unavailable: boolean } | null = null;
+
+	// Set once when this renderer boots as the Spotlight-style quick search panel;
+	// U.Object open calls then redirect to the main window instead of navigating here
+	public isQuickSearchWindow = false;
+	public hasCleanupSuggestionsValue = false;
+	public hasTreeSectionValue = false;
+	public chatCmdSendValue = null;
+	public commentCmdSendValue = null;
+	public updateVersionValue = '';
+	public vaultIsMinimalValue = null;
+	public gridTitleClickValue = null;
+	public unicodeReplaceValue = null;
+	public sendTypingValue = null;
+	public leftSidebarStateValue = { page: '', subPage: '' };
+
+	public recentEditModeValue: I.RecentEditMode = null;
+	public treeSortModeValue: I.TreeSortMode = null;
+	public treeShowBookmarksValue: boolean = null;
+	public sidebarViewValue: I.SidebarView = null;
+	public hideSidebarValue = null;
+	public hideFileObjectsInTreeValue = null;
+	public autoDownloadValue = null;
+	public notificationSoundValue = null;
+	public pinValue = null;
+	public firstDayValue = null;
+	public gallery = {
+		categories: [],
+		list: [],
+	};
+	public diffValue: I.Diff[] = [];
+	public inviteMap: Map<string, I.Invite> = new Map();
+	public refs: Map<string, any> = new Map();
+	public windowId = '';
+	public tabId = '';
+	public isActiveTab = true;
+	public windowIsFocused = true;
+	public routeParam: any = {};
+	public isPinnedValue = false;
+	public widgetSectionsValue: I.WidgetSectionParam[] = null;
+	public downloadingIdsValue: Set<string> = new Set();
+
+	public rightSidebarStateValue: { full: I.SidebarRightState, popup: I.SidebarRightState } = { 
+		full: {
+			rootId: '',
+			page: '',
+			details: {},
+			readonly: false,
+			noPreview: false,
+			previous: null,
+			blockId: '',
+			back: '',
+		}, 
+		popup: {
+			rootId: '',
+			page: '',
+			details: {},
+			readonly: false,
+			noPreview: false,
+			previous: null,
+			blockId: '',
+			back: '',
+		},
+	};
+
+	public previewObj: I.Preview = { 
+		type: null, 
+		target: null, 
+		element: null, 
+		range: { from: 0, to: 0 }, 
+		marks: [],
+	};
+
+	private graphObj: I.GraphSettings = { 
+		icon: true,
+		preview: true,
+		orphan: true,
+		marker: true,
+		label: true,
+		relation: true,
+		files: false,
+		link: true,
+		local: false,
+		cluster: false,
+		filter: '',
+		depth: 1,
+		filterTypes: [],
+		typeEdges: true,
+		timeline: false,
+	};
+
+	private timeoutMap = new Map<string, number>();
+
+	public spaceStorageObj: SpaceStorage = {
+		bytesLimit: 0,
+		localUsage: 0,
+		spaces: [],
+	};
+
+	constructor () {
+		makeObservable(this, {
+			progressObj: observable,
+			filterObj: observable,
+			gatewayUrl: observable,
+			previewObj: observable,
+			toastObj: observable,
+			configObj: observable,
+			spaceStorageObj: observable,
+			themeId: observable,
+			nativeThemeIsDark: observable,
+			defaultType: observable,
+			isFullScreen: observable,
+			singleTabValue: observable,
+			fullscreenObjectValue: observable,
+			linkStyleValue: observable,
+			fileStyleValue: observable,
+			isOnlineValue: observable,
+			globalShortcutStatusValue: observable,
+			hasCleanupSuggestionsValue: observable,
+			hasTreeSectionValue: observable,
+			hideSidebarValue: observable,
+			hideFileObjectsInTreeValue: observable,
+			autoDownloadValue: observable,
+			spaceId: observable,
+			importSpaceId: observable,
+			leftSidebarStateValue: observable,
+			rightSidebarStateValue: observable,
+			showRelativeDatesValue: observable,
+			dateFormatValue: observable,
+			timeFormatValue: observable,
+			pinValue: observable,
+			firstDayValue: observable,
+			updateVersionValue: observable,
+			vaultIsMinimalValue: observable,
+			gridTitleClickValue: observable,
+			unicodeReplaceValue: observable,
+			sendTypingValue: observable,
+			notificationSoundValue: observable,
+			isActiveTab: observable,
+			isPinnedValue: observable,
+			widgetSectionsValue: observable,
+			downloadingIdsValue: observable,
+			recentEditModeValue: observable,
+			treeSortModeValue: observable,
+			treeShowBookmarksValue: observable,
+			sidebarViewValue: observable,
+			inviteMap: observable,
+			config: computed,
+			preview: computed,
+			toast: computed,
+			filter: computed,
+			gateway: computed,
+			theme: computed,
+			nativeTheme: computed,
+			space: computed,
+			isOnline: computed,
+			showRelativeDates: computed,
+			dateFormat: computed,
+			timeFormat: computed,
+			pin: computed,
+			firstDay: computed,
+			vaultIsMinimal: computed,
+			gridTitleClick: computed,
+			unicodeReplace: computed,
+			sendTyping: computed,
+			notificationSound: computed,
+			widgetSections: computed,
+			recentEditMode: computed,
+			treeSortMode: computed,
+			treeShowBookmarks: computed,
+			sidebarView: computed,
+			isPinned: computed,
+			singleTab: computed,
+			autoDownload: computed,
+			gatewaySet: action,
+			filterSetFrom: action,
+			filterSetText: action,
+			filterSet: action,
+			previewSet: action,
+			toastSet: action,
+			toastClear: action,
+			themeSet: action,
+			nativeThemeSet: action,
+			spaceSet: action,
+			importSpaceIdSet: action,
+			spaceStorageSet: action,
+			inviteSet: action,
+			inviteClear: action,
+			linkStyleSet: action,
+			fileStyleSet: action,
+			dateFormatSet: action,
+			timeFormatSet: action,
+			isOnlineSet: action,
+			globalShortcutStatusSet: action,
+			hasCleanupSuggestionsSet: action,
+			hasTreeSectionSet: action,
+			setLeftSidebarState: action,
+			setRightSidebarState: action,
+			clearRightSidebarState: action,
+			showRelativeDatesSet: action,
+			pinSet: action,
+			firstDaySet: action,
+			vaultIsMinimalSet: action,
+			gridTitleClickSet: action,
+			unicodeReplaceSet: action,
+			sendTypingSet: action,
+			notificationSoundSet: action,
+			widgetSectionsInit: action,
+			widgetSectionsSet: action,
+			recentEditModeSet: action,
+			treeSortModeSet: action,
+			treeShowBookmarksSet: action,
+			sidebarViewSet: action,
+			isActiveTabSet: action,
+			isPinnedSet: action,
+			singleTabSet: action,
+			autoDownloadSet: action,
+			downloadStart: action,
+			downloadDone: action,
+		});
+	};
+
+	get config (): I.AppConfig {
+		const config = window.AnytypeGlobalConfig || this.configObj || {};
+
+		return {
+			...config,
+			languages: config.languages || [],
+			debug: config.debug || {},
+			flagsMw: config.flagsMw || {},
+		};
+	};
+
+	get preview (): I.Preview {
+		return this.previewObj;
+	};
+
+	get toast (): I.Toast {
+		return this.toastObj;
+	};
+
+	get filter (): Filter {
+		return this.filterObj;
+	};
+
+	get filterText () {
+		return String(this.filter.text || '').replace(/^[@\[]+/, '');
+	};
+
+	get gateway (): string {
+		return String(this.gatewayUrl || '');
+	};
+
+	get type (): string {
+		if (this.defaultType === null) {
+			this.defaultType = Storage.get('defaultType');
+		};
+
+		if (!this.defaultType) {
+			this.defaultType = J.Constant.default.typeKey;
+		};
+
+		let type = S.Record.getTypeByKey(this.defaultType);
+		if (!type || type.isArchived || type.isDeleted || !U.Object.isAllowedObject(type.recommendedLayout)) {
+			type = S.Record.getTypeByKey(J.Constant.default.typeKey);
+		};
+
+		return type ? type.id : '';
+	};
+
+	get fullscreen (): boolean {
+		return this.isFullScreen;
+	};
+
+	get isPinned (): boolean {
+		return this.isPinnedValue;
+	};
+
+	get singleTab (): boolean {
+		return this.singleTabValue;
+	};
+
+	get pin (): string {
+		return String(this.pinValue || '');
+	};
+
+	get pinTime (): number {
+		let ret = this.pinTimeId;
+		if (ret === null) {
+			ret = Storage.get('pinTime');
+		};
+		return (Number(ret) || J.Constant.default.pinTime) * 1000;
+	};
+
+	get recentEditMode (): I.RecentEditMode {
+		let ret = this.recentEditModeValue;
+		if (ret === null) {
+			ret = Storage.get('recentEditMode');
+		};
+		return Number(ret) || I.RecentEditMode.All;
+	};
+
+	get treeSortMode (): I.TreeSortMode {
+		let ret = this.treeSortModeValue;
+		if (ret === null) {
+			ret = Storage.get('treeSortMode');
+		};
+		return Number(ret) || I.TreeSortMode.Custom;
+	};
+
+	get treeShowBookmarks (): boolean {
+		let ret = this.treeShowBookmarksValue;
+		if (ret === null) {
+			ret = Storage.get('treeShowBookmarks');
+		};
+		return Boolean(ret);
+	};
+
+	get sidebarView (): I.SidebarView {
+		let ret = this.sidebarViewValue;
+		if (ret === null) {
+			ret = Storage.getSpaceKey('sidebarView', false);
+		};
+		return ret || I.SidebarView.Widgets;
+	};
+
+	get fullscreenObject (): boolean {
+		let ret = this.fullscreenObjectValue;
+		if (ret === null) {
+			ret = Storage.get('fullscreenObject');
+		};
+		if (ret === undefined) {
+			ret = true;
+		};
+		return ret;
+	};
+
+	get hideSidebar (): boolean {
+		return this.boolGet('hideSidebar');
+	};
+
+	get hideFileObjectsInTree (): boolean {
+		return this.boolGet('hideFileObjectsInTree');
+	};
+
+	get autoDownload (): number {
+		let ret = this.autoDownloadValue;
+
+		if (ret === null) {
+			ret = Storage.get('autoDownload');
+
+			// Migration: old boolean → new number
+			if (ret === true) {
+				ret = 20;
+			} else
+			if (ret === false) {
+				ret = -1;
+			} else
+			if (ret === undefined) {
+				// Not configured yet: default ON (250 MiB) for local-only network, OFF otherwise
+				ret = !S.Auth.account?.info?.networkId ? 250 : -1;
+			};
+		};
+
+		const n = Number(ret);
+		return isNaN(n) ? -1 : n;
+	};
+
+	get chatCmdSend (): boolean {
+		return this.boolGet('chatCmdSend');
+	};
+
+	get commentCmdSend (): boolean {
+		if (this.commentCmdSendValue === null) {
+			const v = Storage.get('commentCmdSend');
+			this.commentCmdSendValue = v === null ? true : v;
+		};
+		return !!this.commentCmdSendValue;
+	};
+
+	get theme (): string {
+		return String(this.themeId || '');
+	};
+
+	get nativeTheme (): string {
+		return this.nativeThemeIsDark ? 'dark' : '';
+	};
+
+	get space (): string {
+		return String(this.spaceId || '');
+	};
+
+	get spaceStorage (): SpaceStorage {
+		const spaces = this.spaceStorageObj.spaces || [];
+		return { ...this.spaceStorageObj, spaces };
+	};
+
+	get interfaceLang (): string {
+		return this.config.interfaceLang || J.Constant.default.interfaceLang;
+	};
+
+	get showRelativeDates (): boolean {
+		return this.boolGet('showRelativeDates');
+	};
+
+	get linkStyle (): I.LinkDefaultStyle {
+		let ret = this.linkStyleValue;
+		if (ret === null) {
+			ret = Storage.get('linkStyle');
+		};
+		if (undefined === ret) {
+			ret = I.LinkDefaultStyle.Card;
+		};
+		return Number(ret) || I.LinkDefaultStyle.Text;
+	};
+
+	get fileStyle (): I.FileStyle {
+		let ret = this.fileStyleValue;
+		if (ret === null) {
+			ret = Storage.get('fileStyle');
+		};
+		if (undefined === ret) {
+			ret = I.FileStyle.Embed;
+		};
+		return Number(ret) || I.FileStyle.Embed;
+	};
+
+	get dateFormat (): I.DateFormat {
+		let ret = this.dateFormatValue;
+		
+		if (ret === null) {
+			ret = Storage.get('dateFormat');
+
+			if (undefined === ret) {
+				ret = I.DateFormat.Long;
+			};
+		};
+
+		return Number(ret);
+	};
+
+	get timeFormat (): I.TimeFormat {
+		let ret = this.timeFormatValue;
+		if (ret === null) {
+			ret = Storage.get('timeFormat');
+		};
+		return Number(ret) || I.TimeFormat.H12;
+	};
+
+	get dataPath (): string {
+		return String(this.dataPathValue || '');
+	};
+
+	get isOnline (): boolean {
+		return Boolean(this.isOnlineValue);
+	};
+
+	/**
+	 * Whether the current space has orphans worth cleaning up. Kept in memory only —
+	 * seeded by a delayed probe on space open, raised by CleanupSuggestion events, and
+	 * cleared when the Bin's suggestions list comes back empty.
+	 */
+	get hasCleanupSuggestions (): boolean {
+		return Boolean(this.hasCleanupSuggestionsValue);
+	};
+
+	get hasTreeSection (): boolean {
+		return Boolean(this.config.experimental && this.hasTreeSectionValue);
+	};
+
+	get diff (): I.Diff[] {
+		return this.diffValue || [];
+	};
+
+	get firstDay (): number {
+		if (this.firstDayValue === null) {
+			this.firstDayValue = Storage.get('firstDay');
+		};
+
+		return Number(this.firstDayValue) || 1;
+	};
+
+	get updateVersion (): string {
+		return String(this.updateVersionValue || '');
+	};
+
+	get widgetSections (): I.WidgetSectionParam[] {
+		return this.widgetSectionsValue || [];
+	};
+
+	get vaultIsMinimal (): any {
+		return this.boolGet('vaultIsMinimal');
+	};
+
+	get gridTitleClick (): boolean {
+		let ret = this.gridTitleClickValue;
+		if (ret === null) {
+			ret = Storage.get('gridTitleClick');
+		};
+		if (ret === undefined) {
+			ret = true;
+		};
+		return ret;
+	};
+
+	get unicodeReplace (): boolean {
+		let ret = this.unicodeReplaceValue;
+		if (ret === null) {
+			ret = Storage.get('unicodeReplace');
+		};
+		if (ret === undefined) {
+			ret = true;
+		};
+		return ret;
+	};
+
+	/** Whether typing in chats and comments is published to others; on unless turned off. */
+	get sendTyping (): boolean {
+		let ret = this.sendTypingValue;
+		if (ret === null) {
+			ret = Storage.get('sendTyping');
+		};
+		return (ret !== false);
+	};
+
+	get notificationSound (): string {
+		let ret = this.notificationSoundValue;
+		if (ret === null) {
+			ret = Storage.get('notificationSound');
+		};
+		if (ret === undefined) {
+			ret = '';
+		};
+		return ret;
+	};
+
+	/**
+	 * Sets the gateway URL.
+	 * @param {string} v - The gateway URL.
+	 */
+	gatewaySet (v: string) {
+		this.gatewayUrl = v;
+	};
+
+	/**
+	 * Gets the file URL for a given file ID.
+	 * @param {string} id - The file ID.
+	 * @returns {string} The file URL.
+	 */
+	fileUrl (id: string) {
+		return [ this.gateway, 'file', String(id || '') ].join('/');
+	};
+
+	/**
+	 * Gets the image URL for a given image ID and width.
+	 * @param {string} id - The image ID.
+	 * @param {number} width - The image width.
+	 * @returns {string} The image URL.
+	 */
+	imageUrl (id: string, width: number) {
+		width = Number(width) || 0;
+
+		if (width === 0) {
+			width = 10000000;
+		} else
+		if ((width > 0) && (width <= I.ImageSize.Small)) {
+			width = I.ImageSize.Small;
+		} else
+		if ((width > I.ImageSize.Small) && (width <= I.ImageSize.Medium)) {
+			width = I.ImageSize.Medium;
+		} else 
+		if (width > I.ImageSize.Medium) {
+			width = I.ImageSize.Large;
+		};
+
+		return id ? [ this.gateway, 'image', String(id || '') ].join('/') + `?width=${width}` : '';
+	};
+
+	/**
+	 * Sets the filter 'from' value.
+	 * @param {number} from - The 'from' value.
+	 */
+	filterSetFrom (from: number) {
+		this.filterObj.from = from;
+	};
+
+	/**
+	 * Sets the filter text.
+	 * @param {string} text - The filter text.
+	 */
+	filterSetText (text: string) {
+		this.filterObj.text = text;
+	};
+
+	/**
+	 * Sets the filter values.
+	 * @param {number} from - The 'from' value.
+	 * @param {string} text - The filter text.
+	 */
+	filterSet (from: number, text: string) {
+		this.filterSetFrom(from);
+		this.filterSetText(text);
+	};
+
+	/**
+	 * Sets the preview object.
+	 * @param {I.Preview} preview - The preview object.
+	 */
+	previewSet (preview: I.Preview) {
+		this.previewObj = preview;
+	};
+
+	/**
+	 * Sets the graph settings for a key.
+	 * @param {string} key - The key.
+	 * @param {Partial<I.GraphSettings>} param - The graph settings.
+	 */
+	graphSet (key: string, param: Partial<I.GraphSettings>) {
+		Storage.set(key, Object.assign(this.getGraph(key), param));
+		U.Dom.eventDispatch(window, 'updateGraphSettings');
+	};
+
+	/**
+	 * Sets the toast object, resolving object references if needed.
+	 * @param {I.Toast} toast - The toast object.
+	 */
+	toastSet (toast: I.Toast) {
+		const { objectId, targetId, originId } = toast;
+		const ids = [ objectId, targetId, originId ].filter(it => it);
+
+		if (ids.length) {
+			U.Object.getByIds(ids, {}, (objects: any[]) => {
+				const map = U.Common.mapToObject(objects, 'id');
+
+				if (targetId && map[targetId]) {
+					toast.target = map[targetId];
+				};
+
+				if (objectId && map[objectId]) {
+					toast.object = map[objectId];
+				};
+
+				if (originId && map[originId]) {
+					toast.origin = map[originId];
+				};
+
+				this.toastObj = toast;
+			});
+		} else {
+			this.toastObj = toast;
+		};
+	};
+
+	/**
+	 * Sets the current space ID.
+	 * @param {string} id - The space ID.
+	 */
+	spaceSet (id: string) {
+		this.spaceId = String(id || '');
+
+		// The import target is only meaningful next to the space it was chosen from.
+		this.importSpaceId = '';
+	};
+
+	/**
+	 * Sets the space chosen as the import target.
+	 * @param {string} id - The space ID, empty to fall back to the current space.
+	 */
+	importSpaceIdSet (id: string) {
+		this.importSpaceId = String(id || '');
+	};
+
+	/**
+	 * Clears the preview object.
+	 */
+	previewClear () {
+		this.previewObj = { type: I.PreviewType.None, target: null, element: null, range: { from: 0, to: 0 }, marks: [] };
+	};
+
+	/**
+	 * Clears the toast object.
+	 */
+	toastClear () {
+		this.toastObj = null;
+	};
+
+	/**
+	 * Sets the default type.
+	 * @param {string} v - The type value.
+	 */
+	typeSet (v: string) {
+		this.defaultType = String(v || '');
+
+		Storage.set('defaultType', this.defaultType);
+	};
+
+	/**
+	 * Sets the pin time value.
+	 * @param {string} v - The pin time value.
+	 */
+	pinTimeSet (v: string) {
+		this.pinTimeId = Number(v) || J.Constant.default.pinTime;
+
+		Storage.set('pinTime', this.pinTimeId);
+
+		// Update the centralized timer in main process with new timeout
+		if (keyboard.isPinChecked && this.pin) {
+			Renderer.send('startPinTimer', this.pinTime);
+		};
+	};
+
+	/**
+	 * Gets the pin ID for storage.
+	 */
+	pinId () {
+		const { account } = S.Auth;
+		if (!account) {
+			return '';
+		};
+
+		return [ account.id, 'pin' ].join('-');
+	};
+
+	/**
+	 * Sets the pin value.
+	 * @param {string} v - The pin value.
+	 */
+	pinSet (v: string) {
+		this.pinValue = String(v || '');
+		keyboard.setPinChecked(true);
+		Renderer.send('keytarSet', this.pinId(), this.pinValue);
+		Renderer.send('pinSet');
+	};
+
+	/**
+	 * Removes the pin value.
+	 */
+	pinRemove () {
+		this.pinValue = null;
+		keyboard.setPinChecked(true);
+		Renderer.send('keytarDelete', this.pinId());
+		Renderer.send('stopPinTimer');
+		Renderer.send('pinRemove');
+	};
+
+	/**
+	 * Drops the pin along with the session it locks, on logout.
+	 * Unlike pinRemove it leaves the checked state alone: the session is going away, so there is
+	 * nothing left to unlock, and marking it checked would broadcast pin-unlocked to every tab.
+	 */
+	pinClear () {
+		const id = this.pinId();
+
+		if (id) {
+			Renderer.send('keytarDelete', id);
+		};
+
+		Renderer.send('setHasPinSet', false);
+		this.pinValue = null;
+	};
+
+	/**
+	 * Initializes the pin value, optionally calling a callback.
+	 * @param {() => void} callBack - The callback function to call after initialization.
+	 */
+	pinInit (callBack?: () => void) {
+		const pin = Storage.get('pin');
+
+		if (pin) {
+			this.pinSet(pin);
+			Storage.delete('pin');
+
+			callBack?.();
+		} else {
+			Renderer.send('keytarGet', this.pinId()).then((value: string) => {
+				this.pinValue = String(value || '');
+
+				callBack?.();
+			}).catch((err: any) => {
+				console.error('[Common] Error retrieving pin from keychain:', err);
+				this.pinValue = '';
+
+				callBack?.();
+			});
+		};
+	};
+
+	/**
+	 * Sets the show relative dates value.
+	 * @param {boolean} v - The show relative dates value.
+	 */
+	showRelativeDatesSet (v: boolean) {
+		this.boolSet('showRelativeDates', v);
+	};
+
+	/**
+	 * Sets the fullscreen object value.
+	 * @param {boolean} v - The fullscreen value.
+	 */
+	fullscreenObjectSet (v: boolean) {
+		this.boolSet('fullscreenObject', v);
+	};
+
+	/**
+	 * Sets the hide sidebar value.
+	 * @param {boolean} v - The hide sidebar value.
+	 */
+	hideSidebarSet (v: boolean) {
+		this.boolSet('hideSidebar', v);
+	};
+
+	hideFileObjectsInTreeSet (v: boolean) {
+		this.boolSet('hideFileObjectsInTree', v);
+	};
+
+	autoDownloadSet (v: number) {
+		const n = Number(v);
+		v = isNaN(n) ? -1 : n;
+		this.autoDownloadValue = v;
+		Storage.set('autoDownload', v);
+	};
+
+	downloadStart (id: string) {
+		this.downloadingIdsValue.add(id);
+	};
+
+	downloadDone (id: string) {
+		this.downloadingIdsValue.delete(id);
+	};
+
+	isDownloading (id: string): boolean {
+		return this.downloadingIdsValue.has(id);
+	};
+
+	/**
+	 * Sets the hide chat send option value.
+	 * @param {boolean} v - Value.
+	 */
+	chatCmdSendSet (v: boolean) {
+		this.boolSet('chatCmdSend', v);
+	};
+
+	/**
+	 * Sets the comment send shortcut option value.
+	 * @param {boolean} v - Value.
+	 */
+	commentCmdSendSet (v: boolean) {
+		this.boolSet('commentCmdSend', v);
+	};
+
+	/**
+	 * Sets the show sidebar left value.
+	 * @param {string} page - The page to set, '' if no page is shown
+	 * @param {string} subPage - The subPage to set, '' if no page is shown
+	 */
+	setLeftSidebarState (page: string, subPage: string) {
+		set(this.leftSidebarStateValue, { page, subPage });
+	};
+
+	/**
+	 * Sets the show sidebar right value.
+	 * @param {boolean} isPopup - Whether it is a popup.
+	 * @param {string} page - The page to set, null if no page is shown
+	 */
+	setRightSidebarState (isPopup: boolean, v: Partial<I.SidebarRightState>) {
+		v = Object.assign({ noPreview: true }, v);
+		set(this.getRightSidebarState(isPopup), v);
+	};
+
+	/**
+	 * Clears the right sidebar state.
+	 * @param {boolean} isPopup - Whether it is a popup.
+	 */
+	clearRightSidebarState (isPopup: boolean) {
+		set(this.rightSidebarStateValue[this.getStateKey(isPopup)], {
+			rootId: '',
+			page: '',
+			details: {},
+			readonly: false,
+			noPreview: false,
+			previous: null,
+			blockId: '',
+			back: '',
+		});
+	};
+
+	/**
+	 * Sets the fullscreen mode.
+	 * @param {boolean} v - The fullscreen value.
+	 */
+	fullscreenSet (v: boolean) {
+		this.isFullScreen = v;
+	};
+
+	/**
+	 * Sets the single tab mode.
+	 * @param {boolean} v - The single tab mode value.
+	 */
+	isPinnedSet (v: boolean) {
+		this.isPinnedValue = v;
+	};
+
+	singleTabSet (v: boolean) {
+		this.singleTabValue = v;
+	};
+
+	/**
+	 * Sets the update version value.
+	 * @param {string} v - The update version value.
+	 */
+	updateVersionSet (v: string) {
+		this.updateVersionValue = String(v || '');
+	};
+
+	/**
+	 * Sets the theme ID and updates the theme class.
+	 * @param {string} v - The theme ID.
+	 */
+	themeSet (v: string) {
+		this.themeId = String(v || '');
+		this.setThemeClass();
+	};
+
+	/**
+	 * Sets the redirect value.
+	 * @param {string} v - The redirect value.
+	 */
+	redirectSet (v: string) {
+		const param = U.Router.getParam(v);
+
+		if (param.page == 'auth') {
+			return;
+		};
+
+		this.redirect = v;
+	};
+
+	/**
+	 * Sets the Notion token value.
+	 * @param {string} v - The Notion token value.
+	 */
+	notionTokenSet (v: string) {
+		this.notionToken = v;
+	};
+
+	/**
+	 * Sets a reference by ID.
+	 * @param {string} id - The reference ID.
+	 * @param {any} ref - The reference object.
+	 */
+	refSet (id: string, ref: any) {
+		if (id && ref) {
+			this.refs.set(id, ref);
+		};
+	};
+
+	/**
+	 * Removes a reference by ID.
+	 * @param {string} id - The reference ID.
+	 */
+	refDelete (id: string) {
+		this.refs.delete(id);
+	};
+
+	/**
+	 * Gets a boolean value by key, loading from storage if needed.
+	 * @param {string} k - The key.
+	 * @returns {boolean} The boolean value.
+	 */
+	boolGet (k: string) {
+		const tk = `${k}Value`;
+		if (this[tk] === null) {
+			this[tk] = Storage.get(k);
+		};
+		return !!this[tk];
+	};
+
+	/**
+	 * Sets a boolean value by key and stores it.
+	 * @param {string} k - The key.
+	 * @param {boolean} v - The value to set.
+	 */
+	boolSet (k: string, v: boolean) {
+		v = Boolean(v);
+
+		this[`${k}Value`] = v;
+		Storage.set(k, v);
+	};
+
+	/**
+	 * Gets the current theme class string.
+	 * @returns {string} The theme class.
+	 */
+	getThemeClass (): string {
+		let ret = '';
+
+		if (this.themeId == 'system') {
+			ret = this.nativeThemeIsDark ? 'dark' : '';
+		} else {
+			ret = this.themeId;
+		};
+
+		return String(ret || '');
+	};
+
+	/**
+	 * Sets the theme class on the document.
+	 */
+	setThemeClass () {
+		const c = this.getThemeClass();
+
+		U.Dom.addBodyClass('theme', c);
+		Renderer.send('setBackground');
+	};
+
+	/**
+	 * Gets the theme path string.
+	 * @returns {string} The theme path.
+	 */
+	getThemePath () {
+		const c = this.getThemeClass();
+		return c ? `theme/${c}/` : '';
+	};
+
+	/**
+	 * Sets the native theme dark mode value.
+	 * @param {boolean} isDark - Whether the theme is dark.
+	 */
+	nativeThemeSet (isDark: boolean) {
+		this.nativeThemeIsDark = isDark;
+	};
+
+	/**
+	 * Sets the available languages.
+	 * @param {string[]} v - The languages array.
+	 */
+	languagesSet (v: string[]) {
+		this.languages = v;
+	};
+
+	/**
+	 * Sets the link style value.
+	 * @param {I.LinkCardStyle} v - The link style value.
+	 */
+	linkStyleSet (v: I.LinkDefaultStyle) {
+		v = Number(v);
+		this.linkStyleValue = v;
+		Storage.set('linkStyle', v);
+	};
+
+	/**
+	 * Sets the file style value.
+	 * @param {I.FileStyle} v - The file style value.
+	 */
+	fileStyleSet (v: I.FileStyle) {
+		v = Number(v);
+		this.fileStyleValue = v;
+		Storage.set('fileStyle', v);
+	};
+
+	/**
+	 * Sets the date format value.
+	 * @param {I.DateFormat} v - The date format value.
+	 */
+	dateFormatSet (v: I.DateFormat) {
+		v = Number(v);
+		this.dateFormatValue = v;
+		Storage.set('dateFormat', v);
+	};
+
+	/**
+	 * Sets the time format value.
+	 * @param {I.TimeFormat} v - The time format value.
+	 */
+	timeFormatSet (v: I.TimeFormat) {
+		v = Number(v);
+		this.timeFormatValue = v;
+		Storage.set('timeFormat', v);
+	};
+
+	/**
+	 * Sets the online status value.
+	 * @param {boolean} v - The online status value.
+	 */
+	isOnlineSet (v: boolean) {
+		this.isOnlineValue = Boolean(v);
+		console.log('[Online status]:', v);
+	};
+
+	get globalShortcutStatus (): { registered: boolean; unavailable: boolean } | null {
+		return this.globalShortcutStatusValue;
+	};
+
+	globalShortcutStatusSet (v: { registered: boolean; unavailable: boolean } | null) {
+		this.globalShortcutStatusValue = v || null;
+	};
+
+	/**
+	 * Sets whether the current space has cleanup suggestions.
+	 * @param {boolean} v - The value.
+	 */
+	hasCleanupSuggestionsSet (v: boolean) {
+		this.hasCleanupSuggestionsValue = Boolean(v);
+	};
+
+	hasTreeSectionSet (v: boolean) {
+		this.hasTreeSectionValue = Boolean(v);
+	};
+
+	/**
+	 * Sets the first day value.
+	 * @param {number} v - The first day value.
+	 */
+	firstDaySet (v: number) {
+		this.firstDayValue = Number(v) || 1;
+		Storage.set('firstDay', this.firstDayValue);
+	};
+
+	/**
+	 * Sets the vault isMinimal value.
+	 * @param {boolean} v - The vault isMinimal value.
+	 */
+	vaultIsMinimalSet (v: boolean) {
+		this.boolSet('vaultIsMinimal', v);
+	};
+
+	gridTitleClickSet (v: boolean) {
+		this.boolSet('gridTitleClick', v);
+	};
+
+	unicodeReplaceSet (v: boolean) {
+		this.boolSet('unicodeReplace', v);
+	};
+
+	sendTypingSet (v: boolean) {
+		this.boolSet('sendTyping', v);
+	};
+
+	notificationSoundSet (v: string) {
+		this.notificationSoundValue = v;
+		Storage.set('notificationSound', v);
+	};
+
+	/**
+	 * Sets the config object, optionally forcing all values.
+	 * @param {I.AppConfig} config - The config object.
+	 * @param {boolean} force - Whether to force all values.
+	 */
+	configSet (config: I.AppConfig, force: boolean) {
+		let newConfig: I.AppConfig = {};
+		if (force) {
+			newConfig = Object.assign(newConfig, config);
+		} else {
+			for (const k in config) {
+				if (undefined === this.configObj[k]) {
+					newConfig[k] = config[k];
+				};
+			};
+		};
+
+		set(this.configObj, newConfig);
+
+		this.configObj.debug = this.configObj.debug || {};
+		this.singleTabSet(this.singleTab);
+		
+		keyboard.setBodyClass();
+	};
+
+	/**
+	 * Sets the space storage object.
+	 * @param {Partial<SpaceStorage>} value - The space storage value.
+	 */
+	spaceStorageSet (value: Partial<SpaceStorage>) {
+		set(this.spaceStorageObj, Object.assign(this.spaceStorageObj, value));
+	};
+
+	/**
+	 * Stores the current invite of a space.
+	 * @param {string} spaceId - The space ID.
+	 * @param {I.Invite} invite - The invite.
+	 */
+	inviteSet (spaceId: string, invite: I.Invite) {
+		this.inviteMap.set(spaceId, invite);
+	};
+
+	/**
+	 * Gets the current invite of a space, or null when it has not been fetched or does not exist.
+	 * @param {string} spaceId - The space ID.
+	 * @returns {I.Invite} The invite.
+	 */
+	inviteGet (spaceId: string): I.Invite {
+		return this.inviteMap.get(spaceId) || null;
+	};
+
+	/**
+	 * Removes the stored invite of a space.
+	 * @param {string} spaceId - The space ID.
+	 */
+	inviteClear (spaceId: string) {
+		this.inviteMap.delete(spaceId);
+	};
+
+	/**
+	 * Sets the data path value.
+	 * @param {string} v - The data path value.
+	 */
+	dataPathSet (v: string) {
+		this.dataPathValue = String(v || '');
+	};
+
+	/**
+	 * Sets the diff value.
+	 * @param {I.Diff[]} diff - The diff value.
+	 */
+	diffSet (diff: I.Diff[]) {
+		this.diffValue = diff || [];
+	};
+
+	/**
+	 * Sets the window ID.
+	 * @param {string} id - The window ID.
+	 */
+	windowIdSet (id: string) {
+		this.windowId = String(id || '');
+	};
+
+	/**
+	 * Sets the tab ID.
+	 * @param {string} id - The tab ID.
+	 */
+	tabIdSet (id: string) {
+		this.tabId = String(id || '');
+	};
+
+	/**
+	 * Sets whether this tab is the active tab in the window.
+	 * @param {boolean} v - Whether this tab is active.
+	 */
+	isActiveTabSet (v: boolean) {
+		this.isActiveTab = v;
+
+		if (v) {
+			S.Block.flushDeferredUpdates();
+			setReactionsPaused(false);
+		} else {
+			setReactionsPaused(true);
+		};
+	};
+
+	/**
+	 * Gets the graph settings for a key.
+	 * @param {string} key - The key.
+	 * @returns {I.GraphSettings} The graph settings.
+	 */
+	getGraph (key: string): I.GraphSettings {
+		const stored = U.Common.objectCopy(Storage.get(key));
+		const def = U.Common.objectCopy(this.graphObj);
+		const result = Object.assign(def, stored);
+
+		// Ensure typeEdges has a default value
+		if (result.typeEdges === undefined) {
+			result.typeEdges = true;
+		};
+
+		return result;
+	};
+
+	/**
+	 * Gets a reference by ID.
+	 * @param {string} id - The reference ID.
+	 * @returns {any} The reference object.
+	 */
+	getRef (id: string) {
+		return this.refs.get(id);
+	};
+
+	/**
+	 * Gets the state key for a popup or full view.
+	 * @param {boolean} isPopup - Whether it is a popup.
+	 * @returns {string} The state key.
+	 */
+	getStateKey (isPopup: boolean): string {
+		return isPopup ? 'popup' : 'full';
+	};
+
+	/**
+	 * Gets the current state of the left sidebar.
+	 * @returns {page: string; subPage: string;} The current state shown in the sidebar
+	 */
+	getLeftSidebarState (): { page: string; subPage: string; } {
+		return this.leftSidebarStateValue || { page: '', subPage: '' };
+	};
+
+	/**
+	 * Gets the current state of the right sidebar.
+	 * @param {boolean} isPopup - Whether it is a popup.
+	 * @returns {page: string; isOpen: boolean;} The current state shown in the sidebar
+	 */
+	getRightSidebarState (isPopup: boolean): I.SidebarRightState {
+		return this.rightSidebarStateValue[this.getStateKey(isPopup)] || { page: '' };
+	};
+
+	/**
+	 * Gets the timeout value for a given ID.
+	 * @param {string} id - The timeout ID.
+	 * @returns {number} The timeout value.
+	 */
+	getTimeout (id: string): number {
+		return Number(this.timeoutMap.get(id)) || 0;
+	};
+
+	/**
+	 * Sets a timeout for a given ID and function.
+	 * @param {string} id - The timeout ID.
+	 * @param {number} delay - The timeout duration.
+	 * @param {() => void} func - The function to call after timeout.
+	 */
+	setTimeout (id: string, delay: number, func: () => void) {
+		this.clearTimeout(id);
+
+		const t = window.setTimeout(() => {
+			this.timeoutMap.delete(id);
+			func();
+		}, delay);
+
+		this.timeoutMap.set(id, t);
+		return t;
+	};
+
+	/**
+	 * Clears a timeout with a given ID.
+	 * @param {string} id - The timeout ID.
+	 */
+	clearTimeout (id: string) {
+		window.clearTimeout(this.getTimeout(id));
+	};
+
+	/**
+	 * Sets whether the window is focused.
+	 * @param {boolean} v - Whether the window is focused.
+	 */
+	windowIsFocusedSet (v: boolean) {
+		this.windowIsFocused = Boolean(v);
+	};
+
+	recentEditModeSet (v: I.RecentEditMode) {
+		this.recentEditModeValue = Number(v) || I.RecentEditMode.All;
+		Storage.set('recentEditMode', this.recentEditModeValue);
+	};
+
+	treeSortModeSet (v: I.TreeSortMode) {
+		this.treeSortModeValue = Number(v) || I.TreeSortMode.Custom;
+		Storage.set('treeSortMode', this.treeSortModeValue);
+	};
+
+	treeShowBookmarksSet (v: boolean) {
+		this.treeShowBookmarksValue = Boolean(v);
+		Storage.set('treeShowBookmarks', this.treeShowBookmarksValue);
+	};
+
+	sidebarViewSet (v: I.SidebarView) {
+		this.sidebarViewValue = v || I.SidebarView.Widgets;
+		Storage.setSpaceKey('sidebarView', this.sidebarViewValue, false);
+	};
+
+	nullifySpaceKeys () {
+		this.defaultType = null;
+		this.sidebarViewValue = null;
+		this.recentEditModeValue = null;
+		this.treeSortModeValue = null;
+		this.treeShowBookmarksValue = null;
+		this.widgetSectionsInit();
+	};
+
+	widgetSectionsInit () {
+		const allIds = [
+			I.WidgetSection.Pin,
+			I.WidgetSection.Unread,
+			I.WidgetSection.MyFavorites,
+			I.WidgetSection.RecentEdit,
+			I.WidgetSection.Tree,
+			I.WidgetSection.Type,
+			I.WidgetSection.Bin,
+		];
+		const saved: I.WidgetSectionParam[] = Storage.get('widgetSections') || [];
+		const savedMap = new Map(saved.map(it => [ it.id, it ]));
+
+		const makeParam = (id: I.WidgetSection): I.WidgetSectionParam => {
+			const prev = savedMap.get(id);
+			// Tree starts collapsed: it subscribes to the whole space hierarchy only once opened
+			const isClosed = (id == I.WidgetSection.Pin) ? false : (prev?.isClosed ?? (id == I.WidgetSection.Tree));
+			return { id, isClosed, isHidden: prev?.isHidden ?? false, view: prev?.view ?? 'list' };
+		};
+
+		const seen = new Set<I.WidgetSection>();
+		const full: I.WidgetSectionParam[] = [];
+
+		for (const item of saved) {
+			if (allIds.includes(item.id) && !seen.has(item.id)) {
+				full.push(makeParam(item.id));
+				seen.add(item.id);
+			};
+		};
+		// Sections missing from the saved order are appended, except Tree which goes after Recently edited
+		for (const id of allIds) {
+			if (seen.has(id)) {
+				continue;
+			};
+
+			const anchorIdx = (id == I.WidgetSection.Tree) ? full.findIndex(it => it.id == I.WidgetSection.RecentEdit) : -1;
+
+			if (anchorIdx >= 0) {
+				full.splice(anchorIdx + 1, 0, makeParam(id));
+			} else {
+				full.push(makeParam(id));
+			};
+
+			seen.add(id);
+		};
+
+		if (!U.Common.compareJSON(full, this.widgetSectionsValue)) {
+			this.widgetSectionsValue = full;
+		};
+	};
+
+	widgetSectionsSet (sections: I.WidgetSectionParam[]) {
+		this.widgetSectionsValue = sections || [];
+		Storage.set('widgetSections', this.widgetSectionsValue);
+	};
+
+	checkWidgetSection (id: I.WidgetSection): boolean {
+		const section = this.widgetSections.find(it => it.id == id);
+		return section && !section.isClosed && !section.isHidden;
+	};
+
+	getWidgetSection (id: I.WidgetSection) {
+		return this.widgetSections.find(it => it.id == id);
+	};
+
+	updateWidgetSection (param: Partial<I.WidgetSectionParam>) {
+		const section = this.getWidgetSection(param.id);
+		if (!section) {
+			return;
+		};
+
+		set(section, param);
+		this.widgetSectionsSet([ ...this.widgetSections ]);
+	};
+
+};
+
+export const Common: CommonStore = new CommonStore();

@@ -1,0 +1,1968 @@
+import React, { forwardRef, useRef, useState, useEffect } from 'react';
+import * as Prism from 'prismjs';
+
+import raf from 'raf';
+import { Select, Marker, IconObject, Icon, Editable } from 'Component';
+import * as I from 'Interface';
+import Storage from 'Lib/storage';
+import { focus } from 'Lib/focus';
+import { presence } from 'Lib/presence';
+import { virtualBlock } from 'Lib/virtualBlock';
+
+// Prism language plugins expect `Prism` on the global scope
+(window as any).Prism = Prism;
+
+// Use import.meta.glob so Rollup emits one lazy chunk per language. A plain
+// dynamic import with a template literal works only for relative paths —
+// bare-specifier templates like `prismjs/components/prism-${lang}.js` are
+// left unresolved in production and Prism.languages.<lang> stays undefined.
+const prismLangModules = import.meta.glob([
+	'/node_modules/prismjs/components/prism-*.js',
+	'!/node_modules/prismjs/components/prism-*.min.js',
+]);
+
+(async () => {
+	for (const lang of U.Prism.components) {
+		const loader = prismLangModules[`/node_modules/prismjs/components/prism-${lang}.js`];
+		if (loader) {
+			try { await loader(); } catch (e) {};
+		};
+	};
+})();
+
+interface Props extends I.BlockComponent {
+	onToggle?(e: any): void;
+};
+
+const TWIN_PAIRS = {
+	'{': '}',
+	'(': ')',
+	'[': ']',
+	'`':'`',
+	'\'':'\'',
+	'\"':'\"',
+	'【': '】',
+	'「': '」',
+	'（': '）',
+	'“': '”',
+	'‘': '’',
+	'$': '$',
+};
+
+const BlockText = forwardRef<I.BlockRef, Props>((props, ref) => {
+
+	const {
+		rootId, block, readonly, isPopup, isInsideTable,
+		onUpdate, onMenuAdd, onToggle, onFocus, onBlur, onPaste, onKeyDown, onKeyUp,
+		renderLinks, renderObjects, renderMentions, renderEmoji,
+	} = props;
+	const { id, content } = block;
+	const fields = block.fields || {};
+	const { text, marks, style, checked, color, iconEmoji, iconImage } = content;
+	const { theme } = S.Common;
+	const root = S.Block.getLeaf(rootId, rootId);
+	const cn = [ 'flex' ];
+	const cv = [ 'value', 'focusable', `c${id}` ];
+	const isRtlFromText = U.String.checkRtl(text);
+	const checkRtl = isRtlFromText || fields.isRtlDetected;
+	const nodeRef = useRef(null);
+	const langRef = useRef(null);
+	const editableRef = useRef(null);
+	const textRef = useRef('');
+	const marksRef = useRef<I.Mark[]>(marks || []);
+	const prevTextRef = useRef(text);
+	const prevMarksRef = useRef<I.Mark[]>(marks || []);
+	const timeoutFilter = useRef(0);
+	const timeoutClick = useRef(0);
+	const timeoutText = useRef(0);
+	const pendingSavesRef = useRef(0);
+	const sentTextsRef = useRef<string[]>([]);
+	const preventMenu = useRef(false);
+	const clickCnt = useRef(0);
+	const prevStyleRef = useRef(style);
+	const phantomNewlineRef = useRef(false);
+
+	// live presence: carriages of the people editing this block right now (see Lib/presence).
+	// The parent Block observes S.Presence and re-renders us, so plain reads stay fresh here.
+	const [ carriages, setCarriages ] = useState([]);
+	const remote = S.Presence.getBlockTypers(rootId, id).filter(it => it.range);
+	const remoteKey = remote.map(it => [ it.identity, it.sessionId, it.range.from ].join(':')).join(',');
+
+	useEffect(() => {
+		setValue(text);
+		renderLatex();
+
+		return () => {
+			const { focused } = focus.state;
+
+			S.Common.clearTimeout('blockContext');
+			window.clearTimeout(timeoutFilter.current);
+			window.clearTimeout(timeoutClick.current);
+
+			// Flush any pending debounced text save before unmount to prevent
+			// data loss when navigating away from the page while typing
+			if (timeoutText.current) {
+				window.clearTimeout(timeoutText.current);
+				timeoutText.current = 0;
+
+				// Force-save current text to middleware immediately
+				const value = String(editableRef.current?.getTextValue?.() || '');
+				if (value && (value !== textRef.current || value !== text)) {
+					U.Data.blockSetText(rootId, block.id, value, marksRef.current, true);
+				};
+			};
+
+			if (focused == block.id) {
+				focus.clear(true);
+			};
+		};
+	}, []);
+
+	// Measures where every remote carriage lands in our DOM. Runs after the text is
+	// in place, so an incoming edit and the caret that follows it stay in sync.
+	useEffect(() => {
+		if (!remote.length) {
+			setCarriages(list => (list.length ? [] : list));
+			return;
+		};
+
+		const frame = raf(() => {
+			const node = nodeRef.current;
+			const el = node ? U.Dom.select('.editable', node) : null;
+
+			if (!el) {
+				return;
+			};
+
+			const nodeRect = node.getBoundingClientRect();
+			const hasZws = Mark.hasZws(el);
+
+			setCarriages(remote.map(it => {
+				const offset = hasZws ? Mark.modelToDom(it.range.from, el) : it.range.from;
+				const rect = U.Dom.getCarriageRect(el, offset);
+
+				if (!rect) {
+					return null;
+				};
+
+				return {
+					id: [ it.identity, it.sessionId ].join(':'),
+					style: {
+						left: rect.left - nodeRect.left,
+						top: rect.top - nodeRect.top,
+						height: rect.height,
+					},
+				};
+			}).filter(it => it));
+		});
+
+		return () => raf.cancel(frame);
+	}, [ remoteKey, text ]);
+
+	useEffect(() => {
+		const { focused } = focus.state;
+
+		// Never touch the composing editable's DOM or its selection while an IME
+		// composition is in progress: replacing innerHTML or re-applying the
+		// (stale) focus range aborts the composition and commits the candidate
+		// text at the old caret position — e.g. wedged between the caret and an
+		// adjacent mention/object mark (JS-7510). Scoped to the focused block so
+		// a composition elsewhere (chat input, search filter) doesn't stop other
+		// visible blocks from syncing store updates to their DOM. Skip without
+		// updating prevTextRef / prevMarksRef so the store change is re-applied
+		// on the next render; onCompositionEnd reconciles value, marks and range
+		// once the composition settles.
+		if (keyboard.isComposition && (focused == block.id)) {
+			return;
+		};
+		const textChanged = prevTextRef.current !== text;
+		const marksChanged = !U.Common.compareJSON(prevMarksRef.current, marks || []);
+
+		// When focused, the local editable DOM may be ahead of the store during
+		// active editing. Skip setValue if the store update is just echoing back
+		// what we already sent — prevents a race where a stale middleware response
+		// overwrites the user's latest keystrokes (e.g. code block text reverting).
+		// Only suppress when text hasn't changed AND marks haven't changed — mark
+		// toggles (bold, italic, etc.) need setValue to re-render markup.
+		const isOwnEcho = (focused == block.id) && (text === textRef.current) && !marksChanged;
+
+		// A store text matching an earlier in-flight save (but not the latest one)
+		// is a stale echo arriving late — e.g. the debounced save racing the
+		// immediate save on blur. Suppress it independent of focus: after
+		// focus.clear() the guard above no longer applies and the stale echo would
+		// revert the just-typed content (JS-9285)
+		const sent = sentTextsRef.current;
+		const isStaleEcho = (pendingSavesRef.current > 0) && sent.includes(text) && (text !== sent[sent.length - 1]);
+		const isEcho = isOwnEcho || isStaleEcho;
+
+		if (textChanged || marksChanged) {
+			// Don't absorb marks from a stale echo — they belong to the older save
+			if (!isStaleEcho) {
+				marksRef.current = marks || [];
+			};
+
+			// Only sync contenteditable from props when not focused or when content
+			// actually changed. When focused, the local editable state is the source
+			// of truth — skipping setValue prevents expensive DOM rebuilds that cause
+			// typing lag on every keystroke echo from middleware.
+			if (!isEcho) {
+				setValue(text);
+			};
+
+			prevTextRef.current = text;
+			prevMarksRef.current = marks || [];
+		} else
+		if (marksRef.current.length) {
+			// Render markup even when text/marks haven't changed, to pick up
+			// newly loaded details for mentions/objects
+			renderMarkup();
+		};
+
+		if (text) {
+			placeholderHide();
+		};
+
+		if (focused == block.id) {
+			focus.apply();
+		} else {
+			renderLatex();
+		};
+
+		onUpdate?.();
+	});
+
+	useEffect(() => {
+		const styleChanged = prevStyleRef.current !== style;
+		prevStyleRef.current = style;
+
+		if (!styleChanged) {
+			return;
+		};
+
+		const isRtl = U.String.checkRtl(text);
+
+		if (fields.isRtlDetected && !isRtl && text) {
+			U.Data.setRtl(rootId, block, false);
+		} else
+		if ((fields.isRtlDetected || isRtl) && (block.hAlign !== I.BlockHAlign.Right)) {
+			C.BlockListSetAlign(rootId, [ id ], I.BlockHAlign.Right);
+		};
+	}, [ style ]);
+
+	const setValue = (v: string, restoreRange?: I.TextRange) => {
+		const { focused } = focus.state;
+		
+		let text = String(v || '');
+		if (text == '\n') {
+			text = '';
+		};
+
+		textRef.current = text;
+		let html = text;
+
+		if (block.isTextCode()) {
+			const lang = U.Prism.aliasMap[fields.lang] || 'plain';
+			const grammar = Prism.languages[lang];
+
+			// Zero-width spaces ride along with pasted text (AI answers are full of them).
+			// The model never keeps them — getTextValue strips them on read — so leaving
+			// them in the DOM creates characters the user cannot see but the browser can:
+			// Backspace silently eats one instead of deleting a visible character (JS-9857)
+			html = Mark.stripZws(html);
+
+			html = grammar ? Prism.highlight(html, grammar, lang) : Prism.util.encode(html) as string;
+			langRef.current?.setValue(lang);
+		} else {
+			if (!keyboard.isComposition) {
+				const parsed = Mark.fromUnicode(html, marksRef.current, false);
+
+				html = parsed.text;
+				marksRef.current = parsed.marks;
+			};
+
+			html = Mark.toHtml(html, marksRef.current);
+		};
+
+		html = html.replace(/\n/g, '<br/>');
+
+		// Add extra <br/> at end to ensure trailing newlines are visible
+		// (contenteditable collapses a single trailing <br/>)
+		// Only add when focused to avoid extra line when blurred
+		phantomNewlineRef.current = false;
+		if (text.endsWith('\n') && (focused == block.id)) {
+			html += '<br/>';
+			phantomNewlineRef.current = true;
+		};
+
+		// For code blocks, save scroll position before replacing innerHTML.
+		// Syntax highlighting replaces the entire DOM content, which causes
+		// the browser to scroll the page container when restoring the cursor.
+		let savedScrollTop: number | null = null;
+		if (block.isTextCode()) {
+			const container = U.Dom.getScrollContainer(isPopup);
+			if (container) {
+				savedScrollTop = container.scrollTop;
+			};
+		};
+
+		editableRef.current?.setValue(html);
+
+		// Restore cursor position if provided
+		if (restoreRange) {
+			editableRef.current?.setRange(restoreRange);
+		};
+
+		// Restore scroll position for code blocks
+		if (savedScrollTop !== null) {
+			const container = U.Dom.getScrollContainer(isPopup);
+			if (container) {
+				container.scrollTop = savedScrollTop;
+			};
+		};
+
+		if (!block.isTextCode() && (html != text) && marksRef.current.length) {
+			renderMarkup();
+		};
+
+		if (block.isTextTitle() || block.isTextDescription()) {
+			placeholderCheck();
+		};
+	};
+
+	const renderMarkup = () => {
+		renderMentions(rootId, nodeRef.current, marksRef.current, getTextValue);
+		renderObjects(rootId, nodeRef.current, marksRef.current, getTextValue, props);
+		renderLinks(rootId, nodeRef.current, marksRef.current, getTextValue, props);
+		renderEmoji(nodeRef.current);
+	};
+	
+	const renderLatex = () => {
+		if (block.isTextCode() || block.isTextTitle()) {
+			return;
+		};
+
+		const value = getHtmlValue();
+
+		// Skip if already contains rendered LaTeX to prevent double-processing
+		if (value.includes('<markuplatex')) {
+			return;
+		};
+
+		const html = U.Common.getLatex(value);
+
+		if (html !== value) {
+			editableRef.current.setValue(html);
+			renderMarkup();
+		};
+	};
+
+	const getTextValue = (): string => {
+		let value = String(editableRef.current?.getTextValue() || '');
+
+		// Strip phantom trailing newline: setValue() adds an extra <br/> after
+		// trailing newlines in code blocks so they remain visible in contenteditable.
+		// innerText includes that phantom <br/> as a real \n, so strip it here.
+		if (phantomNewlineRef.current && value.endsWith('\n')) {
+			value = value.slice(0, -1);
+		};
+
+		return value;
+	};
+
+	const getHtmlValue = (): string => {
+		return String(editableRef.current?.getHtmlValue() || '');
+	};
+
+	const getRange = (): I.TextRange => {
+		return editableRef.current?.getRange();
+	};
+	
+	const getMarksFromHtml = (): I.FromHtmlResult => {
+		let value = getHtmlValue();
+
+		// Strip phantom <br/> that was added to make trailing newlines visible in contenteditable
+		if (phantomNewlineRef.current) {
+			value = value.replace(/<br\/?>$/, '');
+		};
+
+		const restricted: I.MarkType[] = block.isTextHeader() ? [ I.MarkType.Bold ] : [];
+
+		return Mark.fromHtml(value, restricted);
+	};
+
+	const onInput = () => {
+		onUpdate?.();
+	};
+	
+	const onKeyDownHandler = (e: any) => {
+		e.persist();
+
+		// Flush any pending debounced text save to prevent stale overwrites
+		// when structural keys (Enter, Backspace, etc.) trigger their own save
+		window.clearTimeout(timeoutText.current);
+
+		if (S.Menu.isOpenList([ 'blockStyle', 'blockColor', 'blockBackground', 'object' ])) {
+			e.preventDefault();
+			return;
+		};
+
+		const key = e.key.toLowerCase();
+		const range = getRange();
+
+		if (!range) {
+			return;
+		};
+
+		let value = getTextValue();
+		let ret = false;
+
+		const oneSymbolBefore = range ? value[range.from - 1] : '';
+		const cmd = keyboard.cmdKey();
+
+		const menuOpen = S.Menu.isOpen('', '', [ 'onboarding', 'searchText' ]);
+		const menuOpenAdd = S.Menu.isOpen('blockAdd');
+		const menuOpenMention = S.Menu.isOpen('blockMention');
+		const menuOpenEmoji = S.Menu.isOpen('blockEmoji');
+		const menuOpenSmile = S.Menu.isOpen('smile');
+		const saveKeys: any[] = [
+			{ key: 'moveSelectionUp', preventDefault: true },
+			{ key: 'moveSelectionDown', preventDefault: true },
+			{ key: 'relation' },
+			{ key: 'duplicate', preventDefault: true },
+			{ key: 'selectAll', preventDefault: true },
+			{ key: 'back' },
+			{ key: 'forward' },
+			{ key: 'zoomIn' },
+			{ key: 'zoomOut' },
+			{ key: 'zoomReset' },
+			{ key: 'menuAction' },
+			{ key: 'pageLock' },
+			{ key: `${cmd}+v` },
+			{ key: `${cmd}+c`, preventDefault: true },
+			{ key: `${cmd}+x`, preventDefault: true },
+			{ key: `shift+space` },
+			{ key: `ctrl+shift+/` },
+			{ key: 'theme' },
+		];
+
+		for (let i = 0; i <= 9; i++) {
+			saveKeys.push({ key: `turnBlock${i}`, preventDefault: true });
+		};
+
+		// Non-code blocks: saveKeys handles save + onKeyDown for block indentation.
+		// Code blocks handle indent/outdent separately (tab characters in text).
+		if (!block.isTextCode()) {
+			saveKeys.push({ key: 'indent', preventDefault: true });
+			saveKeys.push({ key: 'outdent', preventDefault: true });
+		};
+
+		if (isInsideTable) {
+			if (!range.to) {
+				saveKeys.push({ key: `arrowleft, arrowup` });
+			};
+
+			if (range.to == value.length) {
+				saveKeys.push({ key: `arrowright, arrowdown` });
+			};
+		};
+
+		// Make div
+		const newBlock: any = { 
+			bgColor: block.bgColor,
+			content: {},
+		};
+
+		keyboard.shortcut('enter, space', e, () => {
+			if ([ '---', '—-', '***' ].includes(value)) {
+				newBlock.type = I.BlockType.Div;
+				newBlock.content.style = value == '***' ? I.DivStyle.Dot : I.DivStyle.Line;
+			};
+		});
+
+		if (newBlock.type && (!isInsideTable && !block.isTextCode())) {
+			C.BlockCreate(rootId, virtualBlock.resolve(id), I.BlockPosition.Top, newBlock, () => {
+				setValue('');
+
+				focus.set(block.id, { from: 0, to: 0 });
+				focus.apply();
+			});
+			return;
+		};
+
+		keyboard.shortcut('enter, shift+enter', e, (pressed: string) => {
+			if (menuOpen) {
+				e.preventDefault();
+				return;
+			};
+
+			// Convert ``` (+ optional language) followed by Enter into a code block
+			if ((pressed == 'enter') && block.isText() && !block.isTextCode() && !block.isTextTitle() && !block.isTextDescription()) {
+				const codeMatch = value.trim().match(/^```(\w*)$/);
+
+				if (codeMatch) {
+					const langInput = codeMatch[1] || '';
+
+					if (!langInput || Prism.languages[langInput]) {
+						e.preventDefault();
+
+						const lang = langInput || Storage.get('codeLang') || J.Constant.default.codeLang;
+
+						marksRef.current = [];
+						setValue('');
+
+						U.Data.blockSetText(rootId, block.id, '', [], true, () => {
+							// Runs after a queued materialization of the virtual placeholder — resolve the id
+							const blockId = virtualBlock.resolve(block.id);
+
+							C.BlockListSetFields(rootId, [
+								{ blockId, fields: { ...block.fields, lang } }
+							], () => {
+								C.BlockListTurnInto(rootId, [ blockId ], I.TextStyle.Code, () => {
+									focus.set(blockId, { from: 0, to: 0 });
+									focus.apply();
+								});
+							});
+						});
+
+						ret = true;
+						return;
+					};
+				};
+			};
+
+			// Handle enter manually in the code blocks to keep caret and new lines in sync
+			if (block.isTextCode() && (pressed == 'enter')) {
+				e.preventDefault();
+
+				const insert = '\n';
+				const caret = range.from + insert.length;
+				const newValue = U.String.insert(value, insert, range.from, range.to);
+				const caretRange = { from: caret, to: caret };
+
+				// Set focus range before blockSetText to avoid race condition with useEffect
+				focus.set(block.id, caretRange);
+
+				U.Data.blockSetText(rootId, block.id, newValue, marksRef.current, true, () => {
+					focus.apply();
+					onKeyDown(e, newValue, marksRef.current, caretRange, props);
+				});
+
+				ret = true;
+				return;
+			};
+
+			// Handle shift+enter manually in non-code text blocks to avoid browser
+			// contenteditable bugs (browser can incorrectly split inline elements like
+			// <markupcode> when inserting <br>)
+			if (block.isText() && !block.isTextCode() && pressed.match('shift')) {
+				e.preventDefault();
+
+				const insert = '\n';
+				const caret = range.from + insert.length;
+				const newValue = U.String.insert(value, insert, range.from, range.to);
+				const caretRange = { from: caret, to: caret };
+
+				if (range.from != range.to) {
+					marksRef.current = Mark.adjust(marksRef.current, range.from, -(range.to - range.from));
+				};
+				marksRef.current = Mark.adjust(marksRef.current, range.from, insert.length);
+
+				focus.set(block.id, caretRange);
+
+				U.Data.blockSetText(rootId, block.id, newValue, marksRef.current, true, () => {
+					focus.apply();
+				});
+
+				ret = true;
+				return;
+			};
+
+			e.preventDefault();
+
+			U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => {
+				onKeyDown(e, value, marksRef.current, range, props);
+			});
+
+			ret = true;
+		});
+
+		keyboard.shortcut('arrowleft, arrowright, arrowdown, arrowup', e, (pressed: string) => {
+			keyboard.disableContextClose(false);
+
+			const isArrowRight = pressed == 'arrowright';
+			const isArrowLeft = pressed == 'arrowleft';
+
+			// When cursor is at model boundary but DOM has ZWS to traverse, let browser handle natively
+			if (isArrowRight && (range.to == value.length) && !editableRef.current?.isAtDomEnd()) {
+				ret = true;
+			} else
+			if (isArrowLeft && !range.from && !editableRef.current?.isAtDomStart()) {
+				ret = true;
+			};
+
+			// Atomic cursor navigation over emoji/mention marks (skip when menus are open)
+			if (!menuOpen && !menuOpenMention && !menuOpenEmoji && !menuOpenSmile) {
+				const atomicTypes = [ I.MarkType.Emoji, I.MarkType.Mention ];
+				const atomicMarks = (marksRef.current || []).filter(it => atomicTypes.includes(it.type));
+				const isShift = e.shiftKey;
+
+				if (isArrowRight && atomicMarks.length) {
+					const pos = isShift ? range.to : range.from;
+					const mark = atomicMarks.find(it => (it.range.from == pos) && (it.range.to > pos));
+
+					if (mark) {
+						e.preventDefault();
+
+						const newRange = isShift
+							? { from: range.from, to: mark.range.to }
+							: { from: mark.range.to, to: mark.range.to };
+
+						editableRef.current?.setRange(newRange);
+						ret = true;
+					};
+				} else
+				if (isArrowLeft && atomicMarks.length) {
+					const pos = isShift ? range.from : range.to;
+					const mark = atomicMarks.find(it => (it.range.to == pos) && (it.range.from < pos));
+
+					if (mark) {
+						e.preventDefault();
+
+						const newRange = isShift
+							? { from: mark.range.from, to: range.to }
+							: { from: mark.range.from, to: mark.range.from };
+
+						editableRef.current?.setRange(newRange);
+						ret = true;
+					};
+				};
+			};
+		});
+
+		saveKeys.forEach((item: any) => {
+			keyboard.shortcut(item.key, e, () => {
+				if (item.preventDefault) {
+					e.preventDefault();
+				};
+
+				U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => { 
+					onKeyDown(e, value, marksRef.current, range, props);
+				});
+				ret = true;
+			});
+		});
+
+		// Code blocks: indent/outdent inserts/removes tab characters in text
+		if (block.isTextCode()) {
+			keyboard.shortcut('indent, outdent', e, (pressed: string) => {
+				e.preventDefault();
+
+				const isOutdent = pressed == 'outdent';
+				const lineStart = value.lastIndexOf('\n', range.from - 1) + 1;
+
+				let lineEnd = value.indexOf('\n', range.to);
+				if (lineEnd == -1) {
+					lineEnd = value.length;
+				};
+
+				const block_text = value.substring(lineStart, lineEnd);
+				const lines = block_text.split('\n');
+				const isMultiLine = (range.from != range.to) && (lines.length > 1);
+
+				let newValue = value;
+				let newRange = { from: range.from, to: range.to };
+
+				if (isOutdent) {
+					let firstLineAdded = 0;
+					let totalAdded = 0;
+
+					const processed = lines.map((line, i) => {
+						let removed = 0;
+
+						const match = line.match(/^ {1,4}/);
+
+						if (line.startsWith('\t')) {
+							line = line.substring(1);
+							removed = 1;
+						} else
+						if (match) {
+							const spaces = match[0].length;
+							line = line.substring(spaces);
+							removed = spaces;
+						};
+
+						if (i == 0) {
+							firstLineAdded = -removed;
+						};
+						totalAdded += -removed;
+						return line;
+					});
+
+					newValue = value.substring(0, lineStart) + processed.join('\n') + value.substring(lineEnd);
+
+					if (isMultiLine) {
+						newRange = {
+							from: Math.max(lineStart, range.from + firstLineAdded),
+							to: Math.max(lineStart, range.to + totalAdded),
+						};
+					} else {
+						const caret = Math.max(lineStart, range.from + firstLineAdded);
+						newRange = { from: caret, to: caret };
+					};
+				} else {
+					if (isMultiLine) {
+						let firstLineAdded = 0;
+						let totalAdded = 0;
+
+						const processed = lines.map((line, i) => {
+							if (i == 0) {
+								firstLineAdded = 1;
+							};
+							totalAdded += 1;
+							return '\t' + line;
+						});
+
+						newValue = value.substring(0, lineStart) + processed.join('\n') + value.substring(lineEnd);
+						newRange = {
+							from: range.from + firstLineAdded,
+							to: range.to + totalAdded,
+						};
+					} else {
+						newValue = U.String.insert(value, '\t', range.from, range.from);
+						newRange = { from: range.from + 1, to: range.from + 1 };
+					};
+				};
+
+				focus.set(block.id, newRange);
+
+				U.Data.blockSetText(rootId, block.id, newValue, marksRef.current, true, () => {
+					focus.apply();
+				});
+
+				ret = true;
+			});
+		};
+
+		keyboard.shortcut('backspace', e, () => {
+			if (range.to) {
+				const parsed = Mark.checkMarkOnBackspace(value, range, marksRef.current);
+
+				if (parsed.save) {
+					e.preventDefault();
+
+					value = parsed.text;
+					marksRef.current = parsed.marks;
+
+					U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => {
+						focus.set(block.id, parsed.range);
+						focus.apply();
+
+						onKeyDown(e, value, marksRef.current, range, props);
+					});
+					ret = true;
+				};
+			} else 
+			if (!menuOpenAdd && !menuOpenMention && !menuOpenEmoji && !range.to) {
+				if (block.canHaveMarks()) {
+					const parsed = getMarksFromHtml();
+
+					marksRef.current = parsed.marks;
+				};
+
+				U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => {
+					onKeyDown(e, value, marksRef.current, range, props);
+				});
+				ret = true;
+			};
+
+			if (menuOpenAdd && (oneSymbolBefore == '/')) {
+				S.Menu.close('blockAdd');
+			};
+
+			if (menuOpenMention && ((oneSymbolBefore == '@') || (oneSymbolBefore == '['))) {
+				S.Menu.close('blockMention');
+			};
+
+			if (menuOpenEmoji && (oneSymbolBefore == ':')) {
+				S.Menu.close('blockEmoji');
+			};
+		});
+
+		keyboard.shortcut('delete', e, () => {
+			if ((range.from == range.to) && (range.to == value.length)) {
+				U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => {
+					onKeyDown(e, value, marksRef.current, range, props);
+				});
+				ret = true;
+			};
+		});
+
+		keyboard.shortcut('menuSmile', e, () => {
+			if (menuOpenSmile || !block.canHaveMarks()) {
+				return;
+			};
+
+			e.preventDefault();
+			onSmile();
+		});
+
+		if (
+			range && 
+			(
+				(range.from != range.to) || 
+				block.isTextCode()
+			) && 
+			Object.keys(TWIN_PAIRS).includes(key)
+		) {
+			const count = value.split(key).length - 1;
+			const skipTwinPairs = [ '$' ].includes(key) && block.isTextCode();
+
+			if ((count % 2 === 0) && !skipTwinPairs) {
+				e.preventDefault();
+
+				let length = 0;
+
+				if ((key == '`') && !block.isTextCode()) {
+					marksRef.current.push({ type: I.MarkType.Code, range: { from: range.from, to: range.to } });
+				} else {
+					length = key.length;
+
+					const cut = value.slice(range.from, range.to);
+					const closing = TWIN_PAIRS[key] || key;
+
+					value = U.String.insert(value, `${key}${cut}${closing}`, range.from, range.to);
+					marksRef.current = Mark.adjust(marksRef.current, range.from - length, closing.length);
+				};
+
+				setValue(value);
+
+				focus.set(block.id, { from: range.from + length, to: range.to + length });
+				focus.apply();
+
+				ret = true;
+			};
+		};
+
+		if (ret) {
+			return;
+		};
+
+		focus.set(id, range);
+
+		if (!keyboard.isSpecial(e)) {
+			placeholderHide();
+
+			if (S.Menu.isOpen('selectPasteUrl')) {
+				S.Menu.close('selectPasteUrl');
+			};
+		};
+
+		onKeyDown(e, value, marksRef.current, range, props);
+	};
+	
+	const onKeyUpHandler = (e: any) => {
+		e.persist();
+
+		const { filter } = S.Common;
+		const range = getRange();
+
+		publishPresence(range);
+		const langCodes = Object.keys(Prism.languages).join('|');
+		const langKey = '```(' + langCodes + ')?';
+
+		const Markdown = {
+			'[\\*\\-\\+]':	 I.TextStyle.Bulleted,
+			'\\[\\]':		 I.TextStyle.Checkbox,
+			'###\\>':		 I.TextStyle.ToggleHeader3,
+			'##\\>':		 I.TextStyle.ToggleHeader2,
+			'#\\>':			 I.TextStyle.ToggleHeader1,
+			'#':			 I.TextStyle.Header1,
+			'##':			 I.TextStyle.Header2,
+			'###':			 I.TextStyle.Header3,
+			'"':			 I.TextStyle.Quote,
+			'\\>':			 I.TextStyle.Toggle,
+			'1\\.':			 I.TextStyle.Numbered,
+		};
+		Markdown[langKey] = I.TextStyle.Code;
+
+		const Length: any = {};
+
+		Length[I.TextStyle.Bulleted] = 1;
+		Length[I.TextStyle.Checkbox] = 2;
+		Length[I.TextStyle.Numbered] = 2;
+		Length[I.TextStyle.ToggleHeader1] = 2;
+		Length[I.TextStyle.ToggleHeader2] = 3;
+		Length[I.TextStyle.ToggleHeader3] = 4;
+		Length[I.TextStyle.Header1] = 1;
+		Length[I.TextStyle.Header2] = 2;
+		Length[I.TextStyle.Header3] = 3;
+		Length[I.TextStyle.Toggle] = 1;
+		Length[I.TextStyle.Quote] = 1;
+		Length[I.TextStyle.Code] = 3;
+
+		let value = getTextValue();
+		let cmdParsed = false;
+		let isAllowedMenu = !preventMenu.current && !keyboard.isSpecial(e) && !block.isTextCode() && !block.isTextTitle() && !block.isTextDescription();
+
+		const menuOpenAdd = S.Menu.isOpen('blockAdd');
+		const menuOpenMention = S.Menu.isOpen('blockMention');
+		const menuOpenEmoji = S.Menu.isOpen('blockEmoji');
+		const oneSymbolBefore = range ? value[range.from - 1] : '';
+		const twoSymbolBefore = range ? value[range.from - 2] : '';
+		const threeSymbolBefore = range ? value[range.from - 3] : '';
+		const isAllowedMenuBase = isAllowedMenu;
+
+		if (range) {
+			isAllowedMenu = isAllowedMenu && (!range.from || (range.from == 1) || [ ' ', '\n', '(', '[', '"', '\'' ].includes(twoSymbolBefore));
+		};
+
+		const canOpenMenuAdd = !menuOpenAdd && (oneSymbolBefore == '/') && isAllowedMenu;
+		const canOpenMenuMention = !menuOpenMention && (oneSymbolBefore == '@') && isAllowedMenu;
+		const canOpenMenuLink = !menuOpenMention && (oneSymbolBefore == '[') && (twoSymbolBefore == '[') && isAllowedMenu;
+		const canOpenMenuEmoji = !menuOpenEmoji && (twoSymbolBefore == ':') && /\S/.test(oneSymbolBefore) && isAllowedMenuBase && (!range || (range.from <= 2) || [ ' ', '\n', '(', '[', '"', '\'' ].includes(threeSymbolBefore));
+
+		preventMenu.current = false;
+
+		let parsed: any = {};
+		let adjustMarks = false;
+
+		if (block.canHaveMarks()) {
+			parsed = getMarksFromHtml();
+			adjustMarks = parsed.adjustMarks;
+			marksRef.current = parsed.marks;
+		} else
+		if (!block.isTextCode()) {
+			parsed = Mark.fromUnicode(value, marksRef.current, false);
+			adjustMarks = parsed.adjustMarks;
+		};
+
+		if (menuOpenAdd || menuOpenMention) {
+			window.clearTimeout(timeoutFilter.current);
+			timeoutFilter.current = window.setTimeout(() => {
+				if (!range) {
+					return;
+				};
+
+				const d = range.from - filter.from;
+
+				if (d >= 0) {
+					// Get text from filter.from to cursor
+					let part = value.substring(filter.from, filter.from + d);
+
+					// Also include the word after cursor (for when @ is typed before existing text)
+					if (menuOpenMention) {
+						const textAfterCursor = value.substring(filter.from + d);
+						const wordMatch = textAfterCursor.match(/^([^\s\n]*)/);
+						if (wordMatch) {
+							part += wordMatch[1];
+						};
+					};
+
+					part = part.replace(/^\//, '');
+					S.Common.filterSetText(part);
+				};
+			}, 30);
+			return;
+		};
+
+		if (menuOpenEmoji) {
+			window.clearTimeout(timeoutFilter.current);
+			timeoutFilter.current = window.setTimeout(() => {
+				if (!range) {
+					return;
+				};
+
+				const d = range.from - filter.from;
+
+				if (d >= 0) {
+					const part = value.substring(filter.from, filter.from + d).replace(/^:/, '');
+
+					if (part.includes(' ')) {
+						S.Menu.close('blockEmoji');
+					} else {
+						S.Common.filterSetText(part);
+					};
+				};
+			}, 30);
+			return;
+		};
+
+		// Open add menu
+		if (canOpenMenuAdd && (!isInsideTable && !block.isTextCode())) { 
+			U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => {
+				onMenuAdd(id, U.String.cut(value, range.from - 1, range.from), range, marksRef.current);
+			});
+			return;
+		};
+
+		// Open mention menu
+		if (canOpenMenuMention) {
+			U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => onMention(1));
+			return;
+		};
+
+		// Open link menu
+		if (canOpenMenuLink) {
+			U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => onMention(2));
+			return;
+		};
+
+		// Open emoji menu
+		if (canOpenMenuEmoji) {
+			U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => onEmojiSearch());
+			return;
+		};
+
+		// Parse markdown commands
+		if (block.canHaveMarks() && (!isInsideTable && !block.isTextCode())) {
+			for (const k in Markdown) {
+				let newStyle = Markdown[k];
+
+				if (newStyle == content.style) {
+					continue;
+				};
+
+				if (block.isTextHeader() && (newStyle == I.TextStyle.Numbered)) {
+					continue;
+				};
+
+				const reg = new RegExp(`^(${k}\\s)`);
+				const match = value.match(reg);
+
+				if (!match) {
+					continue;
+				};
+
+				// If current block is a toggle, heading markdown should create toggle headings
+				if (block.isTextToggle()) {
+					const toggleMap = {
+						[I.TextStyle.Header1]: I.TextStyle.ToggleHeader1,
+						[I.TextStyle.Header2]: I.TextStyle.ToggleHeader2,
+						[I.TextStyle.Header3]: I.TextStyle.ToggleHeader3,
+					};
+
+					if (toggleMap[newStyle]) {
+						newStyle = toggleMap[newStyle];
+					};
+				};
+
+				if (block.isTextHeader() && (newStyle == I.TextStyle.Toggle)) {
+					const toggleMap = {
+						[I.TextStyle.Header1]: I.TextStyle.ToggleHeader1,
+						[I.TextStyle.Header2]: I.TextStyle.ToggleHeader2,
+						[I.TextStyle.Header3]: I.TextStyle.ToggleHeader3,
+					};
+
+					if (toggleMap[block.content.style]) {
+						newStyle = toggleMap[block.content.style];
+					};
+				};
+
+				// If emoji or code markup is first do not count one space character in mark adjustment
+				const isFirstEmoji = Mark.getInRange(marksRef.current, I.MarkType.Emoji, { from: Length[newStyle], to: Length[newStyle] + 1 });
+				const isFirstCode = Mark.getInRange(marksRef.current, I.MarkType.Code, { from: 0, to: 0 });
+				if (isFirstEmoji || isFirstCode) {
+					continue;
+				};
+
+				value = value.replace(reg, (s: string, p: string) => s.replace(p, ''));
+
+				marksRef.current = (newStyle == I.TextStyle.Code) ? [] : Mark.adjust(marksRef.current, 0, -(Length[newStyle] + 1));
+				setValue(value);
+
+				U.Data.blockSetText(rootId, id, value, marksRef.current, true, () => {
+					// Runs after a queued materialization of the virtual placeholder — resolve the id
+					const blockId = virtualBlock.resolve(id);
+
+					const finishTurnInto = () => {
+						C.BlockListTurnInto(rootId, [ blockId ], newStyle, () => {
+							focus.set(blockId, { from: 0, to: 0 });
+							focus.apply();
+						});
+
+						if ([ I.TextStyle.Toggle, I.TextStyle.ToggleHeader1, I.TextStyle.ToggleHeader2, I.TextStyle.ToggleHeader3 ].includes(newStyle)) {
+							S.Block.toggle(rootId, blockId, true);
+						};
+					};
+
+					if (newStyle == I.TextStyle.Code) {
+						const lang = match[2] || Storage.get('codeLang') || J.Constant.default.codeLang;
+
+						C.BlockListSetFields(rootId, [
+							{ blockId, fields: { ...block.fields, lang } }
+						], finishTurnInto);
+					} else {
+						finishTurnInto();
+					};
+				});
+
+				cmdParsed = true;
+				break;
+			};
+		};
+		
+		if (cmdParsed) {
+			S.Menu.close('blockAdd');
+			return;
+		};
+
+		let ret = false;
+		let diff = 0;
+
+		keyboard.shortcut('backspace, delete', e, () => { 
+			S.Menu.close('blockContext'); 
+			ret = true;
+		});
+
+		keyboard.shortcut('alt+backspace', e, () => { 
+			diff += textRef.current.length - value.length;
+		});
+
+		placeholderCheck();
+
+		const text = parsed.text ?? value;
+
+		// When typing space adjust several markups to break it
+		keyboard.shortcut('space', e, () => {
+			const d = text.length - textRef.current.length;
+
+			if (d > 0) {
+				for (let i = 0; i < marksRef.current.length; ++i) {
+					const mark = marksRef.current[i];
+
+					if (Mark.needsBreak(mark.type) && (mark.range.to == range.to)) {
+						const adjusted = Mark.adjust([ mark ], mark.range.to - d, -d);
+
+						marksRef.current[i] = adjusted[0];
+						adjustMarks = true;
+					};
+				};
+			};
+		});
+
+		if (!ret && (adjustMarks || (value != text))) {
+			setValue(text);
+
+			const { focused, range } = focus.state;
+
+			diff += value.length - text.length;
+
+			focus.set(focused, { from: range.from - diff, to: range.to - diff });
+			focus.apply();
+
+			// After markdown auto-conversion the caret lands on the closing tag
+			// boundary and the browser keeps typing inside the new mark — move it
+			// past the trailing ZWS anchor so continued typing stays unformatted
+			const editable = U.Dom.select('.editable', editableRef.current?.getNode());
+			if (editable) {
+				Mark.escapeMarkBoundary(editable);
+			};
+		};
+
+		window.clearTimeout(timeoutText.current);
+
+		if (!keyboard.isComposition && virtualBlock.shouldFork(rootId, block, value)) {
+			// First content into an empty block forks the block identity via
+			// BlockReplace — fire the save immediately so the fork happens on the
+			// first keystroke; further keyups are buffered against the fork
+			setText(marksRef.current, false);
+		} else {
+			// Debounce the gRPC save so rapid typing doesn't saturate the main thread
+			// with synchronous middleware round-trips. The contenteditable DOM already
+			// reflects the user's input natively — we only need to persist periodically.
+			timeoutText.current = window.setTimeout(() => {
+				setText(marksRef.current, false);
+			}, 300);
+		};
+
+		onKeyUp(e, value, marksRef.current, range, props);
+
+		if (!keyboard.isSpecial(e) && !keyboard.withCommand(e)) {
+			focus.scroll(isPopup, id);
+		};
+	};
+
+	const onMention = (d: number) => {
+		// This instance may already be unmounted when a queued trigger runs after
+		// an id fork/materialization — the swap left the correct range in the
+		// focus state
+		const range = getRange() || focus.state.range;
+		if (!range) {
+			return;
+		};
+
+		// May run after a queued materialization of the virtual placeholder
+		const blockId = virtualBlock.resolve(block.id);
+		const element = `#block-${U.Common.esc(blockId)}`;
+
+		let value = getTextValue();
+
+		// Extract the word after the cursor to use as initial filter (for when @ is typed before existing text)
+		const textAfterCursor = value.substring(range.from);
+		const wordMatch = textAfterCursor.match(/^([^\s\n]*)/);
+		const nextWord = wordMatch ? wordMatch[1] : '';
+
+		value = U.String.cut(value, range.from - d, range.from);
+
+		S.Common.filterSet(range.from - d, nextWord);
+
+		raf(() => {
+			S.Menu.open('blockMention', {
+				classNameWrap: 'fromBlock',
+				element,
+				recalcRect: () => {
+					const rect = U.Dom.getSelectionRect();
+					return rect ? { ...rect, y: rect.y + window.scrollY } : null;
+				},
+				offsetX: () => {
+					const rect = U.Dom.getSelectionRect();
+					return rect ? 0 : J.Size.blockMenu;
+				},
+				noFlipX: false,
+				noFlipY: false,
+				data: {
+					rootId,
+					blockId,
+					marks: marksRef.current,
+					skipIds: [ rootId ],
+					canAdd: true,
+					withCaption: true,
+					onChange: (object: any, text: string, marks: I.Mark[], from: number, to: number) => {
+						if (S.Menu.isAnimating('blockMention')) {
+							return;
+						};
+
+						value = U.String.insert(value, text, from, from);
+
+						U.Data.blockSetText(rootId, block.id, value, marks, true, () => {
+							// Try to fix async detailsUpdate event
+							focus.setWithTimeout(block.id, { from: to, to }, 500);
+						});
+					},
+				},
+			});
+		});
+	};
+
+	const onEmojiSearch = () => {
+		// See onMention: the instance may be unmounted when a queued trigger runs
+		const range = getRange() || focus.state.range;
+		if (!range) {
+			return;
+		};
+
+		// May run after a queued materialization of the virtual placeholder
+		const blockId = virtualBlock.resolve(block.id);
+
+		let value = getTextValue();
+
+		const firstChar = value.charAt(range.from - 1);
+
+		value = U.String.cut(value, range.from - 2, range.from);
+		S.Common.filterSet(range.from - 2, firstChar);
+
+		S.Menu.open('blockEmoji', {
+			classNameWrap: 'fromBlock',
+			element: `#block-${U.Common.esc(blockId)}`,
+			recalcRect: () => {
+				const rect = U.Dom.getSelectionRect();
+				return rect ? { ...rect, y: rect.y + window.scrollY } : null;
+			},
+			offsetX: () => {
+				const rect = U.Dom.getSelectionRect();
+				return rect ? 0 : J.Size.blockMenu;
+			},
+			noFlipX: false,
+			noFlipY: false,
+			data: {
+				rootId,
+				blockId,
+				marks: marksRef.current,
+				onChange: (native: string, marks: I.Mark[], from: number, to: number) => {
+					if (S.Menu.isAnimating('blockEmoji')) {
+						return;
+					};
+
+					marksRef.current = marks;
+					value = U.String.insert(value, ' ', from, from);
+
+					U.Data.blockSetText(rootId, block.id, value, marks, true, () => {
+						focus.setWithTimeout(block.id, { from: to, to }, 30);
+					});
+				},
+			},
+		});
+	};
+
+	const onSmile = () => {
+		const range = getRange();
+		const blockId = virtualBlock.resolve(block.id);
+
+		let value = getTextValue();
+
+		S.Menu.open('smile', {
+			element: `#block-${U.Common.esc(blockId)}`,
+			classNameWrap: 'fromBlock',
+			recalcRect: () => {
+				const rect = U.Dom.getSelectionRect();
+				return rect ? { ...rect, y: rect.y + window.scrollY } : null;
+			},
+			offsetX: () => {
+				const rect = U.Dom.getSelectionRect();
+				return rect ? 0 : J.Size.blockMenu;
+			},
+			data: {
+				value: (iconEmoji || iconImage || ''),
+				noHead: true,
+				rootId,
+				blockId,
+				onSelect: (icon: string) => {
+					const to = range.from + 1;
+
+					marksRef.current = Mark.adjust(marksRef.current, range.from, 1);
+					marksRef.current = Mark.toggle(marksRef.current, { 
+						type: I.MarkType.Emoji, 
+						param: icon, 
+						range: { from: range.from, to },
+					});
+
+					value = U.String.insert(value, ' ', range.from, range.from);
+
+					U.Data.blockSetText(rootId, block.id, value, marksRef.current, true, () => {
+						focus.setWithTimeout(block.id, { from: to, to }, 30);
+					});
+				},
+				route: analytics.route.shortcut,
+			},
+		});
+	};
+
+	const setText = (marks: I.Mark[], update: boolean, callBack?: () => void) => {
+		const value = getTextValue();
+
+		if (content.style == I.TextStyle.Code) {
+			marks = [];
+		};
+
+		if ((textRef.current === value) && !update) {
+			callBack?.();
+			return;
+		};
+
+		textRef.current = value;
+
+		// Track in-flight saves and their values so the store-echo suppression in
+		// the render effect can tell a stale echo of an earlier save from a genuine
+		// remote change (JS-9285). Echoes are always applied by the dispatcher
+		// before the command callback fires, so clearing on the last callback is safe
+		sentTextsRef.current.push(value);
+		pendingSavesRef.current++;
+
+		const onSave = () => {
+			pendingSavesRef.current = Math.max(0, pendingSavesRef.current - 1);
+			if (!pendingSavesRef.current) {
+				sentTextsRef.current = [];
+			};
+			callBack?.();
+		};
+
+		const isRtl = U.String.checkRtl(value);
+
+		if (isRtl != checkRtl) {
+			// Save text first so intermediate re-renders from setRtl have the correct text in store,
+			// preventing character loss and stale CSS direction
+			U.Data.blockSetText(rootId, block.id, value, marks, update, () => {
+				U.Data.setRtl(rootId, block, isRtl, onSave);
+			});
+		} else {
+			U.Data.blockSetText(rootId, block.id, value, marks, update, onSave);
+		};
+	};
+	
+	// An empty block is not worth announcing: the first keystroke can replace it (the
+	// trailing placeholder materializes into a real block), so a chip and a carriage
+	// would point at a block that is about to stop existing. Presence starts with the
+	// first character instead — presence.carriage arms it.
+	const canPublishPresence = (): boolean => {
+		return !virtualBlock.isVirtualId(block.id) && !!String(getTextValue() || '').length;
+	};
+
+	const publishPresence = (range: I.TextRange) => {
+		if (canPublishPresence()) {
+			presence.carriage(rootId, block.id, range);
+		} else {
+			presence.blurBlock(rootId, block.id);
+		};
+	};
+
+	const onFocusHandler = (e: any) => {
+		e.persist();
+
+		placeholderCheck();
+		keyboard.setFocus(true);
+
+		if (canPublishPresence()) {
+			presence.focusBlock(rootId, block.id, getRange());
+		};
+
+		onFocus?.(e);
+
+		// Calculate correct caret position accounting for rendered LaTeX elements
+		window.setTimeout(() => {
+			// If focus was already programmatically set to this block (e.g., after merge),
+			// trust that range instead of reading from browser (which may be stale)
+			if (focus.state.focused === block.id && focus.state.range) {
+				// Only restore source text if there's rendered LaTeX that needs converting back for editing
+				const html = getHtmlValue();
+				if (html.includes('<markuplatex')) {
+					const currentBlock = S.Block.getLeaf(rootId, id);
+					if (currentBlock) {
+						setValue(currentBlock.getText());
+					};
+				};
+
+				focus.apply();
+				return;
+			};
+
+			const selection = window.getSelection();
+
+			let range = getRange();
+
+			if (selection && selection.rangeCount > 0) {
+				const selRange = selection.getRangeAt(0);
+				const editable = U.Dom.select('.editable', editableRef.current?.getNode());
+
+				if (editable && editable.contains(selRange.startContainer)) {
+					let from = U.Dom.getSelectionOffsetWithLatex(editable, selRange.startContainer, selRange.startOffset);
+					let to = selRange.collapsed ? from : U.Dom.getSelectionOffsetWithLatex(editable, selRange.endContainer, selRange.endOffset);
+
+					// Convert DOM offsets to model offsets (strip ZWS cursor anchors)
+					if (Mark.hasZws(editable)) {
+						from = Mark.domToModel(from, editable);
+						to = Mark.domToModel(to, editable);
+					};
+
+					range = { from, to };
+				};
+			};
+
+			// Only restore source text if there's rendered LaTeX that needs converting back for editing
+			const html = getHtmlValue();
+			if (html.includes('<markuplatex')) {
+				const currentBlock = S.Block.getLeaf(rootId, id);
+				if (currentBlock) {
+					setValue(currentBlock.getText());
+				};
+			};
+
+			focus.set(block.id, range);
+			focus.apply();
+		}, 0);
+	};
+	
+	const onBlurHandler = (e: any) => {
+		// Don't clear focus when a from-block menu is open
+		// (e.g., OS keyboard layout switch triggers window blur on Linux)
+		if (S.Menu.isOpenList([ 'blockAdd', 'blockMention', 'blockEmoji' ])) {
+			return;
+		};
+
+		if (block.isTextTitle() || block.isTextDescription()) {
+			placeholderCheck();
+		} else {
+			placeholderHide();
+		};
+
+		// Flush any pending debounced save before the immediate save on blur
+		window.clearTimeout(timeoutText.current);
+		setText(marksRef.current, true);
+		focus.clear(true);
+		presence.blurBlock(rootId, block.id);
+		onBlur?.(e);
+
+		let key = '';
+		if (block.isTextTitle()) {
+			key = 'SetObjectTitle';
+		};
+		if (block.isTextDescription()) {
+			key = 'SetObjectDescription';
+		};
+		if (key) {
+			analytics.event(key);
+		};
+
+		renderLatex();
+	};
+	
+	const onPasteHandler = (e: any) => {
+		e.persist();
+		e.preventDefault();
+		e.stopPropagation();
+
+		preventMenu.current = true;
+
+		// Extract clipboard data synchronously because the browser clears
+		// e.clipboardData after the event handler returns
+		const cb = e.clipboardData;
+		const data: any = {
+			text: U.String.normalizeLineEndings(String(cb?.getData('text/plain') || '')),
+			html: String(cb?.getData('text/html') || ''),
+			anytype: JSON.parse(String(cb?.getData('application/json') || '{}')),
+			files: [],
+		};
+		
+		data.anytype.range = data.anytype.range || { from: 0, to: 0 };
+
+		const files = cb?.items ? U.Common.getDataTransferFiles(cb.items) : [];
+		const pasteWithData = (pasteData: any) => {
+			setText(marksRef.current, true, () => {
+				onPaste(e, props, pasteData);
+			});
+		};
+
+		if (files.length) {
+			U.Common.saveClipboardFiles(files, data, pasteWithData);
+		} else {
+			pasteWithData(data);
+		};
+	};
+	
+	const onCheckbox = () => {
+		if (readonly) {
+			return;
+		};
+
+		focus.clear(true);
+		C.BlockTextSetChecked(rootId, id, !checked);
+	};
+	
+	const onLang = (v: string) => {
+		if (readonly) {
+			return;
+		};
+
+		const length = block.getLength();
+
+		C.BlockListSetFields(rootId, [
+			{ blockId: id, fields: { ...fields, lang: v } },
+		], () => {
+			Storage.set('codeLang', v);
+			focus.setWithTimeout(block.id, { from: length, to: length }, 30);
+		});
+	};
+
+	const onToggleWrap = () => {
+		C.BlockListSetFields(rootId, [
+			{ blockId: id, fields: { ...fields, isUnwrapped: !fields.isUnwrapped } },
+		]);
+	};
+
+	const onCopy = () => {
+		const length = block.getLength();
+
+		C.BlockCopy(rootId, [ block ], { from: 0, to: length }, null, (message: any) => {
+			const text = String(message.textSlot || '').replace(/\n+$/, '');
+
+			U.Common.clipboardCopy({
+				text,
+				html: message.htmlSlot,
+				anytype: {
+					range: { from: 0, to: length },
+					blocks: [ block ],
+				},
+			});
+
+			Preview.toastShow({ text: translate('toastCopyBlock') });
+		});
+	};
+	
+	const onSelect = () => {
+		if (keyboard.isContextDisabled || keyboard.isComposition) {
+			return;
+		};
+
+		const selection = S.Common.getRef('selectionProvider');
+
+		// Cross-block text selection is handled by the selection provider
+		if (selection?.isCrossSelecting() || selection?.getTextSelection()) {
+			return;
+		};
+
+		const ids = selection?.getForClick('', false, true) || [];
+		const range = getRange();
+		const value = getTextValue();
+
+		focus.set(block.id, range);
+		publishPresence(range);
+
+		if (readonly || S.Menu.isOpen('selectPasteUrl')) {
+			return;
+		};
+
+		const currentFrom = focus.state.range.from;
+		const currentTo = focus.state.range.to;
+		const el = `#block-${U.Common.esc(block.id)}`;
+
+		if (!currentTo || (currentFrom == currentTo) || !block.canHaveMarks() || ids.length) {
+			if (S.Menu.isOpen('blockContext') && !keyboard.isContextCloseDisabled) {
+				S.Menu.close('blockContext');
+			};
+			return;
+		};
+
+		keyboard.setFocus(true);
+		S.Menu.closeAll([ 'blockAdd', 'blockMention' ]);
+
+		S.Common.setTimeout('blockContext', 150, () => {
+			const onChange = (marks: I.Mark[]) => {
+				setValue(value);
+				marksRef.current = marks;
+
+				U.Data.blockSetText(rootId, block.id, getTextValue(), marksRef.current, true, () => {
+					focus.set(block.id, { from: currentFrom, to: currentTo });
+					focus.apply();
+				});
+			};
+
+			if (S.Menu.isOpen('blockContext')) {
+				S.Menu.updateData('blockContext', { 
+					range: { from: currentFrom, to: currentTo },
+					marks: marksRef.current,
+					onChange,
+				});
+				return;
+			};
+
+			if (keyboard.isContextOpenDisabled) {
+				return;
+			};
+
+			window.clearTimeout(timeoutText.current);
+			setText(marksRef.current, false, () => {
+				S.Menu.open('blockContext', {
+					classNameWrap: 'fromBlock',
+					element: el,
+					recalcRect: () => {
+						const rect = U.Dom.getSelectionRect();
+						return rect ? { ...rect, y: rect.y + window.scrollY } : null;
+					},
+					type: I.MenuType.Horizontal,
+					offsetY: -8,
+					horizontal: I.MenuDirection.Center,
+					vertical: I.MenuDirection.Top,
+					noFlipY: true,
+					noBorderY: true,
+					passThrough: true,
+					onClose: () => keyboard.disableContextClose(false),
+					data: {
+						blockId: block.id,
+						blockIds: [ block.id ],
+						rootId,
+						range: { from: currentFrom, to: currentTo },
+						marks: marksRef.current,
+						isInsideTable,
+						onChange,
+					},
+				});
+
+				window.setTimeout(() => {
+					const pageContainer = U.Dom.getPageFlexContainer(isPopup);
+					const onMouseDown = () => {
+						if (pageContainer) {
+							U.Dom.removeEvent(pageContainer, 'mousedown', onMouseDown);
+						};
+						S.Menu.close('blockContext');
+					};
+
+					if (pageContainer) {
+						U.Dom.addEvent(pageContainer, 'mousedown', onMouseDown);
+					};
+				}, S.Menu.getTimeout());
+			});
+		});
+	};
+	
+	const onMouseDown = (e: any) => {
+		window.clearTimeout(timeoutClick.current);
+
+		clickCnt.current++;
+		if (clickCnt.current == 3) {
+			e.preventDefault();
+			e.stopPropagation();
+
+			S.Menu.closeAll([ 'blockContext' ], () => {
+				clickCnt.current = 0;
+
+				focus.set(block.id, { from: 0, to: block.getLength() });
+				focus.apply();
+			});
+		};
+	};
+	
+	const onMouseUp = () => {
+		window.clearTimeout(timeoutClick.current);
+		timeoutClick.current = window.setTimeout(() => clickCnt.current = 0, 300);
+	};
+
+	const onSelectIcon = (icon: string) => {
+		C.BlockTextSetIcon(rootId, block.id, icon, '');
+		Storage.set('calloutIcon', icon);
+	};
+
+	const onUploadIcon = (objectId: string) => {
+		C.BlockTextSetIcon(rootId, block.id, '', objectId);
+	};
+	
+	const placeholderCheck = () => {
+		if (!readonly) {
+			editableRef.current?.placeholderCheck();
+		};
+	};
+
+	const placeholderHide = () => {
+		editableRef.current?.placeholderHide();
+	};
+
+	const onCompositionEnd = (e: any, value: string, range: I.TextRange) => {
+		// Use provided value and range if available, fallback to current
+		const v = value !== undefined ? value : getTextValue();
+		const r = range !== undefined ? range : getRange();
+
+		if (block.canHaveMarks() && r) {
+			const diff = v.length - textRef.current.length;
+
+			if (diff !== 0) {
+				// Adjust marks based on text length change at insertion point.
+				// We avoid re-reading marks from DOM HTML because during IME composition
+				// the browser may insert text inside mark elements (e.g., <markupcode>),
+				// causing marks to incorrectly expand and shift their visual position.
+				const insertStart = r.from - Math.max(0, diff);
+				marksRef.current = Mark.adjust(marksRef.current, insertStart, diff);
+			};
+		};
+
+		setValue(v, r);
+
+		// Dead-key layouts commit markdown symbols (e.g. the closing backtick)
+		// through an IME composition, so the keyup-driven markdown conversion can
+		// miss the commit or run with a stale focus range. Re-run the conversion
+		// on the settled value, using the fresh composition range for the caret
+		// math (JS-9071)
+		if (block.canHaveMarks() && r) {
+			const parsed = getMarksFromHtml();
+
+			marksRef.current = parsed.marks;
+
+			if (parsed.adjustMarks || (parsed.text != v)) {
+				const diff = v.length - parsed.text.length;
+				const next = { from: Math.max(0, r.from - diff), to: Math.max(0, r.to - diff) };
+
+				setValue(parsed.text, next);
+				focus.set(block.id, next);
+
+				// Move the caret past the trailing ZWS anchor so continued typing
+				// stays unformatted (same as the keyup conversion path)
+				const editable = U.Dom.select('.editable', editableRef.current?.getNode());
+				if (editable) {
+					Mark.escapeMarkBoundary(editable);
+				};
+			};
+		};
+	};
+
+	const onBeforeInput = (e: any) => {
+		if (block.isTextCode()) {
+			return;
+		};
+
+		if (!/<(font|span)/.test(getHtmlValue())) {
+			return;
+		};
+
+		// Clean browser-inserted font/span tags (e.g. from umlaut/IME input).
+		// Must re-read html AFTER the input is processed (inside raf), otherwise
+		// the cleanup restores pre-input html and undoes the user's edit.
+		raf(() => {
+			let html = getHtmlValue();
+
+			if (!/<(font|span)/.test(html)) {
+				return;
+			};
+
+			const range = getRange();
+
+			html = html.replace(/<\/?font[^>]*>/g, '');
+			html = html.replace(/<span[^>]*>(.*?)<\/span>/g, '$1');
+
+			editableRef.current?.setValue(html);
+
+			if (range) {
+				editableRef.current?.setRange(range);
+			};
+		});
+	};
+
+	let marker: any = null;
+	let markerIcon = null;
+	let placeholder = translate('placeholderBlock');
+	let additional = null;
+	let spellcheck = true;
+
+	if (color) {
+		cv.push(`textColor textColor-${color}`);
+	};
+
+	if (isRtlFromText) {
+		cn.push('isRtl');
+	};
+
+	// Subscriptions
+	for (const mark of marks) {
+		if ([ I.MarkType.Mention ].includes(mark.type)) {
+			const object = S.Detail.get(rootId, mark.param, []);
+		};
+	};
+
+	switch (style) {
+		case I.TextStyle.Title: {
+			placeholder = translate('defaultNamePage');
+
+			if (root && U.Object.isTaskLayout(root.layout)) {
+				markerIcon = (
+					<IconObject 
+						object={{ id: rootId, layout: root.layout, done: checked }} 
+						size={30} 
+						iconSize={30}
+						canEdit={!readonly}
+						onCheckbox={onCheckbox}
+					/>
+				);
+			};
+			break;
+		};
+
+		case I.TextStyle.Description: {
+			placeholder = translate('placeholderBlockDescription');
+			break;
+		};
+
+		case I.TextStyle.Callout: {
+			additional = (
+				<IconObject 
+					id={`block-${id}-icon`}
+					object={{ iconEmoji: (iconImage ? '' : (iconEmoji || ':bulb:')), iconImage, layout: I.ObjectLayout.Page }} 
+					canEdit={!readonly}
+					iconSize={20}
+					onSelect={onSelectIcon} 
+					onUpload={onUploadIcon}
+					noRemove={true}
+				/>
+			);
+			break;
+		};
+			
+		case I.TextStyle.Code: {
+			spellcheck = false;
+			
+			additional = (
+				<>
+					<Select 
+						id={`lang-${id}`} 
+						arrowClassName="light" 
+						value={fields.lang || J.Constant.default.codeLang} 
+						ref={langRef}
+						options={U.Menu.codeLangOptions()} 
+						onChange={onLang}
+						noFilter={false} 
+						readonly={readonly}
+					/>
+
+					<div className="buttons">
+						<div className="btn" onClick={onToggleWrap}>
+							<Icon name="menu/action/wrap" className="codeWrap" />
+							<div className="txt">{fields.isUnwrapped ? translate('blockTextWrap') : translate('blockTextUnwrap')}</div>
+						</div>
+
+						<div className="btn" onClick={onCopy}>
+							<Icon name="menu/action/copy" className="copy" />
+							<div className="txt">{translate('commonCopy')}</div>
+						</div>
+					</div>
+				</>
+			);
+			break;
+		};
+			
+		case I.TextStyle.Bulleted: {
+			marker = { type: I.MarkerType.Bulleted };
+			break;
+		};
+			
+		case I.TextStyle.Numbered: {
+			marker = { type: I.MarkerType.Numbered };
+			break;
+		};
+			
+		case I.TextStyle.Toggle:
+		case I.TextStyle.ToggleHeader1:
+		case I.TextStyle.ToggleHeader2:
+		case I.TextStyle.ToggleHeader3: {
+			marker = { type: I.MarkerType.Toggle, onMouseDown: onToggle };
+			break;
+		};
+
+		case I.TextStyle.Checkbox: {
+			marker = { type: I.MarkerType.Checkbox, active: checked, onMouseDown: onCheckbox };
+			break;
+		};
+
+	};
+
+	if (carriages.length) {
+		cn.push('withPresence');
+	};
+
+	return (
+		<div
+			ref={nodeRef}
+			className={cn.join(' ')}
+		>
+			<div className="markers">
+				{marker ? <Marker {...marker} id={id} color={color} readonly={readonly} /> : ''}
+				{markerIcon}
+			</div>
+
+			{additional ? <div className="additional">{additional}</div> : ''}
+
+			{carriages.map((it: any) => (
+				<div key={it.id} className="presenceCarriage" style={it.style} />
+			))}
+
+			<Editable 
+				ref={editableRef}
+				id="value"
+				classNameEditor={cv.join(' ')}
+				classNamePlaceholder={`c${id}`}
+				readonly={readonly}
+				spellcheck={spellcheck}
+				placeholder={placeholder}
+				onKeyDown={onKeyDownHandler}
+				onKeyUp={onKeyUpHandler}
+				onFocus={onFocusHandler}
+				onBlur={onBlurHandler}
+				onSelect={onSelect}
+				onPaste={onPasteHandler}
+				onMouseDown={onMouseDown}
+				onMouseUp={onMouseUp}
+				onInput={onInput}
+				onDragStart={e => e.preventDefault()}
+				onCompositionEnd={onCompositionEnd}
+				onBeforeInput={onBeforeInput}
+			/>
+		</div>
+	);
+
+});
+
+export default BlockText;

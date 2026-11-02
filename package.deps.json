@@ -1,0 +1,62 @@
+[
+	"electron.js",
+	"electron/js/**/*",
+	"electron/json/*",
+	"electron/env.json",
+	"electron/img/*",
+	"electron/img/icons/*",
+	"build",
+	"!dist/*",
+	"dist/index.html",
+	"dist/tabs.html",
+	"dist/embed/**/*",
+	"dist/challenge/**/*",
+	"dist/lib/**/*",
+	"!dist/lib/pb/**/*",
+	"!dist/lib/pkg/**/*",
+	"!dist/lib/protos/**/*",
+	"dist/img/**/*",
+	"dist/css/**/*",
+	"dist/js/**/*",
+	"dist/audio/**/*",
+	"dist/assets/**/*",
+	"dist/*.js",
+	"!dist/js/main.js.map",
+	"dist/anytypeHelper.exe",
+	"dist/anytypeHelper",
+	"dist/nativeMessagingHost.exe",
+	"dist/nativeMessagingHost",
+	"dist/*.node",
+	"dist/cmaps/**/*",
+	"dist/font/**/*",
+	"dist/workers/**/*",
+	"!node_modules/**/*",
+	{
+		"from": "node_modules/lodash.isequal",
+		"to": "node_modules/lodash.isequal"
+	},
+	{
+		"from": "node_modules/lodash.escaperegexp",
+		"to": "node_modules/lodash.escaperegexp"
+	},
+	{
+		"from": "node_modules/@electron/remote",
+		"to": "node_modules/@electron/remote"
+	},
+	{
+		"from": "node_modules/file-type",
+		"to": "node_modules/file-type"
+	},
+	{
+		"from": "node_modules/regedit",
+		"to": "node_modules/regedit"
+	},
+	{
+		"from": "node_modules/mime-types",
+		"to": "node_modules/mime-types"
+	},
+	{
+		"from": "node_modules/pako",
+		"to": "node_modules/pako"
+	}
+]

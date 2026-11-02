@@ -1,0 +1,55 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuBlockAdd { width: var(--menu-width-set) !important; }
+	.menu.menuBlockAdd {
+		.content { padding: 0px; max-height: unset; }
+		.wrap { height: 100%; }
+		.items { height: 100%; }
+
+		.sectionName { padding: 0px 14px 4px 14px; }
+		.sectionName::before { content: ""; display: block; width: 100%; height: 1px; margin: 8px 0px 11px 0px; background: var(--color-shape-secondary); }
+		.sectionName.first { padding-top: 4px; }
+		.sectionName.first::before { display: none; }
+
+		.info { @include text-overflow-nw; line-height: 20px; border-radius: 4px; transition: background $transitionCommon; flex-shrink: 0; }
+
+		.item { padding: 0px 16px; display: flex; flex-direction: row; align-items: center; }
+		.item {
+			&.sides { gap: 0px 6px; }
+			&.sides {
+				.info { width: 154px; }
+			}
+
+			&.empty { padding-top: 16px; padding-bottom: 16px; @include text-small; }
+			&.empty::before { display: none; }
+
+			&::before { transition: none; }
+
+			.icon.plus { margin-right: 4px; }
+		}
+
+		.cell { width: calc(100% - 160px); white-space: nowrap; }
+		.cell.c-select {
+			.tagItem { margin-bottom: 0px; vertical-align: middle; }
+		}
+
+		.cellContent { overflow: hidden; height: 20px; line-height: 20px; }
+		.cellContent {
+			.empty { display: block; }
+		}
+
+		.cellContent.c-longText {
+			.name { @include clamp1; }
+		}
+
+}
+}
+
+html.platformWindows, html.platformLinux {
+	.menus {
+		.menu.menuBlockAdd {
+			.ReactVirtualized__List { overflow-y: overlay !important; }
+		}
+	}
+}

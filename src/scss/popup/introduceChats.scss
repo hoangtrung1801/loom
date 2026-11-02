@@ -1,0 +1,186 @@
+@import "~scss/_mixins";
+
+$elementsTransition: opacity 0.2s linear;
+
+.popups {
+    .popup.popupIntroduceChats {
+        .innerWrap { background: var(--color-shape-tertiary); width: 768px; height: 600px; border-radius: 20px; overflow: hidden; }
+
+        .steps { transition: margin-left 0.6s cubic-bezier(0.78, 0, 0.39, 1); display: flex; align-items: center; text-align: center; }
+        .steps.s1 { margin-left: -100%; }
+        .steps {
+            .step0 { position: relative; display: flex; flex-direction: column; align-items: center; width: 768px; height: 600px; padding-top: 45px; flex-shrink: 0; }
+            .step0.init {
+                .chat { top: 380px; }
+            }
+            .step0 {
+                .chat {
+                    position: absolute; z-index: 0; left: 50%; margin-left: -164px; width: 328px; height: 312px; top: 44px;
+                    background: url('~img/icon/onboarding/chats/feed.png'); background-size: 328px 312px;
+                    transition: top 2s $easeInQuint;
+                }
+
+                .text { position: absolute; z-index: 2; width: 100%; bottom: 44px; display: flex; flex-direction: column; align-items: center; }
+                .text {
+                    .title { @include text-title; margin-bottom: 8px; }
+                    .label { @include text-paragraph; color: var(--color-text-secondary); font-weight: 500; width: 568px; margin-bottom: 20px; }
+
+                    .title,
+                    .label,
+                    .button { transition: opacity 1s $easeInQuint; }
+
+                    .button { width: 164px; }
+                }
+                .grad {
+                    position: absolute; width: 100%; height: 400px; left: 0px; bottom: 0px;
+                    background: linear-gradient(180deg, rgba(242, 242, 242, 0.00) 0%, var(--color-shape-tertiary) 39.9%);
+                }
+            }
+
+            .step1 { height: 600px; width: 768px; flex-shrink: 0; position: relative; overflow: hidden; }
+            .step1.init {
+                .textWrapper,
+                .swiper-button-prev,
+                .swiper-button-next,
+                .slideBack { opacity: 0; }
+            }
+            .step1 {
+                .textWrapper { height: 184px; position: relative; width: 608px; margin: 0px auto; z-index: 1; }
+                .textWrapper {
+                    .text { position: absolute; left: 0px; top: 48px; width: 100%; }
+                    .text.hidden { opacity: 0; }
+                    .text {
+                        .title { @include text-header1; margin-bottom: 5px; }
+                        .label { @include text-paragraph; color: var(--color-text-secondary); width: 480px; margin: 0px auto 12px; }
+                        .label.count { @include text-small; margin-bottom: 0px; }
+                    }
+                    .text4 {
+                        .title { margin-bottom: 12px; }
+                        .button { border-radius: 18px; }
+                    }
+                }
+
+                .introWrapper { width: 100%; height: 425px; position: relative; }
+
+                @keyframes introHeader {
+                    0% { opacity: 0; }
+                    1% { opacity: 1; }
+                    100% { opacity: 1; background-color: var(--color-shape-primary); }
+                };
+                @keyframes introHeaderMask {
+                    0% { left: 0px; }
+                    1% { left: 0px; }
+                    100% { left: 284px; }
+                };
+                @keyframes introHeaderIcons {
+                    0% { width: 72px; }
+                    1% { width: 72px; }
+                    100% { width: 284px; }
+                };
+                @keyframes introHeaderMaskIcon {
+                    0% { left: 112px; }
+                    1% { left: 112px; }
+                    100% { left: 16px; }
+                };
+                @keyframes introSidebar {
+                    0% { opacity: 0; width: 0px; }
+                    1% { opacity: 1; width: 0px; }
+                    100% { opacity: 1; width: 284px; }
+                };
+                @keyframes introBody {
+                    0% { background-position-x: 0px; }
+                    1% { background-position-x: 0px; }
+                    100% { background-position-x: 284px; }
+                };
+
+                @mixin animate($animationName) { animation: $animationName 1s $easeInQuint; animation-delay: 0.8s; animation-fill-mode: forwards; };
+
+                .intro { position: relative; z-index: 1; width: 100%; height: 100%; }
+                .intro {
+                    .img {
+                        position: absolute; transition: all $easeInQuint 0.8s; width: 1440px; height: 900px;
+                        background: var(--color-shape-primary) url('~img/icon/onboarding/chats/intro.png') 0 0 / 1440px 900px no-repeat;
+                        overflow: hidden; border-radius: 20px;
+                    }
+                    .img {
+                        .oneToOne { opacity: 0; }
+                    }
+                    .img.slide0,
+                    .img.slide2 { left: 208px; top: 0px; }
+                    .img.slide1,
+                    .img.slide3,
+                    .img.slide4 { left: 64px; top: 16px; width: 640px; height: 400px; background-size: 640px 400px; border-radius: 10px; }
+
+                    .img.slide2,
+                    .img.slide3,
+                    .img.slide4 { @include animate(introBody); }
+                    .img.slide2,
+                    .img.slide3,
+                    .img.slide4 {
+                        .header { @include animate(introHeader); position: absolute; z-index: 100; left: 0px; top: 0px; height: 52px; width: 336px; opacity: 0; }
+                        .header {
+                            &:before {
+                                @include animate(introHeaderIcons);
+                                content: ''; width: 284px; position: absolute; z-index: 1; height: 100%; background: url('~img/icon/onboarding/chats/header.svg');
+                            }
+                            .mask {
+                                @include animate(introHeaderMask);
+                                position: absolute; z-index: 0; left: 0px; bottom: 0px; height: 52px; width: 100%; background: var(--color-bg-primary);
+                                border-top-left-radius: 20px; border-left: 4px solid var(--color-shape-primary); border-top: 4px solid var(--color-shape-primary);
+                            }
+                            .mask {
+                                .icon {
+                                    @include animate(introHeaderMaskIcon);
+                                    position: absolute; left: 112px; top: 12px; width: 20px; height: 20px;
+                                }
+                            }
+                        }
+                        .sidebar {
+                            position: absolute; left: 0px; top: 0px; width: 284px;
+                            background: url('~img/icon/onboarding/chats/sidebar.png') 0 0 / 284px 900px no-repeat; opacity: 0;
+                            height: 100%;  animation: introSidebar 1s $easeInQuint; animation-delay: 0.8s; animation-fill-mode: forwards;
+                        }
+                        .oneToOne {
+                            position: absolute; z-index: 300; left: 0px; top: 0px; width: 100%; height: 100%;
+                            background-image: url('~img/icon/onboarding/chats/oneToOne.png');
+                            transition: background-size $easeInQuint 0.8s;
+                        }
+                    }
+                    .img.slide2 {
+                        .oneToOne { background-size: 1440px 900px; }
+                    }
+                    .img.slide3,
+                    .img.slide4 {
+                        .oneToOne { background-size: 640px 400px; opacity: 1; }
+                    }
+                    .img.slide4 { left: -300px; top: 16px; opacity: 0; }
+                }
+
+                .swiper { width: 100%; height: 100%; z-index: 2; overflow: visible; position: absolute; left: 0px; top: 0px; }
+                .swiper-wrapper { transition-timing-function: $easeInQuint; }
+                .swiper-slide { width: 100%; transition: opacity 0.3s linear; }
+                .swiper-button-prev,
+                .swiper-button-next,
+                .slideBack { position: absolute; z-index: 2; width: 36px; height: 36px; background: url('~img/icon/onboarding/primitives/arrow.svg'); }
+                .swiper-button-prev { left: 44px;  top: -93px; }
+                .swiper-button-next { right: 44px;  top: -93px; transform: rotateZ(180deg); }
+                .slideBack { left: 44px;  top: 91px; z-index: 3; }
+                .swiper-button-disabled { opacity: 0; }
+                .swiper-slide { opacity: 0; }
+                .swiper-slide.swiper-slide-active { opacity: 1; }
+
+                .slide { display: flex; flex-direction: column; gap: 21px 0px; align-items: center; height: 425px; }
+                .slide {
+                    img { width: 680px; height: 425px; border-radius: 10px; }
+                }
+
+                // transitions
+                .textWrapper,
+                .textWrapper .text,
+                .swiper-button-prev,
+                .swiper-button-next,
+                .slideBack { transition: $elementsTransition; }
+            }
+        }
+    }
+}

@@ -1,0 +1,33 @@
+import React, { forwardRef, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Label } from 'Component';
+
+interface Props {
+	date: number;
+};
+
+const SectionDate = forwardRef<{}, Props>((props, ref) => {
+
+	const { date } = props;
+	const nodeRef = useRef(null);
+	const { showRelativeDates, dateFormat } = S.Common;
+	const day = showRelativeDates ? U.Date.dayString(date) : null;
+	const text = day ? day : U.Date.dateWithFormat(dateFormat, date);
+
+	return (
+		<AnimatePresence mode="popLayout">
+			<motion.div
+				ref={nodeRef} 
+				className="sectionDate"
+				{...U.Common.animationProps({
+					transition: { duration: 0.2, delay: 0.1 },
+				})}
+			>
+				<Label text={text} />
+			</motion.div>
+		</AnimatePresence>
+	);
+
+});
+
+export default SectionDate;

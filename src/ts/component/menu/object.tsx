@@ -1,0 +1,657 @@
+import React, { forwardRef, useRef, useEffect, useImperativeHandle } from 'react';
+import { MenuItemVertical } from 'Component';
+import * as I from 'Interface';
+import { focus } from 'Lib/focus';
+
+const MenuObject = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
+	
+	const { config, space } = S.Common;
+	const { param, onKeyDown, setActive, close, getId, getSize } = props;
+	const { data, className, classNameWrap } = param;
+	const { blockId, rootId, isFilePreview, onSelect, onArchive, onDelete } = data;
+	const spaceview = U.Space.getSpaceview();
+	const block = S.Block.getLeaf(rootId, blockId);
+	const object = data.object || S.Detail.get(rootId, blockId);
+	const type = S.Record.getTypeById(object.type);
+	const restrictions = S.Block.getRestrictions(rootId, rootId).map(it => I.RestrictionObject[it]);
+	const isTemplate = U.Object.isTemplateType(object.type);
+	const isDate = U.Object.isDateLayout(object.layout);
+	const isChat = U.Object.isChatLayout(object.layout);
+	const isBookmark = U.Object.isBookmarkLayout(object.layout);
+	const isParticipant = U.Object.isParticipantLayout(object.layout);
+	const isInSet = U.Object.isInSetLayouts(object.layout);
+	const isInFile = U.Object.isInFileLayouts(object.layout);
+	const isInFileOrSystem = U.Object.isInFileOrSystemLayouts(object.layout);
+	const isInSystem = U.Object.isInSystemLayouts(object.layout);
+	const isTypeOrRelation = U.Object.isTypeOrRelationLayout(object.layout);
+	const isRelation = U.Object.isRelationLayout(object.layout);
+	const isType = U.Object.isTypeLayout(object.layout);
+	const isVideoOrAudio = U.Object.isVideoOrAudioLayout(object.layout);
+	const canWrite = U.Space.canMyParticipantWrite();
+	const canDelete = S.Block.checkFlags(rootId, rootId, [ I.RestrictionObject.Delete ]);
+	const route = analytics.route.menuObject;
+	const isPopup = keyboard.isPopup();
+	const n = useRef(-1);
+
+	useEffect(() => {
+		rebind();
+
+		return () => {
+			unbind();
+			S.Menu.closeAll(J.Menu.object);
+		};
+	}, []);
+	
+	const rebind = () => {
+		unbind();
+		U.Dom.addEvent(window, 'keydown', onKeyDown);
+		window.setTimeout(() => setActive(), 15);
+	};
+	
+	const unbind = () => {
+		U.Dom.removeEvent(window, 'keydown', onKeyDown);
+	};
+	
+	const getSections = () => {
+		let archive = null;
+		let remove = null;
+		let pageLock = null;
+		let template = null;
+		let setDefaultTemplate = null;
+		let advancedOptions = [];
+		let print = { id: 'print', iconParam: { name: 'menu/action/print' }, name: translate('menuObjectPrint'), caption: keyboard.getCaption('print') };
+		const isPinnedToChannel = !!S.Block.getWidgetsForTargetIn(rootId, S.Block.widgets).length;
+		const personalWidgetsId = U.Object.getPersonalWidgetsId();
+		const isFavorite = !!S.Block.getWidgetsForTargetIn(rootId, personalWidgetsId).length;
+		let pinToChannel = { id: isPinnedToChannel ? 'unpinFromChannel' : 'pinToChannel', iconParam: { name: 'menu/action/pin' }, name: translate(isPinnedToChannel ? 'menuWidgetUnpinFromChannel' : 'menuWidgetPinToChannel') };
+		let favorite = { id: isFavorite ? 'unfavorite' : 'favorite', iconParam: { name: isFavorite ? 'menu/action/unfav' : 'menu/action/fav' }, name: translate(isFavorite ? 'menuWidgetUnfavorite' : 'menuWidgetFavorite') };
+		let linkTo = { id: 'linkTo', iconParam: { name: 'menu/block/common/linkto' }, name: translate('commonLinkTo'), arrow: true };
+		let addCollection = { id: 'addCollection', iconParam: { name: 'menu/action/collection' }, name: translate('commonAddToCollection'), arrow: true };
+		let searchText = { id: 'searchText', iconParam: { name: 'common/search' }, name: translate('menuObjectSearchOnPage'), caption: keyboard.getCaption('searchText') };
+		let history = { id: 'history', iconParam: { name: 'menu/action/history' }, name: translate('commonVersionHistory'), caption: keyboard.getCaption('history') };
+		let pageCopy = { id: 'pageCopy', iconParam: { name: 'menu/action/duplicate' }, name: translate('commonDuplicate') };
+		let pageLink = { id: 'pageLink', iconParam: { name: 'menu/action/pageLink' }, name: translate('commonCopyLink') };
+		let pageDeeplink = { id: 'pageDeeplink', iconParam: { name: 'menu/block/common/linkto' }, name: translate('commonCopyDeeplink') };
+		let pageReload = { id: 'pageReload', iconParam: { name: 'menu/action/reload' }, name: translate('menuObjectReloadFromSource') };
+		let pageExport = { id: 'pageExport', iconParam: { name: 'menu/action/export' }, name: translate('menuObjectExport') };
+		let exportSet = { id: 'exportSet', iconParam: { name: 'menu/action/export' }, name: translate('menuObjectExport') };
+		let downloadFile = { id: 'downloadFile', iconParam: { name: 'menu/action/download' }, name: translate('commonDownload') };
+		let openFile = { id: 'openFile', iconParam: { name: 'common/expand' }, name: translate('menuObjectDownloadOpen') };
+		let openObject = { id: 'openAsObject', iconParam: { name: 'common/expand' }, name: translate('commonOpenObject') };
+		let advanced = { id: 'advanced', iconParam: { name: 'common/more' }, name: translate('menuObjectAdvanced'), children:[], arrow: true };
+		let editType = { id: 'editType', name: translate('menuObjectTypeSettings'), iconParam: { name: 'common/options' } };
+		let editChat = { id: 'editChat', name: translate('commonEditChat'), iconParam: { name: 'common/edit' } };
+		let notification: any = { id: 'notification', name: translate('commonNotifications'), iconParam: { name: 'menu/action/notification' }, arrow: true };
+		let copyMedia = { id: 'copyMedia', name: translate('commonCopyToClipboard'), iconParam: { name: 'menu/action/clipboard' } };
+		let sections = [];
+
+		if (isTemplate) {	
+			template = { id: 'pageCreate', iconParam: { name: 'menu/action/createObject' }, name: translate('commonCreateObject') };
+			setDefaultTemplate = { id: 'setDefault', iconParam: { name: 'menu/action/pin' }, name: translate('menuObjectSetDefault') };
+			searchText.name = translate('menuObjectSearchInTemplate');
+		} else {
+			template = { id: 'templateCreate', iconParam: { name: 'menu/action/template' }, name: translate('menuObjectUseAsTemplate') };
+		};
+
+		if (block) {
+			if (block.isLocked()) {
+				pageLock = { id: 'pageUnlock', iconParam: { name: 'menu/action/pageUnlock' }, name: isTemplate ? translate('menuObjectUnlockTemplate') : translate('menuObjectUnlockPage'), caption: keyboard.getCaption('pageLock') };
+			} else {
+				pageLock = { id: 'pageLock', iconParam: { name: 'menu/action/pageLock' }, name: isTemplate ? translate('menuObjectLockTemplate') : translate('menuObjectLockPage'), caption: keyboard.getCaption('pageLock') };
+			};
+		};
+
+		if (object.isArchived) {
+			remove = { id: 'pageRemove', iconParam: { name: 'menu/action/remove' }, name: translate('commonDeleteImmediately') };
+			archive = { id: 'pageUnarchive', iconParam: { name: 'menu/action/restore' }, name: translate('commonRestoreFromBin'), caption: keyboard.getCaption('moveToBin') };
+		} else {
+			archive = { id: 'pageArchive', iconParam: { name: 'menu/action/remove' }, name: translate('commonMoveToBin'), caption: keyboard.getCaption('moveToBin') };
+		};
+
+		// Restrictions
+
+		const hasShortMenu = (
+			isTypeOrRelation ||
+			isInFile ||
+			isInSet ||
+			isParticipant ||
+			isChat
+		);
+
+		const allowedArchive = canWrite && canDelete;
+		const allowedSearchText = !isFilePreview && !isInSet && !isChat;
+		const allowedHistory = !object.isArchived && !isInFileOrSystem && !isParticipant && !isDate && !isChat && !object.templateIsBundled;
+		const allowedLock = canWrite && !object.isArchived && S.Block.checkFlags(rootId, rootId, [ I.RestrictionObject.Details ]) && !isInFileOrSystem;
+		const allowedPinToChannel = canWrite && !isRelation && !isTemplate && !object.isArchived && U.Space.canMyParticipantModerate();
+		const allowedFavorite = canWrite && !isRelation && !isTemplate && !object.isArchived;
+		const allowedLinkTo = canWrite && !isRelation && !object.isArchived;
+		const allowedAddCollection = canWrite && !isRelation && !object.isArchived && !isTemplate;
+		const allowedPageLink = !isRelation && !object.isArchived;
+		const allowedCopy = canWrite && !object.isArchived && S.Block.checkFlags(rootId, rootId, [ I.RestrictionObject.Duplicate ]) && !isTypeOrRelation;
+		const allowedReload = canWrite && object.source && isBookmark;
+		const allowedTemplate = canWrite && !U.Object.getLayoutsWithoutTemplates().includes(object.layout) && S.Block.checkFlags(rootId, rootId, [ I.RestrictionObject.Template ]);
+		const allowedExport = !isFilePreview && !isChat && !isDate;
+		const dataviewId = J.Constant.blockId.dataview;
+		const allowedExportSet = isInSet && !object.isArchived && !!S.Block.getLeaf(rootId, dataviewId) && !!Dataview.getView(rootId, dataviewId);
+		const allowedPrint = !isFilePreview && !isChat && !isVideoOrAudio;
+		const allowedDownloadFile = isInFile;
+		const allowedOpenFile = isInFile;
+		const allowedOpenObject = isFilePreview;
+		const allowedEditType = (
+			isType && 
+			S.Block.isAllowed(object.restrictions, [ I.RestrictionObject.Details ]) && 
+			!U.Object.isParticipantLayout(object.recommendedLayout) && 
+			!U.Object.isTemplateType(object.id)
+		) || (
+			!isInSystem &&
+			S.Block.isAllowed(type?.restrictions, [ I.RestrictionObject.Details ])
+		);
+		const allowedEditChat = canWrite && isChat;
+		const hasDiscussion = !isChat && !!object.discussionId;
+		const allowedNotification = isChat || (canWrite && hasDiscussion);
+		const allowedCopyMedia = U.Object.isImageLayout(object.layout);
+		if (!allowedPageLink) {
+			pageLink = null;
+			pageDeeplink = null;
+		};
+
+		if (!allowedArchive)		 archive = null;
+		if (!allowedLock)			 pageLock = null;
+		if (!allowedCopy)			 pageCopy = null;
+		if (!allowedReload)			 pageReload = null;
+		if (!allowedSearchText)		 searchText = null;
+		if (!allowedHistory)		 history = null;
+		if (!isTemplate && !allowedTemplate)	 template = null;
+		if (!allowedPinToChannel)	 pinToChannel = null;
+		if (!allowedFavorite)		 favorite = null;
+		if (!allowedLinkTo)			 linkTo = null;
+		if (!allowedAddCollection)	 addCollection = null;
+		if (!allowedExport)			 pageExport = null;
+		if (!allowedExportSet)		 exportSet = null;
+		if (!allowedPrint)			 print = null;
+		if (!allowedDownloadFile)	 downloadFile = null;
+		if (!allowedOpenFile)		 openFile = null;
+		if (!allowedOpenObject)		 openObject = null;
+		if (!allowedEditType) 		 editType = null;
+		if (!allowedEditChat) 		 editChat = null;
+		if (!allowedCopyMedia)		 copyMedia = null;
+		if (!allowedNotification) {
+			notification = null;
+		} else
+		if (isChat && spaceview.isOneToOne) {
+			const chatMode = U.Object.getChatNotificationMode(spaceview, object.id);
+			const isMuted = chatMode != I.NotificationMode.All;
+
+			if (isMuted) {
+				notification = { id: 'unmute', name: translate('commonUnmute'), iconParam: { name: 'menu/action/unmute' } };
+			} else {
+				notification = { id: 'mute', name: translate('commonMute'), iconParam: { name: 'menu/action/mute' } };
+			};
+		};
+		if (!canWrite) {
+			template = null;
+			setDefaultTemplate = null;
+			remove = null;
+		};
+		if (isBookmark) {
+			template = null;
+			history = null;
+			searchText = null;
+			pageLock = null;
+			pageCopy = null;
+			pageExport = null;
+		};
+		if (isVideoOrAudio) {
+			editType = null;
+		};
+
+		advancedOptions.push(pageDeeplink);
+		advancedOptions = advancedOptions.filter(it => it);
+
+		if (advancedOptions.length) {
+			advanced.children = advancedOptions;
+		} else {
+			advanced = null;
+		};
+
+		if (hasShortMenu) {
+			if (!U.Object.isInSetLayouts(object.layout)) {
+				pageCopy = null;
+			};
+
+			sections = sections.concat([
+				{ children: [ openObject ] },
+				{ children: [ pageLink, favorite, pinToChannel, linkTo, addCollection, pageCopy, archive, remove, template ] },
+				{ children: [ pageLock, history ] },
+				{ children: [ downloadFile, copyMedia, print, exportSet ] },
+			]);
+		} else {
+			if (isTemplate) {
+				sections = sections.concat([
+					{ children: [ template ] },
+					{ children: [ setDefaultTemplate, pageCopy, archive ] },
+					{ children: [ pageLock, searchText, history ] },
+				]);
+			} else
+			if (object.isArchived) {
+				sections = sections.concat([
+					{ children: [ openObject ] },
+					{ children: [ searchText, pageExport, remove, archive ] },
+					{ children: [ print ] },
+				]);
+			} else {
+				sections = sections.concat([
+					{ children: [ openObject ] },
+					{ children: [ pageLink, favorite, pinToChannel, linkTo, addCollection, template, pageCopy, archive ] },
+					{ children: [ pageLock, searchText, history ] },
+					{ children: [ pageReload, print, pageExport ] },
+				]);
+			};
+
+			sections = sections.map((it: any, i: number) => ({ ...it, id: `page${i}` }));
+		};
+
+		sections.unshift({ children: [ editType, editChat, notification ] });
+		sections.push({ children: [ advanced ] });
+
+		sections = sections.filter((section: any) => {
+			section.children = section.children.filter(it => it);
+			return section.children.length > 0;
+		});
+
+		return sections;
+	};
+	
+	const getItems = () => {
+		const sections = getSections();
+		
+		let items: any[] = [];
+		for (const section of sections) {
+			items = items.concat(section.children);
+		};
+		
+		return items;
+	};
+
+	const onMouseEnter = (e: any, item: any) => {
+		if (!keyboard.isMouseDisabled) {
+			setActive(item, false);
+			onOver(e, item);
+		};
+	};
+
+	const onOver = (e: any, item: any) => {
+		if (!item.arrow) {
+			S.Menu.closeAll(J.Menu.object);
+			return;
+		};
+
+		const menuParam: I.MenuParam = {
+			menuKey: item.id,
+			element: `#${getId()} #item-${U.Common.esc(item.id)}`,
+			offsetX: getSize().width,
+			vertical: I.MenuDirection.Center,
+			isSub: true,
+			className,
+			classNameWrap,
+			rebind,
+			parentId: props.id,
+			data: {
+				rootId,
+				blockId: rootId,
+				blockIds: [ blockId ],
+			},
+		};
+
+		let menuId = '';
+		switch (item.id) {
+			case 'linkTo': {
+				menuId = 'searchObject';
+				menuParam.data = Object.assign(menuParam.data, {
+					type: I.NavigationType.LinkTo,
+					filters: [
+						{ relationKey: 'resolvedLayout', condition: I.FilterCondition.In, value: U.Object.getPageLayouts() },
+						{ relationKey: 'isReadonly', condition: I.FilterCondition.NotEqual, value: true },
+						{ relationKey: 'links', condition: I.FilterCondition.NotIn, value: [ rootId ] },
+					],
+					onSelect: () => close(),
+					skipIds: [ rootId ],
+					position: I.BlockPosition.Bottom,
+					canAdd: true,
+				});
+				break;
+			};
+
+			case 'addCollection': {
+				const collectionType = S.Record.getCollectionType();
+
+				menuId = 'searchObject';
+				menuParam.className = 'single';
+				menuParam.data = Object.assign(menuParam.data, {
+					filters: [
+						{ relationKey: 'resolvedLayout', condition: I.FilterCondition.In, value: I.ObjectLayout.Collection },
+						{ relationKey: 'type.uniqueKey', condition: I.FilterCondition.NotIn, value: [ J.Constant.typeKey.template ] },
+						{ relationKey: 'isReadonly', condition: I.FilterCondition.NotEqual, value: true },
+						{ relationKey: 'links', condition: I.FilterCondition.NotIn, value: [ rootId ] },
+					],
+					onSelect: (el: any) => {
+						Action.addToCollection(el.id, [ rootId ]);
+					},
+					skipIds: [ rootId ],
+					canAdd: true,
+					addParam: {
+						name: translate('blockDataviewCreateNewCollection'),
+						nameWithFilter: translate('blockDataviewCreateNewCollectionWithName'),
+						onClick: (details: any) => {
+							C.ObjectCreate(details, [], '', collectionType?.uniqueKey, S.Common.space, message => {
+								Action.addToCollection(message.objectId, [ rootId ]);
+								U.Object.openAuto(message.details);
+							});
+						},
+					},
+				});
+				break;
+			};
+
+			case 'advanced': {
+				menuId = 'select';
+				menuParam.data = {
+					options: item.children,
+					onSelect: (e, option) => {
+						switch (option.id) {
+
+							case 'pageDeeplink': {
+								U.Object.copyLink(object, spaceview, 'deeplink', '');
+								close();
+								break;
+							};
+
+						};
+					},
+				};
+				break;
+			};
+
+			case 'notification': {
+				const isDiscussion = !isChat && !!object.discussionId;
+				const options = isDiscussion ? U.Menu.discussionNotificationModeOptions() : U.Menu.notificationModeOptions();
+				const currentMode = isDiscussion
+					? U.Object.getDiscussionNotificationMode(spaceview, object.id)
+					: U.Object.getChatNotificationMode(spaceview, object.id);
+
+				menuId = 'select';
+				menuParam.data = {
+					value: String(currentMode),
+					options,
+					onSelect: (e, option) => {
+						Action.setChatNotificationMode(space, [ object.id ], Number(option.id), analytics.route.menuObject);
+						close();
+					},
+				};
+				break;
+			};
+		};
+
+		if (menuId && !S.Menu.isOpen(menuId, item.id)) {
+			S.Menu.closeAll(J.Menu.object, () => {
+				S.Menu.open(menuId, menuParam);
+			});
+		};
+	};
+
+	const onClick = (e: any, item: any) => {
+		if (item.arrow) {
+			return;
+		};
+		
+		onSelect?.(item);
+
+		const onBack = () => {
+			if (block && !block.isPage()) {
+				return;
+			};
+
+			const home = U.Space.getDashboard();
+			if (home && (object.id == home.id)) {
+				U.Router.go('/main/void/empty', {});
+			} else {
+				keyboard.onBack(isPopup);
+			};
+		};
+
+		let shouldClose = true;
+
+		focus.clear(false);
+		
+		switch (item.id) {
+				
+			case 'print': {
+				keyboard.onPrint(route);
+				break;
+			};
+
+			case 'history': {
+				keyboard.disableClose(true);
+				U.Object.openAuto({ layout: I.ObjectLayout.History, id: object.id });
+				keyboard.disableClose(false);
+				break;
+			};
+			
+			case 'searchText': {
+				keyboard.onSearchText('', route);
+				shouldClose = false;
+				break;
+			};
+
+			case 'pageCopy': {
+				C.ObjectListDuplicate([ rootId ], (message: any) => {
+					if (!message.error.code && message.ids.length) {
+						U.Object.openConfig(null, { id: message.ids[0], layout: object.layout }, {
+							onClose: () => U.Dom.eventDispatch(window, `updatePreviewObject.${message.ids[0]}`)
+						});
+
+						analytics.event('DuplicateObject', { count: 1, route, objectType: object.type });
+					};
+				});
+				break;
+			};
+
+			case 'pageLink': {
+				U.Object.copyLink(object, spaceview, 'web', '');
+				break;
+			};
+
+			case 'pinToChannel':
+			case 'unpinFromChannel': {
+				Action.toggleWidgetsForObject(rootId, route);
+				break;
+			};
+
+			case 'favorite':
+			case 'unfavorite': {
+				Action.togglePersonalWidgetsForObject(rootId, route);
+				break;
+			};
+
+			case 'pageExport': {
+				S.Popup.open('export', { data: { objectIds: [ rootId ], allowHtml: true, route } });
+				break;
+			};
+
+			case 'exportSet': {
+				Dataview.loadExportIds(rootId, J.Constant.blockId.dataview, (ids: string[]) => {
+					S.Popup.open('export', { data: { objectIds: ids, allowHtml: true, route } });
+				});
+				break;
+			};
+
+			case 'pageArchive': {
+				Action.archiveCheckType(rootId, [ object.id ], route, () => {
+					onArchive ? onArchive () : onBack();
+				});
+				break;
+			};
+
+			case 'pageUnarchive': {
+				Action.restore([ object.id ], route);
+				break;
+			};
+
+			case 'pageRemove': {
+				Action.delete([ object.id ], route, () => {
+					onDelete ? onDelete() : onBack();
+				});
+				break;
+			};
+
+			case 'pageLock':
+			case 'pageUnlock': {
+				keyboard.onLock(rootId, item.id == 'pageLock', route);
+				break;
+			};
+
+			case 'pageCreate': {
+				U.Object.create('', '', { type: object.targetObjectType }, I.BlockPosition.Bottom, rootId, [], route, message => U.Object.openAuto(message.details));
+				break;
+			};
+
+			case 'pageReload': {
+				C.ObjectBookmarkFetch(rootId, object.source, () => {
+					analytics.event('ReloadSourceData', { route });
+				});
+				break;
+			};
+
+			case 'templateCreate': {
+				C.TemplateCreateFromObject(rootId, (message: any) => {
+					U.Object.openConfig(null, { id: message.id, layout: object.layout });
+					Preview.toastShow({ action: I.ToastAction.TemplateCreate, objectId: rootId });
+
+					analytics.event('CreateTemplate', { objectType: object.type, route });
+				});
+				break;
+			};
+
+			case 'setDefault': {
+				U.Object.setDefaultTemplateId(object.targetObjectType, rootId);
+				Preview.toastShow({ text: translate('toastSetDefaultTemplate') });
+				analytics.event('ChangeDefaultTemplate', { route });
+				break;
+			};
+
+			case 'openFile': {
+				Action.openFile(object, route);
+				break;
+			};
+
+			case 'downloadFile': {
+				Action.downloadFile(object.id, route);
+				break;
+			};
+
+			case 'copyMedia': {
+				U.Common.clipboardCopyImageFromUrl(S.Common.imageUrl(object.id, I.ImageSize.Large));
+				break;
+			};
+
+			case 'openAsObject': {
+				S.Popup.close('preview');
+				U.Object.openAuto(object);
+				break;
+			};
+
+			case 'editType': {
+				S.Popup.close('preview');
+				U.Object.editType(isType ? rootId : object.type, isPopup, true);
+				break;
+			};
+
+			case 'editChat': {
+				U.Menu.onChatMenu({
+					element: `#button-header-more`,
+					className,
+					classNameWrap,
+					horizontal: I.MenuDirection.Right,
+					vertical: I.MenuDirection.Center,
+					data: {
+						details: object,
+					},
+				}, route);
+				break;
+			};
+
+			case 'mute':
+			case 'unmute': {
+				let mode = I.NotificationMode.All;
+				if (item.id == 'mute') {
+					mode = spaceview.isOneToOne ? I.NotificationMode.Nothing : I.NotificationMode.Mentions;
+				};
+				Action.setChatNotificationMode(space, [ object.id ], mode, route);
+				break;
+			};
+		};
+		
+		if (shouldClose) {
+			close();
+		};
+	};
+
+	const sections = getSections();
+
+	const Section = (item: any) => (
+		<div id={`section-${item.id}`} className="section">
+			{item.name ? <div className="name">{item.name}</div> : ''}
+			<div className="items">
+				{item.children.map((action: any, i: number) => {
+					return (
+						<MenuItemVertical 
+							key={i} 
+							{...action} 
+							icon={action.icon || action.id}
+							onMouseEnter={e => onMouseEnter(e, action)} 
+							onClick={e => onClick(e, action)} 
+						/>
+					);
+				})}
+			</div>
+		</div>
+	);
+
+	let sectionPage = null;
+	if (block && block.isPage() && config.sudo && config.debug.ui && restrictions.length) {
+		sectionPage = (
+			<>
+				<div className="section">
+					<div className="name">Restrictions</div>
+					<div className="items">
+						{restrictions.map((item: any, i: number) => (
+							<div className="item" key={i}>{item || 'Empty'}</div>
+						))}
+					</div>
+				</div>
+			</>
+		);
+	};
+
+	useImperativeHandle(ref, () => ({
+		rebind,
+		unbind,
+		getItems,
+		getIndex: () => n.current,
+		setIndex: (i: number) => n.current = i,
+		onClick,
+		onOver,
+	}), []);
+
+	return (
+		<div>
+			{sectionPage}
+			{sections.map((item: any, i: number) => (
+				<Section key={i} index={i} {...item} />
+			))}
+		</div>
+	);
+	
+});
+
+export default MenuObject;

@@ -1,0 +1,1402 @@
+import { history as historyPopup } from 'Lib/history';
+import { getIconSvg } from 'Component/util/icons';
+import * as I from 'Interface';
+
+export type CreatedInContextRefKind = 'root' | 'block' | 'relation' | 'message';
+
+
+/**
+ * UtilObject provides utilities for working with Anytype objects.
+ *
+ * Key responsibilities:
+ * - Object navigation and routing (opening objects in different contexts)
+ * - Object property management (icons, covers, names, descriptions)
+ * - Layout type checking and categorization
+ * - Object type and relation management
+ * - Link copying and sharing
+ *
+ * This is one of the most heavily used utility classes, as objects are
+ * the fundamental data unit in Anytype.
+ */
+class UtilObject {
+
+	/**
+	 * Returns the virtual personal widgets object id for the given space.
+	 * When spaceId is omitted, falls back to the current space.
+	 */
+	getPersonalWidgetsId (spaceId?: string): string {
+		return J.Constant.widgetId.personalWidgetsPrefix + (spaceId || S.Common.space).replace(/\./g, '_');
+	};
+
+	isPersonalWidgetsId (id: string): boolean {
+		return !!id && id.startsWith(J.Constant.widgetId.personalWidgetsPrefix);
+	};
+
+	/**
+	 * Get the router action string for a given object layout.
+	 * Maps layout types to their corresponding page action identifiers.
+	 * @param v - The object layout type
+	 * @returns Action string used in routing (e.g., 'edit', 'media', 'chat')
+	 */
+	actionByLayout (v: I.ObjectLayout): string {
+		v = v || I.ObjectLayout.Page;
+
+		if (this.isInFileLayouts(v)) {
+			return 'media';
+		};
+
+		if (this.isInSetLayouts(v)) {
+			return 'set';
+		};
+
+		let r = '';
+		switch (v) {
+			default:						 r = 'edit'; break;
+			case I.ObjectLayout.Relation:	 r = 'relation'; break;
+			case I.ObjectLayout.Navigation:	 r = 'navigation'; break;
+			case I.ObjectLayout.Graph:		 r = 'graph'; break;
+			case I.ObjectLayout.Settings:	 r = 'settings'; break;
+			case I.ObjectLayout.History:	 r = 'history'; break;
+			case I.ObjectLayout.Archive:	 r = 'archive'; break;
+			case I.ObjectLayout.Block:		 r = 'block'; break;
+			case I.ObjectLayout.Space:
+			case I.ObjectLayout.ChatOld:
+			case I.ObjectLayout.Chat:
+			case I.ObjectLayout.Discussion:	 r = 'chat'; break;
+			case I.ObjectLayout.Date:		 r = 'date'; break;
+		};
+		return r;
+	};
+
+	/**
+	 * Build the route URL for an object.
+	 * @param object - The object to generate a route for
+	 * @returns Route string suitable for navigation
+	 */
+	route (object: any): string {
+		if (!object) {
+			return '';
+		};
+
+		const id = String(object.id || '');
+		const spaceId = object.spaceId || S.Common.space || '';
+		const action = this.actionByLayout(object.layout);
+
+		if (!action) {
+			return '';
+		};
+
+		let param = { page: 'main', action, id, spaceId };
+		if (object._routeParam_) {
+			param = Object.assign(param, object._routeParam_);
+		};
+
+		return U.Router.build(param);
+	};
+
+	/**
+	 * Generate a universal deep link route for an object.
+	 * @param object - The object to link to
+	 * @returns Universal route string with objectId and spaceId params
+	 */
+	universalRoute (object: any): string {
+		return object ? `object?objectId=${object.id}&spaceId=${object.spaceId}` : '';
+	};
+
+	checkParam (param: any) {
+		param = param || {};
+		param.routeParam = param.routeParam || {};
+		param.menuParam = param.menuParam || {};
+		return param;
+	};
+
+	getTabData (object: any) {
+		if (!object) {
+			return;
+		};
+
+		const spaceview = U.Space.getSpaceview();
+
+		let route = '';
+		if (object.layout != I.ObjectLayout.SpaceView) {
+			route = this.route(object);
+		};
+
+		return {
+			title: U.Object.name(object, true),
+			icon: U.Graph.imageSrc(object) || this.defaultIcon(object.layout, object.type, 100),
+			spaceIcon: U.Graph.imageSrc(spaceview) || this.defaultIcon(spaceview?.layout, spaceview?.type, 100),
+			spaceId: String(spaceview?.targetSpaceId || ''),
+			layout: object.layout,
+			isImage: object.iconImage,
+			spaceType: spaceview?.spaceType,
+			objectData: { id: object.id, type: object.type, layout: object.layout },
+			route,
+			routeParam: { action: '', id: '' },
+		};
+	};
+
+	/**
+	 * Open an object based on keyboard modifiers in the event.
+	 * - Cmd/Ctrl+Shift: Opens in new window
+	 * - Shift or popup context: Opens in popup
+	 * - Cmd/Ctrl or middle mouse button: Opens in new tab
+	 * - Default: Opens via route navigation
+	 * @param e - The DOM event (for modifier key detection)
+	 * @param object - The object to open
+	 * @param param - Optional parameters for route/menu customization
+	 */
+	/**
+	 * The quick search window never navigates itself - every open is handed to the
+	 * main window via the main process (which also hides the panel).
+	 * @returns {boolean} true when the open was redirected.
+	 */
+	quickSearchRedirect (object: any): boolean {
+		if (!S.Common.isQuickSearchWindow) {
+			return false;
+		};
+
+		Renderer.send('quickSearchOpen', this.route(object));
+
+		// Close the popup so the next panel invocation starts fresh; its onClose
+		// hides the (already hidden) window - harmless
+		S.Popup.close('search');
+		return true;
+	};
+
+	openEvent (e: any, object: any, param?: any) {
+		if (!object) {
+			return;
+		};
+
+		if (e && (e.button == 2)) {
+			return;
+		};
+
+		if (this.quickSearchRedirect(object)) {
+			return;
+		};
+
+		param = this.checkParam(param);
+
+		if (!e) {
+			this.openRoute(object, param);
+		};
+
+		e.preventDefault();
+		e.stopPropagation();
+
+		if (this.isParticipantLayout(object.layout)) {
+			U.Menu.participant(object, param.menuParam);
+			return;
+		};
+
+		if ((e.shiftKey && (e.metaKey || e.ctrlKey))) {
+			this.openWindow(object);
+		} else
+		if (e.shiftKey || keyboard.isPopup()) {
+			this.openPopup(object, param);
+		} else
+		if ((e.metaKey || e.ctrlKey) || (e.button == 1)) {
+			this.openTab(object);
+		} else {
+			this.openRoute(object, param);
+		};
+	};
+
+	/**
+	 * Open an object automatically choosing popup or route based on context.
+	 * Uses popup if already in popup context, otherwise navigates via route.
+	 * @param object - The object to open
+	 * @param param - Optional parameters for route/menu customization
+	 */
+	openAuto (object: any, param?: any) {
+		if (!object) {
+			return;
+		};
+
+		if (this.quickSearchRedirect(object)) {
+			return;
+		};
+
+		param = this.checkParam(param);
+
+		if (this.isParticipantLayout(object.layout)) {
+			U.Menu.participant(object, param.menuParam);
+			return;
+		};
+
+		// Prevent opening object in popup from different space
+		if (object.spaceId && (object.spaceId != S.Common.space)) {
+			this.openRoute(object, param);
+			return;
+		};
+
+		keyboard.isPopup() ? this.openPopup(object, param) : this.openRoute(object, param);
+	};
+	
+	async openRoute (object: any, param?: Partial<I.RouteParam>) {
+		if (!object) {
+			return;
+		};
+
+		if (this.quickSearchRedirect(object)) {
+			return;
+		};
+
+		param = this.checkParam(param);
+
+		if (S.Common.isPinned) {
+			const route = this.route(object);
+			Renderer.send('openRouteInTab', route, this.getTabData(object));
+			return;
+		};
+
+		const route = this.route(object);
+		const switched = await Renderer.send('switchToTabByRoute', route);
+		if (switched) {
+			return;
+		};
+
+		keyboard.setSource(null);
+		U.Router.go(route, param);
+	};
+
+	openWindow (object: any) {
+		Renderer.send('openWindow', this.route(object), S.Auth.token);
+		analytics.event('OpenNewWindow');
+	};
+
+	async openTab (object: any, analyticsRoute?: string) {
+		if (!object) {
+			return;
+		};
+
+		const switched = await Renderer.send('openTab', this.getTabData(object), { setActive: false });
+		if (!switched) {
+			analytics.event('AddTab', { objectType: object.type, route: analyticsRoute });
+		};
+	};
+
+	openTabs (objects: any[], analyticsRoute?: string) {
+		if (!objects || !objects.length) {
+			return;
+		};
+
+		const filtered = objects.filter(it => it);
+		if (!filtered.length) {
+			return;
+		};
+
+		const tabs = filtered.map(object => ({
+			route: this.route(object),
+			data: this.getTabData(object),
+		}));
+
+		if (tabs.length) {
+			Renderer.send('openTabs', tabs);
+
+			for (const object of filtered) {
+				analytics.event('AddTab', { objectType: object.type, route: analyticsRoute });
+			};
+		};
+	};
+
+	openWindows (objects: any[], token: string) {
+		if (!objects || !objects.length) {
+			return;
+		};
+
+		const routes = objects.filter(it => it).map(object => this.route(object));
+
+		if (routes.length) {
+			Renderer.send('openWindows', routes, token);
+
+			for (const _route of routes) {
+				analytics.event('OpenNewWindow');
+			};
+		};
+	};
+
+	openPopup (object: any, param?: any) {
+		if (!object) {
+			return;
+		};
+
+		param = this.checkParam(param);
+
+		if (this.isParticipantLayout(object.layout)) {
+			U.Menu.participant(object, param.menuParam);
+			return;
+		};
+
+		// Prevent opening object in popup from different space
+		if (object.spaceId && (object.spaceId != S.Common.space)) {
+			this.openRoute(object, param);
+			return;
+		};
+
+		const action = this.actionByLayout(object.layout);
+		const params = {
+			page: 'main',
+			action,
+			id: object.id,
+		};
+
+		param = param || {};
+		param.data = Object.assign(param.data || {}, { matchPopup: { params } });
+
+		if (object._routeParam_) {
+			param.data.matchPopup.params = { ...param.data.matchPopup.params, ...object._routeParam_ };
+		};
+
+		sidebar.rightPanelClose(true, false);
+		keyboard.setSource(null);
+		historyPopup.pushMatch(param.data.matchPopup);
+		window.setTimeout(() => S.Popup.open('page', param), S.Popup.getTimeout());
+	};
+
+	/**
+	Opens object based on user setting 'Open objects in fullscreen mode'
+	*/
+	openConfig (e: any, object: any, param?: any) {
+		if (this.quickSearchRedirect(object)) {
+			return;
+		};
+
+		if (e && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+			this.openWindow(object);
+			return;
+		};
+
+		if (e && ((e.metaKey || e.ctrlKey) || (e.button == 1))) {
+			this.openTab(object);
+			return;
+		};
+
+		S.Common.fullscreenObject ? this.openAuto(object, param) : this.openPopup(object, param);
+	};
+
+	/**
+	 * Create a new object as a linked block within another object.
+	 * @param rootId - Parent object ID where the link block will be created
+	 * @param targetId - Block ID for positioning the new link
+	 * @param details - Object details/properties to set on creation
+	 * @param position - Block position relative to target
+	 * @param templateId - Template to use for the new object
+	 * @param flags - Creation flags (e.g., SelectTemplate, DeleteEmpty)
+	 * @param route - Analytics route for tracking
+	 * @param callBack - Optional callback with creation result
+	 */
+	create (rootId: string, targetId: string, details: any, position: I.BlockPosition, templateId: string, flags: I.ObjectFlag[], route: string, callBack?: (message: any) => void) {
+		let typeKey = '';
+
+		details = details || {};
+
+		if (!templateId) {
+			details.type = details.type || S.Common.type;
+		};
+
+		if (details.type) {
+			const type = S.Record.getTypeById(details.type);
+
+			if (type) {
+				typeKey = type.uniqueKey;
+
+				if (!templateId) {
+					templateId = type.defaultTemplateId || '';
+				};
+			};
+		};
+
+		const block = {
+			type: I.BlockType.Link,
+			content: U.Data.defaultLinkSettings(),
+		};
+		
+		C.BlockLinkCreateWithObject(rootId, targetId, details, position, templateId, block, flags, typeKey, S.Common.space, (message: any) => {
+			if (!message.error.code) {
+				callBack?.(message);
+
+				const object = message.details;
+				analytics.createObject(object.type, object.layout, route, message.middleTime);
+			};
+		});
+	};
+	
+	setIcon (rootId: string, emoji: string, image: string, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ 
+			{ key: 'iconEmoji', value: String(emoji || '') },
+			{ key: 'iconImage', value: String(image || '') },
+		], callBack);
+	};
+
+	setTypeIcon (rootId: string, iconName: string, iconOption: number, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [
+			{ key: 'iconName', value: String(iconName || '') },
+			{ key: 'iconOption', value: Number(iconOption) || 1 },
+			{ key: 'iconImage', value: '' },
+		], callBack);
+	};
+	
+	setName (rootId: string, name: string, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ { key: 'name', value: String(name || '') } ], callBack);
+	};
+
+	setDescription (rootId: string, description: string, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ { key: 'description', value: String(description || '') } ], callBack);
+	};
+	
+	setCover (rootId: string, type: I.CoverType, id: string, x?: number, y?: number, scale?: number, callBack?: (message: any) => void) {
+		x = Number(x) || 0;
+		y = Number(y) || 0;
+		scale = Number(scale) || 0;
+
+		const details = [ 
+			{ key: 'coverType', value: type },
+			{ key: 'coverId', value: id },
+			{ key: 'coverX', value: x },
+			{ key: 'coverY', value: y },
+			{ key: 'coverScale', value: scale },
+		];
+		C.ObjectListSetDetails([ rootId ], details, callBack);
+	};
+
+	setDone (rootId: string, done: boolean, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ { key: 'done', value: Boolean(done) } ], callBack);
+	};
+
+	setAlign (rootId: string, align: I.BlockHAlign, callBack?: (message: any) => void) {
+		C.BlockListSetAlign(rootId, [], align, callBack);
+	};
+
+	setDefaultTemplateId (rootId: string, id: string, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ { key: 'defaultTemplateId', value: id } ], callBack);
+	};
+
+	setLastUsedDate (rootId: string, timestamp: number, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ { key: 'lastUsedDate', value: timestamp } ], callBack);
+	};
+
+	setObjectTypes (rootId: string, ids: string[], callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ { key: 'relationFormatObjectTypes', value: Relation.getArrayValue(ids) } ], callBack);
+	};
+
+	setOptionColor (rootId: string, color: string, callBack?: (message: any) => void) {
+		C.ObjectListSetDetails([ rootId ], [ { key: 'relationOptionColor', value: color } ], callBack);
+	};
+
+	name (object: any, withPlural?: boolean): string {
+		if (!object) {
+			return '';
+		};
+
+		const { layout, snippet } = object;
+
+		let name = '';
+		if (this.isNoteLayout(layout)) {
+			name = snippet || translate('commonEmpty');
+		} else 
+		if (this.isInFileLayouts(layout)) {
+			name = U.File.name(object);
+		} else
+		if (this.isTypeLayout(layout)) {
+			name = withPlural ? object.pluralName || object.name : object.name || object.pluralName;
+		} else {
+			name = object.name;
+		};
+
+		return name || translate('defaultNamePage');
+	};
+
+	getById (id: string, param: Partial<I.SearchSubscribeParam>, callBack: (object: any) => void) {
+		param = param || {};
+		param.limit = 1;
+
+		this.getByIds([ id ], param, objects => {
+			if (objects.length) {
+				callBack?.(objects[0]);
+			};
+		});
+	};
+
+	getByIds (ids: string[], param: Partial<I.SearchSubscribeParam>, callBack: (objects: any[]) => void) {
+		const filters = [
+			{ relationKey: 'id', condition: I.FilterCondition.In, value: ids }
+		];
+
+		param = param || {};
+		param.filters = (param.filters || []).concat(filters);
+		param.keys = (param.keys || []).concat(J.Relation.default).concat([ 'links', 'backlinks' ]);
+
+		if (undefined === param.ignoreArchived) {
+			param.ignoreArchived = false;
+		};
+
+		if (undefined === param.ignoreHidden) {
+			param.ignoreHidden = false;
+		};
+
+		if (undefined === param.ignoreChat) {
+			param.ignoreChat = false;
+		};
+
+		U.Subscription.search(param, (message: any) => {
+			callBack?.((message.records || []).filter(it => !it._empty_));
+		});
+	};
+
+	// --------------------------------------------------------- //
+	// Layout Type Checking Methods
+	// These methods check if a layout belongs to specific categories
+	// --------------------------------------------------------- //
+
+	/** Check if layout is a Set-like layout (Set, Collection, Type) */
+	isInSetLayouts (layout: I.ObjectLayout): boolean {
+		return this.getSetLayouts().includes(layout);
+	};
+
+	/** Check if layout is a file-based layout (File, Image, Audio, Video, PDF) */
+	isInFileLayouts (layout: I.ObjectLayout): boolean {
+		return this.getFileLayouts().includes(layout);
+	};
+
+	/** Check if layout is a system layout (Type, Relation, Option, etc.) */
+	isInSystemLayouts (layout: I.ObjectLayout): boolean {
+		return this.getSystemLayouts().includes(layout);
+	};
+
+	/** Check if layout is either file or system layout */
+	isInFileOrSystemLayouts (layout: I.ObjectLayout): boolean {
+		return this.getFileAndSystemLayouts().includes(layout);
+	};
+
+	/** Check if layout is a page-like layout (Page, Human, Task, Note, Bookmark) */
+	isInPageLayouts (layout: I.ObjectLayout): boolean {
+		return this.getPageLayouts().includes(layout);
+	};
+
+	/** Check if layout is a human-like layout (Human, Participant) */
+	isInHumanLayouts (layout: I.ObjectLayout): boolean {
+		return this.getHumanLayouts().includes(layout);
+	};
+
+	// --------------------------------------------------------- //
+
+	isSpaceViewLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.SpaceView;
+	};
+
+	isSpaceLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Space;
+	};
+
+	isSetLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Set;
+	};
+
+	isCollectionLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Collection;
+	};
+
+	isTemplateType (id: string): boolean {
+		const type = S.Record.getTemplateType();
+		return type ? id == type.id : false;
+	};
+
+	isTypeLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Type;
+	};
+
+	isRelationLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Relation;
+	};
+
+	isTypeOrRelationLayout (layout: I.ObjectLayout): boolean {
+		return this.isTypeLayout(layout) || this.isRelationLayout(layout);
+	};
+
+	isHumanLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Human;
+	};
+
+	isParticipantLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Participant;
+	};
+
+	isTaskLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Task;
+	};
+
+	isNoteLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Note;
+	};
+
+	isBookmarkLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Bookmark;
+	};
+
+	isChatLayout (layout: I.ObjectLayout): boolean {
+		return [ I.ObjectLayout.Chat, I.ObjectLayout.Discussion ].includes(layout);
+	};
+
+	/**
+	 * Whether the object renders through the chat page, and so locates by message id rather than
+	 * by block id. Wider than isChatLayout: page/main/chat.tsx also serves Space-layout objects
+	 * (see its ObjectLayout.Space branches), whose content is a chat even though the layout is not.
+	 */
+	rendersAsChat (layout: I.ObjectLayout): boolean {
+		return this.isChatLayout(layout) || this.isSpaceLayout(layout) || (layout == I.ObjectLayout.ChatOld);
+	};
+
+	isImageLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Image;
+	};
+
+	isVideoOrAudioLayout (layout: I.ObjectLayout): boolean {
+		return [ I.ObjectLayout.Video, I.ObjectLayout.Audio ].includes(layout);
+	};
+
+	isDateLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.Date;
+	};
+
+	isFileLayout (layout: I.ObjectLayout): boolean {
+		return layout == I.ObjectLayout.File;
+	};
+
+	// --------------------------------------------------------- //
+
+	getPageLayouts (): I.ObjectLayout[] {
+		return [ 
+			I.ObjectLayout.Page, 
+			I.ObjectLayout.Human, 
+			I.ObjectLayout.Task, 
+			I.ObjectLayout.Note, 
+			I.ObjectLayout.Bookmark, 
+		];
+	};
+
+	getSetLayouts (): I.ObjectLayout[] {
+		return [ 
+			I.ObjectLayout.Set,
+			I.ObjectLayout.Collection,
+			I.ObjectLayout.Type,
+		];
+	};
+
+	getLayoutsForTypeSelection () {
+		return this.getPageLayouts().concat(this.getSetLayouts()).concat(this.getFileLayouts()).concat(I.ObjectLayout.Chat).filter(it => !this.isTypeLayout(it));
+	};
+
+	getLayoutsWithoutTemplates (): I.ObjectLayout[] {
+		return [].concat(this.getFileAndSystemLayouts()).concat([ I.ObjectLayout.Chat, I.ObjectLayout.Discussion, I.ObjectLayout.Participant, I.ObjectLayout.Date ]);
+	};
+
+	getFileAndSystemLayouts (): I.ObjectLayout[] {
+		return this.getFileLayouts().concat(this.getSystemLayouts());
+	};
+
+	getSystemLayouts (): I.ObjectLayout[] {
+		return [
+			I.ObjectLayout.Type,
+			I.ObjectLayout.Relation,
+			I.ObjectLayout.Option,
+			I.ObjectLayout.Dashboard,
+			I.ObjectLayout.Space,
+			I.ObjectLayout.SpaceView,
+			I.ObjectLayout.Discussion,
+		];
+	};
+
+	getFileLayouts (): I.ObjectLayout[] {
+		return [
+			I.ObjectLayout.File,
+			I.ObjectLayout.Image,
+			I.ObjectLayout.Audio,
+			I.ObjectLayout.Video,
+			I.ObjectLayout.Pdf,
+		];
+	};
+
+	getHumanLayouts (): I.ObjectLayout[] {
+		return [ 
+			I.ObjectLayout.Human, 
+			I.ObjectLayout.Participant,
+		];
+	};
+
+	getGraphSkipLayouts () {
+		return this.getSystemLayouts().filter(it => !this.isTypeLayout(it));
+	};
+
+	// --------------------------------------------------------- //
+
+	getFileTypeByLayout (layout: I.ObjectLayout): I.FileType {
+		switch (layout) {
+			default: return I.FileType.File;
+			case I.ObjectLayout.Image: return I.FileType.Image;
+			case I.ObjectLayout.Audio: return I.FileType.Audio;
+			case I.ObjectLayout.Video: return I.FileType.Video;
+			case I.ObjectLayout.Pdf: return I.FileType.Pdf;
+		};
+	};
+
+	excludeFromSet (): I.ObjectLayout[] {
+		return [
+			I.ObjectLayout.Option,
+			I.ObjectLayout.SpaceView,
+			I.ObjectLayout.Space,
+			I.ObjectLayout.Discussion,
+		];
+	};
+
+	isAllowedTemplate (typeId: string): boolean {
+		const type = S.Record.getTypeById(typeId);
+		if (!type
+			|| [ J.Constant.typeKey.template ].includes(type.uniqueKey)
+			|| type.isArchived
+			|| U.Object.isTypeLayout(type.recommendedLayout)
+			|| !U.Space.canMyParticipantWrite()) {
+			return false;
+		};
+
+		return !this.getLayoutsWithoutTemplates().includes(type.recommendedLayout);
+	};
+
+	isAllowedObject (layout: I.ObjectLayout): boolean {
+		return this.getPageLayouts().includes(layout);
+	};
+
+	openDateByTimestamp (relationKey: string, t: number, method?: string) {
+		method = method || 'auto';
+
+		let fn = U.String.toCamelCase(`open-${method}`);
+		if (!this[fn]) {
+			fn = 'openAuto';
+		};
+
+		C.ObjectDateByTimestamp(S.Common.space, t, (message: any) => {
+			if (!message.error.code) {
+				const object = { ...message.details, _routeParam_: { relationKey } };
+
+				if (fn == 'openConfig') {
+					this.openConfig(null, object);
+				} else {
+					this[fn](object);
+				};
+			};
+		});
+	};
+
+	/**
+	 * Derives the meaning of createdInContextRef from the context object's layout:
+	 * - context layout is a chat → the ref is a message id
+	 * - the ref resolves to a known relation → a relation key
+	 * - otherwise → a block id
+	 * - empty ref → the context root itself
+	 * @param contextLayout - Layout of the context object
+	 * @param ref - The createdInContextRef value
+	 */
+	getCreatedInContextRefKind (contextLayout: I.ObjectLayout, ref: string): CreatedInContextRefKind {
+		ref = String(ref || '');
+
+		if (!ref) {
+			return 'root';
+		};
+
+		// A chat or discussion holds nothing but messages, so a ref is always a message id there —
+		// even one that happens to look like a relation key.
+		if (this.isChatLayout(contextLayout)) {
+			return 'message';
+		};
+
+		if (S.Record.getRelationByKey(ref)) {
+			return 'relation';
+		};
+
+		// A Space renders as a chat page too, but unlike a chat it also carries relations (its icon
+		// and cover), which is why the relation check above comes first.
+		return this.rendersAsChat(contextLayout) ? 'message' : 'block';
+	};
+
+	/**
+	 * Checks whether a relation key is rendered in the object's featured relations row.
+	 * Mirrors the source list of Component/block/featured getItems: the object's own
+	 * featuredRelations when set, the type's recommended featured relations otherwise.
+	 */
+	isFeaturedRelationKey (object: any, relationKey: string): boolean {
+		const keys = Relation.getArrayValue(object.featuredRelations).filter(it => it != 'description');
+
+		if (keys.length) {
+			return keys.includes(relationKey);
+		};
+
+		const type = S.Record.getTypeById(object.targetObjectType || object.type);
+		if (!type || type.isDeleted) {
+			return false;
+		};
+
+		return S.Record.getTypeFeaturedRelations(type.id).some(it => it && (it.relationKey == relationKey));
+	};
+
+	/**
+	 * Reveals the createdInContextRef locator inside the already open context object:
+	 * scrolls to and briefly highlights a block, a chat message or a relation.
+	 * Waits for the target to render, so it is safe to call right after navigation.
+	 * A ref that no longer resolves is a silent no-op — never a dead click.
+	 */
+	revealCreatedInContextRef (rootId: string, ref: string, isPopup: boolean) {
+		const context = S.Detail.get(rootId, rootId, []);
+		const kind = this.getCreatedInContextRefKind(context.layout, ref);
+
+		switch (kind) {
+			case 'message': {
+				if (this.rendersAsChat(context.layout)) {
+					U.Dom.eventDispatch(window, 'scrollToMessage', { id: ref });
+				} else {
+					U.Comment.scrollToMessage(ref);
+				};
+				break;
+			};
+
+			case 'block': {
+				U.Dom.waitForElement(() => U.Dom.get(`block-${ref}`), () => U.Comment.scrollToBlock(ref));
+				break;
+			};
+
+			case 'relation': {
+				this.revealCreatedInContextRelation(rootId, ref, isPopup);
+				break;
+			};
+		};
+	};
+
+	/**
+	 * Reveals a relation on the context object: highlights its featured chip when featured,
+	 * otherwise opens the right panel with the relation list and highlights the row.
+	 */
+	revealCreatedInContextRelation (rootId: string, relationKey: string, isPopup: boolean) {
+		const relation = S.Record.getRelationByKey(relationKey);
+		if (!relation) {
+			return;
+		};
+
+		const highlight = (el: HTMLElement) => {
+			el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			U.Dom.addClass(el, 'isHighlighted');
+			window.setTimeout(() => U.Dom.removeClass(el, 'isHighlighted'), 2000);
+		};
+
+		const object = S.Detail.get(rootId, rootId, []);
+
+		if (this.isFeaturedRelationKey(object, relationKey)) {
+			U.Dom.waitForElement(() => U.Dom.get(Relation.cellId('blockFeatured', relationKey, rootId)), highlight);
+			return;
+		};
+
+		const state = { page: 'object/relation', rootId };
+
+		let opened = false;
+
+		U.Dom.waitForElement(() => {
+			// rightPanelToggle no-ops while the sidebar is animating — wait the animation out first
+			if (sidebar.isAnimating) {
+				return null;
+			};
+
+			if (!opened) {
+				opened = true;
+
+				const data = sidebar.getData(I.SidebarPanel.Right, isPopup);
+
+				if (data.isClosed) {
+					sidebar.rightPanelToggle(isPopup, state);
+				} else {
+					S.Common.setRightSidebarState(isPopup, state);
+				};
+			};
+
+			const node = sidebar.rightPanelGetNode(isPopup);
+			return node ? U.Dom.select(`#${U.Common.esc(`section-object-relation-${relation.id}`)}`, node) : null;
+		}, el => {
+			// The row can sit inside a collapsed group (Hidden / Local) — expand it first
+			const list = el.closest('.list.withToggle') as HTMLElement;
+
+			if (list && !U.Dom.hasClass(list, 'isOpen')) {
+				const group = list.closest('.group');
+				const title = group ? U.Dom.select('.titleWrap', group) : null;
+
+				U.Dom.addClass(list, 'isOpen');
+				U.Dom.css(list, { height: 'auto' });
+
+				if (title) {
+					U.Dom.addClass(title, 'isOpen');
+				};
+			};
+
+			highlight(el);
+		});
+	};
+
+	/**
+	 * Reads the origin locator (createdInContextRef), falling back to the detail store when the
+	 * record we were handed does not carry it.
+	 *
+	 * Cells project their record down to the relation's own key plus J.Relation.default — see
+	 * sidebar/section/object/relation.tsx, which builds it as
+	 * S.Detail.get(rootId, rootId, [ relation.relationKey ]) — and neither createdInContext nor
+	 * createdInContextRef is in that default set. So a caller cannot be trusted to have fetched
+	 * the locator, and without this the deep link silently degrades to plain-opening the context.
+	 * @param object - The object carrying createdInContextRef
+	 * @param subId - Subscription id the object's details were delivered under (defaults to object.id)
+	 */
+	getCreatedInContextRef (object: any, subId?: string): string {
+		if (!object) {
+			return '';
+		};
+
+		const ref = Relation.getStringValue(object.createdInContextRef);
+
+		if (ref || !object.id) {
+			return ref;
+		};
+
+		const source = S.Detail.get(subId || object.id, object.id, [ 'createdInContextRef' ]);
+		return Relation.getStringValue(source.createdInContextRef);
+	};
+
+	/**
+	 * Resolves the object's origin context to a usable object, or null when there is nothing to
+	 * navigate to — the property is empty, or it holds an id whose details never resolved (a
+	 * dangling reference), or the target is deleted, archived or in another space.
+	 *
+	 * Every surface that renders the property must gate on this, so a row can never be shown that
+	 * only reports "unavailable" once clicked.
+	 * @param object - The object carrying createdInContext
+	 * @param subId - Subscription id the context object's details were delivered under (defaults to object.id)
+	 */
+	getCreatedInContext (object: any, subId?: string): any {
+		if (!object) {
+			return null;
+		};
+
+		const contextId = Relation.getStringValue(object.createdInContext);
+		if (!contextId) {
+			return null;
+		};
+
+		const context = S.Detail.get(subId || object.id, contextId, []);
+		const isMissing = context._empty_ || context.isDeleted || context.isArchived;
+		const isOtherSpace = context.spaceId && (context.spaceId != S.Common.space);
+
+		return (isMissing || isOtherSpace) ? null : context;
+	};
+
+	/**
+	 * Navigates back to the object's origin context (createdInContext), deep-linking into the
+	 * exact place it was created in via createdInContextRef (a block, a relation or a message).
+	 * Single entry point for every surface that renders the property.
+	 * @param object - The object carrying createdInContext / createdInContextRef
+	 * @param route - Analytics route
+	 * @param subId - Subscription id the context object's details were delivered under (defaults to object.id)
+	 */
+	openCreatedInContext (object: any, route?: string, subId?: string) {
+		const context = this.getCreatedInContext(object, subId);
+
+		if (!context) {
+			// Nothing to open: either the property is empty, or the object it points at is gone.
+			// Only warn in the latter case, so an empty property stays silent.
+			if (object && Relation.getStringValue(object.createdInContext)) {
+				Preview.toastShow({ text: translate('toastCreatedInContextUnavailable') });
+			};
+			return;
+		};
+
+		const contextId = context.id;
+		const ref = this.getCreatedInContextRef(object, subId);
+
+		analytics.event('ClickCreatedInContext', { route });
+
+		const isPopup = keyboard.isPopup();
+		const rootId = keyboard.getRootId(isPopup);
+
+		// The context is already the open object — reveal in place, without navigating
+		if (contextId == rootId) {
+			this.revealCreatedInContextRef(rootId, ref, isPopup);
+			return;
+		};
+
+		const open: any = { ...context };
+
+		if (ref) {
+			const kind = this.getCreatedInContextRefKind(context.layout, ref);
+			open._routeParam_ = (kind == 'message') ? { messageId: ref } : { revealRef: ref };
+		};
+
+		this.openAuto(open);
+	};
+
+	hasEqualLayoutAlign (object: any, type: any): boolean {
+		if (!object || object._empty || !type) {
+			return true;
+		};
+		return (undefined === object.layoutAlign) || (object.layoutAlign === type.layoutAlign);
+	};
+
+	hasEqualLayoutWidth (object: any, type: any): boolean {
+		const root = S.Block.getLeaf(object.id, object.id);
+
+		if (!object || object._empty || !type || !root) {
+			return true;
+		};
+
+		const width = (root?.fields || {}).width;
+		return width === undefined;
+	};
+
+	hasEqualFeaturedRelations (object: any, type: any): boolean {
+		if (!object || object._empty) {
+			return true;
+		};
+
+		const listObject = Relation.getArrayValue(object.featuredRelations).
+			filter(it => ![ 'description' ].includes(it)).
+			map(it => S.Record.getRelationByKey(it)?.relationKey).
+			filter(it => it);
+		const listType = Relation.getArrayValue(type.recommendedFeaturedRelations).
+			map(it => S.Record.getRelationById(it)?.relationKey).
+			filter(it => it);
+
+		return !listObject.length || U.Common.compareJSON(listObject, listType);
+	};
+
+	hasLayoutConflict (object: any): boolean {
+		const type = S.Record.getTypeById(object.targetObjectType || object.type);
+		if (!type) {
+			return false;
+		};
+
+		if (object.layout != type.recommendedLayout) {
+			return true;
+		};
+
+		if (!this.hasEqualLayoutAlign(object, type)) {
+			return true;
+		};
+
+		if (!this.hasEqualLayoutWidth(object, type)) {
+			return true;
+		};
+
+		if (!this.hasEqualFeaturedRelations(object, type)) {
+			return true;
+		};
+
+		return false;
+	};
+
+	resetLayout (id: string) {
+		const object = S.Detail.get(id, id);
+
+		if (object._empty_) {
+			return;
+		};
+
+		const type = S.Record.getTypeById(object.targetObjectType || object.type);
+		const root = S.Block.getLeaf(id, id);
+		const fields = root.fields || {};
+		const featured = Relation.getArrayValue(object.featuredRelations).filter(it => [ 'description' ].includes(it));
+
+		delete(fields.width);
+
+		C.ObjectRelationDelete(id, [ 'layout', 'layoutAlign' ]);
+		C.ObjectListSetDetails([ id ], [ { key: 'featuredRelations', value: featured } ]);
+		C.BlockListSetFields(id, [ { blockId: id, fields } ]);
+
+		if (type) {
+			S.Block.update(id, id, { layout: type.recommendedLayout });
+		};
+	};
+
+	getTypeRelationListsKeys () {
+		return [ 'recommendedRelations', 'recommendedFeaturedRelations', 'recommendedHiddenRelations', 'recommendedFileRelations' ];
+	};
+
+	getTypeRelationIds (id: string) {
+		const type = S.Record.getTypeById(id);
+		if (!type) {
+			return [];
+		};
+
+		return Relation.getArrayValue(type.recommendedRelations).
+			concat(Relation.getArrayValue(type.recommendedFeaturedRelations)).
+			concat(Relation.getArrayValue(type.recommendedHiddenRelations)).
+			concat(Relation.getArrayValue(type.recommendedFileRelations));
+	};
+
+	findInTypeRelations (typeId: string, relationId: string): string {
+		const type = S.Record.getTypeById(typeId);
+		if (!type) {
+			return '';
+		};
+
+		const keys = this.getTypeRelationListsKeys();
+
+		let ret = '';
+		for (const key of keys) {
+			const list = Relation.getArrayValue(type[key]);
+			if (list.includes(relationId)) {
+				ret = key;
+				break;
+			};
+		};
+		return ret;
+	};
+
+	getTypeRelationKeys (id: string) {
+		return this.getTypeRelationIds(id).
+			map(it => S.Record.getRelationById(it)?.relationKey).
+			filter(it => it);
+	};
+
+	typeRelationUnlink (typeId: string, relationId: string, onChange?: (message: any) => void) {
+		const key = this.findInTypeRelations(typeId, relationId);
+		if (!key) {
+			return;
+		};
+
+		const type = S.Record.getTypeById(typeId);
+		if (!type) {
+			return;
+		};
+
+		const value = U.Common.arrayUnique(Relation.getArrayValue(type[key]).filter(it => it != relationId));
+
+		C.ObjectListSetDetails([ typeId ], [ { key: key, value } ], (message: any) => {
+			if (message.error.code) {
+				return;
+			};
+
+			S.Detail.update(U.Subscription.spaceSubId(J.Constant.subId.type), { id: typeId, details: { [key]: value } }, false);
+			C.BlockDataviewRelationSet(typeId, J.Constant.blockId.dataview, [ 'name', 'description' ].concat(U.Object.getTypeRelationKeys(typeId)), onChange);
+		});
+	};
+
+	copyLink (object: any, space: any, type: string, route: string, add?: string) {
+		if (!object || !space) {
+			return;
+		};
+
+		add = add || '';
+
+		const cb = (link: string) => {
+			U.Common.copyToast(translate('commonLink'), link);
+			analytics.event('CopyLink', { route });
+		};
+
+		let link = '';
+
+		switch (type) {
+			case 'deeplink': {
+				link = `${J.Constant.protocol}://${U.Object.universalRoute(object)}`;
+				break;
+			};
+
+			case 'web': {
+				link = `https://object.any.coop/${object.id}?spaceId=${space.targetSpaceId}`;
+				break;
+			};
+		};
+
+		if (add) {
+			link += add;
+		};
+		
+		if (space.isShared) {
+			U.Space.getInvite(space.targetSpaceId, (cid: string, key: string) => {
+				if (cid && key) {
+					switch (type) {
+						case 'deeplink': {
+							cb(link + `&cid=${cid}&key=${key}`);
+							break;
+						};
+
+						case 'web': {
+							cb(link + `&inviteId=${cid}#${key}`);
+							break;
+						};
+					};
+				} else {
+					cb(link);
+				};
+			});
+		} else {
+			cb(link);
+		};
+	};
+
+	editType (id: string, isPopup: boolean, noPreview: boolean) {
+		const data = sidebar.getData(I.SidebarPanel.Right, isPopup);
+		const state = { 
+			page: 'type', 
+			rootId: id,
+			noPreview,
+			details: {},
+		};
+
+		if (data.isClosed) {
+			sidebar.rightPanelToggle(isPopup, state);
+		} else {
+			S.Common.setRightSidebarState(isPopup, state);
+		};
+	};
+
+	createType (details: any, isPopup: boolean) {
+		const data = sidebar.getData(I.SidebarPanel.Right, isPopup);
+		const state = {
+			page: 'type', 
+			rootId: '',
+			noPreview: false,
+			details: {
+				...this.getNewTypeDetails(),
+				...(details || {}),
+			},
+		};
+
+		if (data.isClosed) {
+			sidebar.rightPanelToggle(isPopup, state);
+		} else {
+			S.Common.setRightSidebarState(isPopup, state);
+		};
+	};
+
+	getNewTypeDetails (): any {
+		const type = S.Record.getTypeType();
+		const featured = [ 'type', 'tag', 'backlinks' ];
+		const recommended = [ 'createdDate', 'creator', 'links' ];
+		const hidden = [ 'lastModifiedDate', 'lastModifiedBy', 'lastOpenedDate' ];
+		const mapper = it => S.Record.getRelationByKey(it)?.id;
+
+		return {
+			isNew: true,
+			type: type?.id,
+			layout: I.ObjectLayout.Type,
+			defaultTypeId: String(S.Record.getPageType()?.id) || '',
+			recommendedRelations: recommended.map(mapper).filter(it => it),
+			recommendedFeaturedRelations: featured.map(mapper).filter(it => it),
+			recommendedHiddenRelations: hidden.map(mapper).filter(it => it),
+			data: {
+				route: analytics.route.settingsSpace,
+			},
+		};
+	};
+
+	typeIcon (id: string, option: number, size: number, color?: string): string {
+		const fill = color || U.Common.iconBgByOption(option);
+		let svg = getIconSvg(`type/${id}`, { style: { width: size, height: size } }) ||
+			getIconSvg('state/error', { style: { width: size, height: size } });
+		if (!svg) {
+			return '';
+		};
+		svg = svg.replace(/currentColor/g, fill);
+		return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+	};
+
+	defaultIcon (layout: I.ObjectLayout, typeId: string, size: number): string {
+		const theme = S.Common.getThemeClass();
+		const type = S.Detail.get(U.Subscription.spaceSubId(J.Constant.subId.type), typeId, [ 'name', 'iconName' ], true);
+		const fill = J.Theme[theme].iconDefault;
+
+		if (type.iconName) {
+			return this.typeIcon(type.iconName, 1, size, fill);
+		};
+
+		let id = '';
+		switch (layout) {
+			default: id = 'page'; break;
+			case I.ObjectLayout.ChatOld:
+			case I.ObjectLayout.Chat:
+			case I.ObjectLayout.Discussion: id = 'chat'; break;
+			case I.ObjectLayout.Collection: id = 'collection'; break;
+			case I.ObjectLayout.Set: id = 'set'; break;
+			case I.ObjectLayout.Date: id = 'date'; break;
+			case I.ObjectLayout.Type: id = 'type'; break;
+			case I.ObjectLayout.Bookmark: id = 'page'; break;
+			case I.ObjectLayout.Settings: id = 'settings'; break;
+			case I.ObjectLayout.Graph: id = 'graph'; break;
+			case I.ObjectLayout.Navigation: id = 'graph'; break;
+			case I.ObjectLayout.Archive: id = 'archive'; break;
+		};
+
+		let svg = getIconSvg(`default/${id}`, { style: { width: size, height: size } });
+		if (!svg) {
+			return '';
+		};
+		svg = svg.replace(/currentColor/g, fill);
+		return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+	};
+
+	chatHasUnread (spaceId: string, chatId: string): boolean {
+		const counters = S.Chat.getChatCounters(spaceId, chatId);
+		const spaceview = U.Space.getSpaceviewBySpaceId(spaceId);
+		const mode = this.getChatNotificationMode(spaceview, chatId);
+
+		return (
+			((mode == I.NotificationMode.All) && !!(counters.messageCounter || counters.mentionCounter || counters.reactionCounter)) ||
+			((mode == I.NotificationMode.Mentions) && !!counters.mentionCounter)
+		);
+	};
+
+	getChatNotificationMode (spaceview: any, chatId: string): I.NotificationMode {
+		if (!spaceview) {
+			return I.NotificationMode.All;
+		};
+
+		const allIds = Relation.getArrayValue(spaceview.allIds);
+		const mentionIds = Relation.getArrayValue(spaceview.mentionIds);
+		const muteIds = Relation.getArrayValue(spaceview.muteIds);
+
+		if (allIds.includes(chatId)) {
+			return I.NotificationMode.All;
+		} else
+		if (mentionIds.includes(chatId)) {
+			return I.NotificationMode.Mentions;
+		} else
+		if (muteIds.includes(chatId)) {
+			return I.NotificationMode.Nothing;
+		};
+
+		return spaceview.notificationMode as I.NotificationMode;
+	};
+
+	getDiscussionNotificationMode (spaceview: any, objectId: string): I.NotificationMode {
+		if (!spaceview) {
+			return I.NotificationMode.Mentions;
+		};
+
+		const allIds = Relation.getArrayValue(spaceview.allIds);
+		const mentionIds = Relation.getArrayValue(spaceview.mentionIds);
+
+		if (allIds.includes(objectId)) {
+			return I.NotificationMode.All;
+		};
+		if (mentionIds.includes(objectId)) {
+			return I.NotificationMode.Mentions;
+		};
+
+		return I.NotificationMode.Mentions;
+	};
+
+	discussionHasUnread (spaceId: string, discussionId: string): boolean {
+		if (!discussionId) {
+			return false;
+		};
+
+		const counters = S.Chat.getChatCounters(spaceId, discussionId);
+		return !!(counters.messageCounter || counters.mentionCounter || counters.reactionCounter);
+	};
+
+};
+
+export default new UtilObject();

@@ -1,0 +1,118 @@
+@import "~scss/_mixins";
+
+.popups {
+    /* Common */
+
+    .popup {
+        .innerWrap { box-shadow: 0px 0px 0px 1px var(--color-shape-primary); }
+		#loader { background: rgba(23, 23, 23, 0.5); }
+    }
+    
+    /* PopupHelp */
+
+    .popup.popupHelp {
+		.highlight { color: var(--color-system-accent-100); background: var(--color-shape-highlight-medium); }
+		a:hover { color: var(--color-system-accent-100); }
+	}
+
+	/* PopupSpaceHome */
+
+	.popup.popupSpaceHome {
+		.homeOptions .option {
+			.icon.preview { background-color: #fff; }
+		}
+	}
+
+	/* PopupUsecase */
+
+	.popup.popupUsecase {
+		.page.pageList {
+			.categories { background: var(--color-shape-tertiary); }
+			.categories {
+				.item { border-color: var(--color-shape-primary); }
+				.item.hl { color: var(--color-text-inversion); }
+				.item:hover, .item.active { background: var(--color-control-accent); color: var(--color-text-inversion); }
+
+				.icon.arrow:hover { background-color: var(--color-control-accent);  }
+
+				.swiper-button-prev::after,
+				.swiper-button-next::after { background-image: url('~img/theme/dark/icon/arrow/swiper.svg'); }
+			}
+		}
+
+		.page.pageItem {
+			.screenWrap {
+				.icon.arrow { background-color: var(--color-bg-secondary);  }
+			}
+		}
+	}
+
+	/* PopupShortcut */
+
+	.popup.popupShortcut {
+		.item.hasError {
+			.name { color: var(--color-text-inversion); }
+		}
+	}
+
+	/* PopupShare */
+
+	.popup.popupShare {
+		.content::before { display: none; }
+		.content::after { background-image: url('~img/theme/dark/icon/popup/share/header.svg'); }
+	}
+
+	/* PopupOnboarding */
+
+	.popup.popupOnboarding {
+		.innerWrap { background: #20295c; }
+
+		.steps {
+			.step0 {
+				.types {
+					.type {
+						.label { color: rgba(32, 41, 92, 0.5); }
+					}
+				}
+			}
+
+			.step1 {
+				.swiper-button-prev,
+				.swiper-button-next,
+				.slideBack { background-image: url('~img/theme/dark/icon/onboarding/primitives/arrow.svg'); }
+			}
+		}
+	}
+
+	/* PopupIntroduceChats */
+
+	.popup.popupIntroduceChats {
+		.steps {
+			.step0 {
+				.chat { background-image: url('~img/theme/dark/icon/onboarding/chats/feed.png'); }
+				.grad { background: linear-gradient(180deg, rgba(49, 49, 49, 0) 0%, var(--color-shape-tertiary) 39.9%); }
+			}
+			.step1 {
+				.intro {
+					.img { background-image: url('~img/theme/dark/icon/onboarding/chats/intro.png'); }
+
+					.img.slide2,
+					.img.slide3,
+					.img.slide4 {
+						.sidebar { background-image: url('~img/theme/dark/icon/onboarding/chats/sidebar.png'); }
+						.oneToOne { background-image: url('~img/theme/dark/icon/onboarding/chats/oneToOne.png'); }
+					}
+				}
+				.swiper-button-prev,
+				.swiper-button-next,
+				.slideBack { background-image: url('~img/theme/dark/icon/onboarding/primitives/arrow.svg'); }
+			}
+		}
+	}
+
+	/* PopupConfirm */
+
+	.popup.popupConfirm.removeFavorite {
+		.icon { background-image: url('~img/theme/dark/help/pinned.png'); }
+	}
+}

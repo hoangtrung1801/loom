@@ -1,0 +1,29 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuTableOfContents { width: var(--menu-width-icon); transition-duration: 0.2s; }
+	.menu.menuTableOfContents {
+		.content { overflow: visible !important; padding-top: 0px; max-height: unset; }
+		.wrap { height: 100%; display: flex; flex-direction: column; }
+		.items { flex-grow: 1; }
+
+		.item {
+			.name { width: 100%; }
+			.label { @include text-overflow-nw; }
+
+			&.isCurrent::before { background: var(--color-shape-highlight-medium) !important; }
+		}
+
+		#item-sidebar { @include text-small; font-weight: 500; color: var(--color-text-secondary); }
+		#item-sidebar {
+			.icon { margin: 0px; }
+			.clickable { flex-direction: row-reverse; }
+		}
+
+		.bottom { flex-shrink: 0; }
+		.bottom {
+			.line { margin: 0px 16px 8px 16px; }
+		}
+	}
+
+}

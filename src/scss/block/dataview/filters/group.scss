@@ -1,0 +1,105 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuDataviewFilterAdvanced {
+		.group { padding: 0px 0px 8px; }
+		.group {
+			.head { padding: 0px 0px 6px 0px; @include text-common; color: var(--color-text-primary); }
+			.head {
+				.label { @include text-common; padding: 0px; margin: 0px; color: var(--color-text-primary); }
+				.select {
+					border: 0px; font-weight: 500; padding: 2px 20px 2px 6px; display: inline-flex;
+					background: none; color: var(--color-text-primary); margin-left: -6px; border-radius: 6px;
+				}
+				.select.hover, .select:hover { background-color: var(--color-shape-highlight-medium); }
+			}
+
+			.items { padding: 0px 16px; }
+			.rule { padding-bottom: 8px; }
+			.rule {
+				> .inner { display: flex; align-items: center; gap: 0px 8px; }
+				> .inner {
+					.relationSelect,
+					.conditionSelect,
+					.valueSelect .select { flex-shrink: 0; font-weight: 400; }
+
+					.relationSelect { position: relative; display: flex; align-items: center; gap: 0px 6px; }
+					.relationSelect {
+						.label { @include text-common; font-weight: 400; padding: 0px; margin: 0px; @include text-overflow-nw; color: var(--color-text-primary); }
+					}
+
+					.conditionSelect { @include text-common; }
+
+					.valueSelect { flex-grow: 1; min-width: 0px; position: relative; }
+					.valueSelect {
+						&.isSelect,
+						&.isMultiSelect,
+						&.isObject,
+						&.isFile {
+							height: 36px; border-radius: 12px; padding: 6px 10px; border: 1px solid transparent;
+							background: var(--color-shape-highlight-light-solid); transition: $transitionAllCommon;
+						}
+
+						&.hover, &:hover {
+							&.isSelect,
+							&.isMultiSelect,
+							&.isObject,
+							&.isFile { border: 1px solid var(--color-shape-highlight-light-solid); background: var(--color-shape-highlight-medium); }
+						}
+
+						.placeholder { @include text-common; font-weight: 400; color: var(--color-text-tertiary); position: static; text-align: left; padding: 0px; }
+						.input { padding: 6px 12px; }
+
+						.optionsList,
+						.objectsList { display: flex; gap: 6px; flex-wrap: nowrap; overflow: hidden; height: 100%; align-items: center; }
+						.optionsList,
+						.objectsList {
+							.tagItem {
+								.inner { max-width: 100px; }
+							}
+							.rest { @include text-common; color: var(--color-text-secondary); flex-shrink: 0; white-space: nowrap; }
+						}
+						.objectsList {
+							.flex { gap: 6px; flex-wrap: nowrap; }
+							.name { max-width: 100px; @include text-overflow-nw; }
+						}
+
+						.dateWrapper {display: flex; flex-wrap: nowrap; gap: 6px; }
+						.dateWrapper {
+							.dateInput { flex-grow: 1; min-width: 80px; }
+						}
+						
+						.select { justify-content: space-between; }
+					}
+
+				}
+			}
+			.rule.isReadonly {
+				.relationSelect, .conditionSelect { opacity: 0.7; }
+			}
+
+			.group {
+				.items { border-radius: 8px; border: 1px solid var(--color-shape-highlight-medium); padding: 8px 16px; }
+
+				.items {
+					.item { padding: 4px 8px; background: none; }
+					.item::before { width: 100%; left: 0px; }
+				}
+			}
+
+			.separator {
+				.inner { margin: 8px 0px; }
+			}
+
+			.item { background: none; }
+
+			&.depth0 { padding-top: 8px; padding-bottom: 0px; }
+			&.depth0 {
+				> .items {
+					> .item { padding: 4px 0px; background: none; }
+					> .item::before { width: calc(100% + 16px); left: -8px; }
+				}
+			}
+		}
+	}
+}

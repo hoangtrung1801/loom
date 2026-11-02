@@ -1,0 +1,54 @@
+@import "~scss/_mixins";
+
+.select { 
+	border-radius: 4px; border: solid 1px var(--color-shape-primary); display: inline-block; vertical-align: middle;
+	transition: $transitionAllCommon; position: relative; font-family: 'Inter';
+	white-space: nowrap; padding: 3px 20px 3px 6px; line-height: 20px !important;
+}
+.select:hover, .select.hover, .select.isFocused { background: var(--color-shape-tertiary); }
+
+.select {
+	.icon { transition: none; }
+
+	&:not(.round) {
+		.icon.arrow {
+			margin: -10px 0px 0px 0px !important; right: 0px !important; width: 20px !important; height: 20px !important; position: absolute !important; top: 50%;
+		}
+	}
+
+	.item { display: flex; background: none !important; padding: 0px !important; overflow: hidden; }
+	.item {
+		.icon { width: 20px; height: 20px; }
+		.icon, .iconObject { transition: none; margin-right: 6px; }
+		.name { width: 100%; @include text-overflow-nw; }
+		.caption, .note { display: none; }
+	}
+	.item::before { display: none; }
+
+	.currentSelected { display: flex; align-items: center; gap: 0px 6px; }
+	.clickable { display: flex; width: 100%; }
+}
+
+.select.big { padding: 9px 26px 9px 12px; border-radius: 10px; }
+.select.big {
+	.icon.arrow { right: 4px !important; }
+	.item {
+		.name { line-height: 22px; font-weight: 600; }
+	}
+}
+
+.select.round {
+	display: flex; align-items: center; gap: 0px 6px; border-radius: 14px; border: 0px;
+	background: var(--color-shape-highlight-light-solid);  padding: 6px 10px;
+}
+.select.round {
+	&.hover, &:hover { background: var(--color-shape-highlight-medium); }
+	&.size36 { height: 36px; border-radius: 12px; }
+
+	.icon.arrow { width: 8px; height: 8px; }
+}
+
+.select.isReadonly { cursor: default; padding-right: 6px; }
+.select.isReadonly {
+	.icon.arrow { display: none; }
+}

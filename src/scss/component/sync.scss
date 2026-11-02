@@ -1,0 +1,28 @@
+@import "~scss/_mixins";
+
+@keyframes syncing {
+	0%, 100% { opacity: 0.2; }
+	40%, 60% { opacity: 1; }
+};
+
+.sync { 
+	height: 28px; width: 28px; display: flex; flex-direction: row; align-items: center; @include text-small; color: var(--color-text-secondary);
+	border-radius: 50%; gap: 0px 8px; justify-content: center;
+}
+.sync {
+	.icon { pointer-events: none; }
+	.icon.syncing { animation: syncing 2s ease-out infinite; }
+
+	.name { @include text-overflow-nw; margin-right: 10px; display: none; }
+	.badge { padding-right: 10px; }
+
+	&.hover, &:hover { background: var(--color-shape-highlight-medium);  }
+	&.hover, &:hover {
+		.name { display: block; }
+	}
+
+	&.errorIncompatibleVersion { width: auto; }
+	&.errorIncompatibleVersion {
+		.name { display: block; }
+	}
+}

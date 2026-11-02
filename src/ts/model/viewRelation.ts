@@ -1,0 +1,30 @@
+import { observable, makeObservable } from 'mobx';
+import * as I from 'Interface';
+
+class ViewRelation implements I.ViewRelation {
+
+	relationKey = '';
+	width = 0;
+	isVisible = false;
+	formulaType: I.FormulaType = I.FormulaType.None;
+	align = I.BlockHAlign.Left;
+
+	constructor (props: I.ViewRelation) {
+		this.relationKey = String(props.relationKey || '');
+		this.width = Number(props.width) || 0;
+		this.isVisible = Boolean(props.isVisible);
+		this.formulaType = Number(props.formulaType) || I.FormulaType.None;
+		this.align = Number(props.align) || I.BlockHAlign.Left;
+
+		makeObservable(this, {
+			width: observable,
+			isVisible: observable,
+			formulaType: observable,
+		});
+
+		return this;
+	};
+
+};
+
+export default ViewRelation;

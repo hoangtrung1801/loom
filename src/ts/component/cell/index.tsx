@@ -1,0 +1,664 @@
+import React, { forwardRef, useRef, useImperativeHandle, useState } from 'react';
+import { observable } from 'mobx';
+
+import CellText from './text';
+import CellSelect from './select';
+import CellCheckbox from './checkbox';
+import CellObject from './object';
+import CellFile from './file';
+import * as I from 'Interface';
+
+interface Props extends I.Cell {
+	elementId?: string;
+	tooltipParam?: I.TooltipParam;
+	maxWidth?: number;
+	noInplace?: boolean;
+	editModeOn?: boolean;
+};
+
+const Cell = forwardRef<I.CellRef, Props>((props, ref) => {
+
+	const { 
+		elementId, relationKey, recordId, getRecord, getView, idPrefix,
+		isInline, menuParam = {}, block, subId, rootId, onCellChange,
+		onMouseEnter, onMouseLeave, maxWidth, cellPosition, onClick, readonly, tooltipParam = {},
+		noInplace, editModeOn, viewType,
+	} = props;
+	const [ dummy, setDummy ] = useState(0);
+	const view = getView ? getView() : null;
+	const record = getRecord(recordId);
+	const relation = S.Record.getRelationByKey(relationKey) || {};
+	const isName = relationKey == 'name';
+	const nodeRef = useRef(null);
+	const childRef = useRef<I.CellRef>(null);
+	const cellId = Relation.cellId(idPrefix, relation.relationKey, record.id);
+	const withMenu = useRef(false);
+
+	const checkValue = (): boolean => {
+		if ((noInplace && editModeOn) || withMenu.current) {
+			return true;
+		};
+
+		if (isName) {
+			return true;
+		};
+
+		if ([ I.RelationType.Select, I.RelationType.MultiSelect ].includes(relation.format)) {
+			const options = Relation.getOptions(record[relation.relationKey])
+				.filter(it => !it._empty_ && !it.isArchived && !it.isDeleted);
+			
+			return !!options.length;
+		};
+
+		return Relation.checkRelationValue(relation, record[relation.relationKey]);
+	};
+
+	const onClickHandler = (e: any) => {
+		e.stopPropagation();
+
+		if (!relation || !record) {
+			return;
+		};
+
+		const value = record[relation.relationKey] || '';
+		const canEdit = canCellEdit(relation, record);
+		const placeholder = getPlaceholder(relation, record);
+		const check = checkValue();
+		const isGrid = viewType == I.ViewType.Grid;
+		const isName = relationKey == 'name';
+
+		if (!canEdit) {
+			if (check && (relation.format != I.RelationType.Checkbox)) {
+				if (Relation.isUrl(relation.format)) {
+					Action.openUrl(Relation.checkUrlScheme(relation.format, value));
+					return;
+				};
+
+				if (Relation.isDate(relation.format)) {
+					U.Object.openDateByTimestamp(relation.relationKey, value, 'config');
+					return;
+				};
+			} else {
+				return;
+			};
+		};
+
+		// "Created in" deep-links back into the origin context instead of plain-opening it
+		if (relation.relationKey == 'createdInContext') {
+			if (check) {
+				U.Object.openCreatedInContext(record, analytics.route.relation, subId);
+			};
+			return;
+		};
+
+		const { config } = S.Common;
+		const cell = U.Dom.get(cellId);
+		const className = [];
+		const cellContent = U.Dom.hasClass(cell, 'cellContent') ? cell : U.Dom.select('.cellContent', cell);
+
+		if (menuParam.className) {
+			className.push(menuParam.className);
+		};
+
+		if (isInline) {
+			className.push('isInline');
+		};
+
+		if (noInplace) {
+			className.push('withTitle');
+		};
+
+		let width = Math.max(J.Size.dataview.cell.edit, cell?.offsetWidth ?? 0);
+		let closeIfOpen = true;
+		let menuId = '';
+
+		if (undefined !== maxWidth) {
+			width = Math.min(width, maxWidth);
+		};
+
+		const setOn = () => {
+			if (noInplace) {
+				return;
+			};
+
+			if (!isGrid && isName && cellContent) {
+				U.Dom.css(cellContent, { height: `${cellContent.offsetHeight}px` });
+			};
+
+			U.Dom.addClass(cell, 'isEditing');
+
+			if (cellPosition) {
+				cellPosition(cellId);
+			};
+
+			if (menuId) {
+				keyboard.disableBlur(true);
+			};
+
+			if (childRef.current) {
+				childRef.current.setEditing?.(true);
+				childRef.current.onClick?.(e);
+			};
+
+			keyboard.disableSelection(true);
+			U.Dom.eventDispatch(window, 'resize');
+		};
+
+		const setOff = () => {
+			keyboard.disableBlur(false);
+			keyboard.disableSelection(false);
+
+			if (childRef.current) {
+				childRef.current.onBlur?.();
+				childRef.current.setEditing?.(false);
+			};
+
+			if (!isGrid && isName && cellContent) {
+				U.Dom.css(cellContent, { height: '' });
+			};
+
+			U.Dom.removeClass(U.Dom.get(cellId), 'isEditing');
+			S.Common.cellId = '';
+		};
+
+		const element = U.Dom.hasClass(cell, 'cellContent') ? `#${U.Common.esc(cellId)}` : `#${U.Common.esc(cellId)} .cellContent`;
+
+		let ret = false;
+		let param: I.MenuParam = { 
+			element,
+			horizontal: isGrid ? I.MenuDirection.Center : I.MenuDirection.Left,
+			offsetY: 2,
+			noAnimation: true,
+			passThrough: true,
+			...menuParam,
+			className: className.join(' '),
+			onOpen: () => {
+				U.Dom.addClass(U.Dom.select(element), 'withMenu');
+				setOn();
+			},
+			onClose: () => {
+				U.Dom.removeClass(U.Dom.select(element), 'withMenu');
+				setOff();
+			},
+			data: { 
+				cellId,
+				cellRef: childRef.current,
+				rootId,
+				subId,
+				blockId: block?.id,
+				value, 
+				relation: observable.box(relation),
+				relationKey: relation.relationKey,
+				record,
+				placeholder,
+				canEdit,
+				onChange: (value: any, callBack?: (message: any) => void) => {
+					if (childRef.current && childRef.current.onChange) {
+						childRef.current.onChange(value);
+					};
+
+					onChange(value, callBack);
+				},
+			},
+		};
+
+		if (noInplace) {
+			param.title = relation.name;
+		};
+
+		switch (relation.format) {
+
+			case I.RelationType.Date: {
+				param.data = Object.assign(param.data, {
+					value: param.data.value || U.Date.now(),
+					noKeyboard: true,
+
+					// Without inplace editing the calendar menu is the only editor available,
+					// so it has to offer the time input as well (JS-9841). With inplace
+					// editing the masked input in component/cell/text.tsx already handles time.
+					includeTime: !!noInplace && !!relation.includeTime,
+				});
+					
+				menuId = 'calendar';
+				closeIfOpen = false;
+				break;
+			};
+
+			case I.RelationType.File: {
+				if (!noInplace) {
+					param = Object.assign(param, { width });
+				};
+
+				param.data = Object.assign(param.data, {
+					value: value || [],
+				});
+
+				menuId = 'dataviewFileValues';
+				break;
+			};
+
+			case I.RelationType.Select: 
+			case I.RelationType.MultiSelect: {
+				if (!noInplace) {
+					param = Object.assign(param, {
+						width,
+						commonFilter: true,
+					});
+				};
+
+				param.data = Object.assign(param.data, {
+					canAdd: true,
+					filter: '',
+					value: value || [],
+					maxCount: relation.maxCount,
+					noFilter: !noInplace,
+				});
+
+				menuId = 'dataviewOptionList';
+
+				closeIfOpen = false;
+				break;
+			};
+					
+			case I.RelationType.Object: {
+				if (!noInplace) {
+					param = Object.assign(param, {
+						width,
+						commonFilter: true,
+					});
+				};
+
+				param.data = Object.assign(param.data, {
+					canAdd: true,
+					filter: '',
+					value: Relation.getArrayValue(record[relationKey]),
+					types: relation.objectTypes,
+					maxCount: relation.maxCount,
+					noFilter: !noInplace,
+				});
+
+				menuId = 'dataviewObjectList';
+
+				if (noInplace) {
+					menuId = 'dataviewObjectValues';
+					param.subIds = [ 'dataviewObjectList' ];
+				};
+				
+				closeIfOpen = false;
+				break;
+			};
+
+			// Without inplace editing the text menu is the only editor available (JS-9855),
+			// with inplace editing the input in component/cell/text.tsx handles both formats
+			case I.RelationType.ShortText:
+			case I.RelationType.Number: {
+				if (!noInplace) {
+					break;
+				};
+
+				param = Object.assign(param, { width: J.Size.menu.value });
+				param.data = Object.assign(param.data, { noResize: true });
+
+				menuId = 'dataviewText';
+				closeIfOpen = false;
+				break;
+			};
+
+			case I.RelationType.LongText: {
+				if (!noInplace) {
+					const { wh } = U.Dom.getWindowDimensions();
+					const height = Math.min(wh - J.Size.header - 20, cell?.offsetHeight ?? 0);
+
+					param = Object.assign(param, {
+						noFlipX: true,
+						horizontal: I.MenuDirection.Left,
+						element: cell,
+						offsetY: -height,
+						width,
+						height,
+					});
+				} else {
+					param = Object.assign(param, { width: J.Size.menu.value });
+					param.data = Object.assign(param.data, { noResize: true });
+				};
+
+				menuId = 'dataviewText';
+				closeIfOpen = false;
+				break;
+			};
+
+			case I.RelationType.Url:
+			case I.RelationType.Email:
+			case I.RelationType.Phone: {
+				const goIcons = {
+					[I.RelationType.Url]: 'browse',
+					[I.RelationType.Email]: 'email',
+					[I.RelationType.Phone]: 'phone',
+				};
+				const options = [
+					{ id: 'go', iconParam: { name: `menu/action/${goIcons[relation.format]}` }, name: translate(`menuDataviewUrlActionGo${relation.format}`) },
+					{ id: 'copy', iconParam: { name: 'menu/action/copy' }, name: translate('commonCopy') },
+				];
+				if (relation.relationKey == 'source') {
+					options.push({ id: 'reload', iconParam: { name: 'menu/action/reload' }, name: translate('menuDataviewUrlActionGoReload') });
+				};
+
+				const onSelect = (event: any, item: any) => {
+					// Always read from the underlying record value, never from a child
+					// cell that may expose a display-only (truncated) representation.
+					// Fixes #2163: when the featured-relations header renders a URL
+					// with `shortUrl`/`textLimit`, the visible string can be a form
+					// like "github.com/an...issues"; the Open/Copy/Reload actions
+					// must operate on the full target URL stored on the record.
+					const value = String(record[relation.relationKey] || '');
+					if (!value) {
+						return;
+					};
+
+					switch (item.id) {
+						case 'go': {
+							Action.openUrl(Relation.checkUrlScheme(relation.format, value));
+							analytics.event('RelationUrlOpen');
+							break;
+						};
+
+						case 'copy': {
+							U.Common.copyToast(translate('commonLink'), value);
+							analytics.event('RelationUrlCopy');
+							break;
+						};
+
+						case 'reload': {
+							C.ObjectBookmarkFetch(record.id, value.trim(), () => analytics.event('ReloadSourceData'));
+							break;
+						};
+					};
+				};
+
+				if (noInplace) {
+					param = Object.assign(param, { width: J.Size.menu.value });
+					param.data = Object.assign(param.data, {
+						noResize: true,
+						actions: value ? options : [],
+						onSelect,
+					});
+
+					menuId = 'dataviewText';
+					closeIfOpen = false;
+					break;
+				};
+
+				param = Object.assign(param, {
+					commonFilter: !noInplace,
+					width,
+				});
+
+				if (e.shiftKey && value) {
+					Action.openUrl(Relation.checkUrlScheme(relation.format, value));
+
+					ret = true;
+					break;
+				};
+
+				if (!value) {
+					break;
+				};
+
+				param.data = Object.assign(param.data, {
+					disabled: !value, 
+					noFilter: !noInplace,
+					options,
+					onSelect,
+				});
+
+				menuId = 'select';
+				closeIfOpen = false;
+				break;
+			};
+					
+			case I.RelationType.Checkbox: {
+				childRef.current.onClick?.(e);
+				ret = true;
+				break; 
+			};
+		};
+
+		if (ret) {
+			U.Dom.removeClass(cell, 'isEditing');
+			return;
+		};
+
+		// Swallows the click that follows a menu-dismissing mousedown, so dismissing
+		// an open cell menu by clicking another cell only closes the menu instead of
+		// immediately opening that cell's editor (JS-8540)
+		const swallowNextClick = () => {
+			let timeout = 0;
+
+			const clear = () => {
+				window.clearTimeout(timeout);
+				U.Dom.removeEvent(window, 'click', swallow, true);
+			};
+
+			const swallow = (e: globalThis.MouseEvent) => {
+				const target = e.target as HTMLElement;
+
+				// Only clicks landing on a cell are swallowed — clicks on menus
+				// and other UI pass through untouched
+				if (target.closest('.cell, .cellContent')) {
+					e.preventDefault();
+					e.stopPropagation();
+				};
+
+				clear();
+			};
+
+			timeout = window.setTimeout(clear, 500);
+			U.Dom.addEvent(window, 'click', swallow, true);
+		};
+
+		const bindContainerClick = () => {
+			const handler = (e: any) => {
+				const target = e.target as HTMLElement;
+
+				if (!target.closest(`#${U.Common.esc(cellId)}`) && !target.closest('.menus')) {
+					// Only a primary-button mousedown produces a follow-up click event —
+					// arming on other buttons would eat an unrelated later click
+					if (menuId && S.Menu.isOpenList(J.Menu.cell) && (e.button == 0) && target.closest('.cell, .cellContent')) {
+						swallowNextClick();
+					};
+
+					S.Menu.closeAll(J.Menu.cell);
+					setOff();
+
+					U.Dom.removeEvent(window, 'mousedown', handler);
+				};
+			};
+
+			U.Dom.removeEvent(window, 'mousedown', handler);
+			U.Dom.addEvent(window, 'mousedown', handler);
+		};
+
+		if (menuId) {
+			if (S.Common.cellId != cellId) {
+				S.Common.cellId = cellId;
+				
+				const isOpen = S.Menu.isOpen(menuId);
+
+				S.Menu.open(menuId, param);
+				withMenu.current = true;
+
+				// If menu was already open OnOpen callback won't be called
+				if (isOpen) {
+					setOn();
+				};
+
+				bindContainerClick();
+
+				if (!config.debug.ui) {
+					U.Dom.addEvent(window, 'blur', () => S.Menu.closeAll(J.Menu.cell), { once: true });
+				};
+			} else 
+			if (closeIfOpen) {
+				setOff();
+				S.Menu.closeAll(J.Menu.cell);
+				withMenu.current = false;
+			};
+		} else {
+			setOn();
+
+			if (canEdit && Relation.isText(relation.format)) {
+				bindContainerClick();
+			};
+		};
+	};
+
+	const onChange = (value: any, callBack?: (message: any) => void) => {
+		if (!relation) {
+			return null;
+		};
+
+		value = Relation.formatValue(relation, value, true);
+		if (onCellChange) {
+			onCellChange(record.id, relation.relationKey, value, callBack);
+		};
+	};
+
+	const onMouseEnterHandler = (e: any) => {
+		const cell = U.Dom.get(Relation.cellId(idPrefix, relation.relationKey, record.id));
+		const { text = '', caption = '' } = tooltipParam;
+		const t = Preview.tooltipCaption(text, caption);
+
+		if (onMouseEnter) {
+			onMouseEnter(e);
+		};
+
+		if (t && cell) {
+			Preview.tooltipShow({ ...tooltipParam, text: t, element: cell });
+		};
+	};
+	
+	const onMouseLeaveHandler = (e: any) => {
+		if (onMouseLeave) {
+			onMouseLeave(e);
+		};
+
+		Preview.tooltipHide(false);
+	};
+
+	const getPlaceholder = (relation: any, record: any): string => {
+		if (!relation.id) {
+			return translate(`placeholderCellCommon`);
+		};
+
+		const canEdit = canCellEdit(relation, record);
+		if (!canEdit) {
+			return translate(`placeholderCellCommon`);
+		};
+
+		if (props.placeholder) {
+			return props.placeholder;
+		};
+
+		return translate(`placeholderCell${relation.format}`);
+	};
+
+	const canCellEdit = (relation: any, record: any): boolean => {
+		if (readonly) {
+			return false;
+		};
+
+		if (!relation || !record || relation.isReadonlyValue || record.isReadonly) {
+			return false;
+		};
+		if (U.Object.isNoteLayout(record.layout) && (relation.relationKey == 'name')) {
+			return false;
+		};
+		return true;
+	};
+
+	if (view) {
+		const { hideIcon } = view;
+	};
+
+	const id = Relation.cellId(idPrefix, relation.relationKey, record.id);
+	const canEdit = canCellEdit(relation, record);
+	const placeholder = getPlaceholder(relation, record);
+	const cn = [ 
+		'cellContent', 
+		`c-${relation.relationKey}`,
+		Relation.className(relation.format), 
+		(canEdit ? 'canEdit' : ''), 
+		(relationKey == 'name' ? 'isName' : ''),
+		(!checkValue() ? 'isEmpty' : ''),
+		(editModeOn ? 'editModeOn' : ''),
+		(withMenu.current ? 'withMenu' : ''),
+	];
+
+	let CellComponent: any = null;
+
+	const childProps = {
+		...props,
+		id,
+		canEdit,
+		relation,
+		placeholder,
+		onChange,
+	};
+
+	switch (relation.format) {
+		default:
+		case I.RelationType.ShortText:
+		case I.RelationType.Number:
+		case I.RelationType.LongText:
+		case I.RelationType.Date:
+			CellComponent = CellText;
+			break;
+
+		case I.RelationType.Select:	
+		case I.RelationType.MultiSelect:
+			CellComponent = CellSelect;
+			break;
+			
+		case I.RelationType.Checkbox:
+			CellComponent = CellCheckbox;
+			break;
+
+		case I.RelationType.File:
+			CellComponent = CellFile;
+			break;
+			
+		case I.RelationType.Object:
+			CellComponent = CellObject;
+			break;
+			
+		case I.RelationType.Url:
+		case I.RelationType.Email:
+		case I.RelationType.Phone:
+			CellComponent = CellText;
+			break;
+	};
+
+	useImperativeHandle(ref, () => ({
+		onClick: onClickHandler,
+		isEditing: () => childRef.current.isEditing?.(),
+		canEdit: () => canCellEdit(relation, record),
+		onBlur: () => childRef.current.onBlur?.(),
+		forceUpdate: () => setDummy(dummy + 1),
+	}));
+
+	return (
+		<div 
+			ref={nodeRef} 
+			id={elementId} 
+			className={cn.join(' ')} 
+			onClick={onClick} 
+			onMouseEnter={onMouseEnterHandler} 
+			onMouseLeave={onMouseLeaveHandler}
+		>
+			<CellComponent ref={childRef} key={id} {...childProps} />
+		</div> 
+	);
+
+});
+
+export default Cell;

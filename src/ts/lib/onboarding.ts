@@ -1,0 +1,239 @@
+import * as Docs from 'Docs';
+import * as I from 'Interface';
+import Storage from 'Lib/storage';
+
+/**
+ * Onboarding manages the user onboarding and tutorial flows.
+ *
+ * Key responsibilities:
+ * - Starting onboarding sequences for different features/sections
+ * - Tracking which onboarding flows have been completed
+ * - Managing the onboarding menu display and positioning
+ * - Initializing widget sections during onboarding
+ *
+ * Onboarding data is defined in the Docs module and includes
+ * sequences of items with positioning and content.
+ */
+class Onboarding {
+
+	/**
+	 * Gets the onboarding section data for a given key.
+	 * @param {string} key - The onboarding section key.
+	 * @returns {any} The section data.
+	 */
+	getSection (key: string) {
+		return Docs.Help.Onboarding[key] ? Docs.Help.Onboarding[key]() : {};
+	};
+	
+	/**
+	 * Starts the onboarding flow for a given key and context.
+	 * @param {string} key - The onboarding section key.
+	 * @param {boolean} isPopup - Whether onboarding is in a popup.
+	 * @param {boolean} [force] - Whether to force onboarding even if already completed.
+	 * @param {any} [options] - Additional options for onboarding.
+	 */
+	start (key: string, isPopup: boolean, force?: boolean, options?: any): boolean {
+		options = options || {};
+
+		const section = this.getSection(key);
+		if (
+			!section
+			|| !section.items
+			|| !section.items.length
+			|| (!force && Storage.getOnboarding(key))
+			// JS-9163: multi chats onboarding gate disabled
+			// || !Storage.get('multichatsOnboarding')
+		) {
+			return false;
+		};
+
+		const { items } = section;
+		const t = isPopup ? S.Popup.getTimeout() : 0;
+
+		S.Menu.close('onboarding', () => {
+			window.setTimeout(() => {
+				let param = this.getParam(section, items[0], isPopup, force);
+
+				if (options.parseParam) {
+					param = options.parseParam(param);
+				};
+
+				S.Menu.open('onboarding', {
+					...param,
+					noAnimation: true,
+					noFlipY: true,
+					noFlipX: true,
+					onClose: () => { 
+						Storage.setOnboarding(key);
+						section.onComplete?.(force);
+					},
+					data: {
+						...param.data,
+						options,
+						key,
+						current: 0,
+						isPopup,
+					},
+				});
+			}, t);
+		});
+
+		return true;
+	};
+
+	startCommon (isPopup: boolean) {
+		if (this.start('common', isPopup)) {
+			this.initWidgetSections(true, true);
+		};
+	};
+
+	startChat (isPopup: boolean) {
+		if (!this.isCompletedCommon()) {
+			return;
+		};
+		if (this.start('chat', isPopup)) {
+			this.initWidgetSections(false, false);
+		};
+	};
+
+	initWidgetSections (unread: boolean, recentEdit: boolean) {
+		const values = {
+			[I.WidgetSection.Pin]: false,
+			[I.WidgetSection.Unread]: unread,
+			[I.WidgetSection.RecentEdit]: recentEdit,
+			[I.WidgetSection.Type]: false,
+		};
+
+		for (const k in values) {
+			const current = S.Common.getWidgetSection(Number(k));
+			if (current) {
+				current.isClosed = values[k];
+			};
+		};
+
+		S.Common.widgetSectionsSet(S.Common.widgetSections);
+		S.Common.setLeftSidebarState('vault', 'widget');
+	};
+
+	/**
+	 * Gets the menu parameters for a section and item.
+	 * @param {any} section - The onboarding section.
+	 * @param {any} item - The onboarding item.
+	 * @param {boolean} isPopup - Whether onboarding is in a popup.
+	 * @param {boolean} [force] - Whether to force onboarding.
+	 * @returns {any} The menu parameters.
+	 */
+	getParam (section: any, item: any, isPopup: boolean, force?: boolean): any {
+		section.param = section.param || {};
+		item.param = item.param || {};
+
+		let param: any = Object.assign({}, section.param);
+
+		if (item.param.common) {
+			param = Object.assign(param, item.param.common);
+			if (item.param.page) {
+				param = Object.assign(param, item.param.page);
+			} else 
+			if (item.param.popup) {
+				param = Object.assign(param, item.param.popup);
+			};
+		} else {
+			param = Object.assign(param, item.param);
+		};
+
+		param.element = String(param.element || '');
+		param.vertical = Number(param.vertical) || I.MenuDirection.Bottom;
+		param.horizontal = Number(param.horizontal) || I.MenuDirection.Left;
+		param.className = String(param.className || '');
+		param.classNameWrap = String(param.classNameWrap || '');
+		param.rect = param.rect || null;
+		param.recalcRect = param.recalcRect || null;
+		param.force = force;
+		param.noAutoHover = true;
+		param.highlightElements = param.highlightElements || [];
+		param.hiddenElements = param.hiddenElements || [];
+
+		if ('function' != typeof(param.offsetX)) {
+			param.offsetX = Number(param.offsetX) || 0;
+		};
+		if ('function' != typeof(param.offsetY)) {
+			param.offsetY = Number(param.offsetY) || 0;
+		};
+
+		const cnw = [];
+		if (param.classNameWrap) {
+			cnw.push(param.classNameWrap);
+		};
+		if (isPopup) {
+			cnw.push('fromPopup');
+		};
+		if (section.showDimmer) {
+			param.menuKey = 'withDimmer';
+			cnw.push('fromOnboarding');
+		} else {
+			cnw.push('fromBlock');
+		};
+		param.classNameWrap = cnw.join(' ');
+
+		if (param.container) {
+			param.containerVertical = Number(param.containerVertical) || I.MenuDirection.Top;
+			param.containerHorizontal = Number(param.containerHorizontal) || I.MenuDirection.Left;
+
+			const recalcRect = () => {
+				const container = U.Dom.getScrollContainer(isPopup);
+				const height = container?.clientHeight ?? 0;
+				const width = container?.clientWidth ?? 0;
+				const scrollTop = window.scrollY;
+				const bounds = container?.getBoundingClientRect();
+
+				let offset = { left: 0, top: 0 };
+				let rect: any = { x: 0, y: 0, width: 0, height: 0 };
+
+				if (container && bounds) {
+					offset = { left: bounds.left, top: bounds.top };
+				};
+	
+				switch (param.containerVertical) {
+					case I.MenuDirection.Top:
+						rect = { x: offset.left, y: offset.top, width: width, height: 0 };
+						break;
+	
+					case I.MenuDirection.Center:
+						rect = { x: offset.left, y: offset.top + height / 2, width: width, height: 0 };
+						break;
+	
+					case I.MenuDirection.Bottom:
+						rect = { x: offset.left, y: offset.top + height, width: width, height: 0 };
+						break;
+				};
+
+				if (!isPopup) {
+					rect.y += scrollTop;
+				};
+
+				return { ...rect };
+			};
+			
+			param.recalcRect = recalcRect;
+			param.element = null;
+		};
+
+		return param;
+	};
+
+	/**
+	 * Checks if onboarding is completed for a given key.
+	 * @param {string} key - The onboarding section key.
+	 * @returns {boolean} True if onboarding is completed.
+	 */
+	isCompleted (key: string): boolean {
+		return Storage.getOnboarding(key);
+	};
+
+	isCompletedCommon (): boolean {
+		return this.isCompleted('common');
+	};
+	
+};
+
+export default new Onboarding();

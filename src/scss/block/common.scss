@@ -1,0 +1,233 @@
+@import "~scss/_mixins";
+
+.blocks {
+	.block { 
+		@include text-paragraph; word-break: break-word; display: flex; flex-direction: row; flex: auto; 
+		position: relative; margin: 0px 0px 2px 0px; align-items: stretch;
+	}
+	.block.isHidden {
+		.wrapMenu, .wrapContent { display: none; }
+	}
+
+	.block.index0-0, .block.index0 { padding-top: 0px !important; }
+
+	.block.diffNone {
+		> .wrapMenu {
+			.iconObject { display: block; }
+		}
+	}
+
+	.block {
+		.wrapMenu { width: 48px; text-align: right; position: relative; flex-shrink: 0; z-index: 1; flex-basis: 48px; }
+		.wrapContent { width: calc(100% - 48px); position: relative; flex-grow: 1; }
+		.wrapContent.bgColor { border-radius: 2px; }
+
+		.wrapContent > .dropTarget.targetTop, .wrapContent > .dropTarget.targetBot { 
+			padding: 0px; width: 100%; position: absolute; left: 0px; border-radius: 0px !important; pointer-events: none;
+		}
+		.wrapContent > .dropTarget.targetBot { height: 2px; bottom: 0px; }
+
+		.wrapMenu {
+			.iconObject { position: absolute; top: 4px; right: 2px; display: none; }
+		}
+
+		.flex { position: relative; z-index: 2; }
+		.icon.commonDnd {
+			width: 12px; height: 100%; opacity: 0; cursor: grab; position: absolute; right: 6px; top: 0px;
+			border: 1px solid var(--color-shape-secondary); border-radius: 6px;
+			display: flex; align-items: center; justify-content: center; color: var(--color-text-tertiary);
+
+			svg { width: 2px !important; height: 12px !important; }
+		}
+		.icon.commonDnd:hover {
+			background-color: var(--color-shape-tertiary); border-color: var(--color-shape-tertiary);
+		}
+
+		.inputWithFile { position: relative; }
+		
+		.colResize { width: 0px; position: relative; opacity: 0; z-index: 10; flex: 0; }
+		.colResize.active { opacity: 1; }
+		.colResize {
+			.inner { position: absolute; left: 22px; top: -15px; width: 8px; height: calc(100% + 30px); cursor: col-resize; z-index: 2; }
+			.line { 
+				height: 100%; width: 2px; background: var(--color-shape-secondary); position: absolute; left: 50%; top: 0px; margin-left: -1px; 
+				border-radius: 2px;
+			}
+		}
+		
+		.focusable { border-radius: inherit; }
+
+		.emptyToggle { 
+			display: none; margin-left: 28px; color: var(--color-control-active); position: relative; z-index: 2;
+			@include text-overflow-nw;
+		}
+		.emptyToggle:hover { color: var(--color-text-primary); }
+	}
+
+	.block {
+		> .wrapContent {
+			> .selectionTarget { position: relative; }
+		}
+	}
+
+	.block.isReadonly {
+		.colResize { display: none; }
+	}
+	.block.isReadonly > .wrapMenu > .icon.commonDnd { display: none; }
+	
+	.block.align0 > .wrapContent { text-align: left; }
+	.block.align1 > .wrapContent { text-align: center; }
+	.block.align2 > .wrapContent { text-align: right; }
+	.block.align3 > .wrapContent { text-align: justify; }
+
+	.block.blockText.align2 { flex-direction: row-reverse; }
+	.block.blockText.align2 {
+		> .wrapMenu { text-align: left; }
+		> .wrapMenu {
+			.icon.commonDnd { right: auto; left: 6px; }
+		}
+	}
+
+	.block.blockText.align2.isAdding.top::before { right: auto; left: 0px; }
+	.block.blockText.align2.isAdding.bottom::after { right: auto; left: 0px; }
+	
+	.block.isResizing { user-select: none; }
+	.block.isResizing {
+		.icon.commonDnd { opacity: 1; }
+	}
+	
+	.block.isAdding.top::before {
+		content: ""; display: block; width: calc(100% - 48px); height: 2px; background: var(--color-control-accent); position: absolute; right: 0px; top: -2px;
+	}
+	
+	.block.isAdding.bottom::after {
+		content: ""; display: block; width: calc(100% - 48px); height: 2px; background: var(--color-control-accent); position: absolute; right: 0px; bottom: -2px;
+	}
+	
+	.block:hover > .wrapMenu > .icon.commonDnd { opacity: 1; }
+	.block.showMenu > .wrapMenu > .icon.commonDnd { opacity: 1; }
+
+	.block.isAdding.top > .wrapContent > .selectionTarget > .dropTarget { border-radius: 0px 0px 4px 4px !important; }
+	.block.isAdding.bottom > .wrapContent > .selectionTarget > .dropTarget { border-radius: 4px 4px 0px 0px !important; }
+
+	.block > .wrapContent > .children.canToggle { display: none; }
+	.block.isToggled > .wrapContent > .children { display: block; }
+	.block.isToggled > .wrapContent > .emptyToggle { display: block; }
+	.block.isToggled > .wrapContent > .selectionTarget > .dropTarget > .flex > .markers > .markerToggle { transform: rotateZ(90deg); }
+	
+	.block.blockIconPage > .wrapMenu { visibility: hidden; }
+	.block.blockIconUser > .wrapMenu { visibility: hidden; }
+}
+
+#dragProvider.isDragging {
+	.block > .wrapContent > .selectionTarget.isSelectionSelected::after { display: none; }
+	.block > .wrapMenu > .icon.commonDnd { opacity: 1; }
+}
+
+@import "./markup";
+@import "./bookmark";
+@import "./cover";
+@import "./dataview";
+@import "./dataview/view/board";
+@import "./dataview/view/common";
+@import "./dataview/view/gallery";
+@import "./dataview/view/grid";
+@import "./dataview/view/list";
+@import "./dataview/view/calendar";
+@import "./dataview/view/graph";
+@import "./dataview/view/timeline";
+@import "./dataview/filters/group";
+@import "./div";
+@import "./featured";
+@import "./file";
+@import "./iconPage";
+@import "./iconUser";
+@import "./layout";
+@import "./link";
+@import "./media";
+@import "./relation";
+@import "./table";
+@import "./tableOfContents";
+@import "./text";
+@import "./embed";
+@import "./chat";
+
+/* live presence: pubsub-driven "is typing / has focus" state (see Lib/presence) */
+
+.blocks {
+	.block.isPresenceLocked {
+		> .wrapContent { pointer-events: none; user-select: none; }
+
+		/* outer glow, offset horizontally and flush vertically: an outer box-shadow is clipped to the
+		   outside of its own border box, so the inner edge stays sharp and nothing bleeds over the text */
+		> .wrapContent::after {
+			content: ''; position: absolute; inset: 0px -5px 0px -12px; pointer-events: none;
+			border-radius: 6px; opacity: 0.35;
+			box-shadow: 0px 0px 6px 0px var(--color-system-accent-100);
+			animation: blockPresenceGlowIn 0.2s ease-out;
+		}
+	}
+
+	/* in a table the block fills the cell, so an offset rounded glow spills across the grid:
+	   light up the cell's own border instead (drawn by .cell::before, see table.scss) */
+	.block.blockTable {
+		.cell:has(.block.isPresenceLocked) { z-index: 2; cursor: default; user-select: none; }
+		.cell:has(.block.isPresenceLocked)::before {
+			opacity: 0.5; border-radius: 4px;
+			box-shadow: 0px 0px 0px 1px var(--color-system-accent-100) inset, 0px 0px 6px 0px var(--color-system-accent-100);
+		}
+
+		.block.isPresenceLocked {
+			> .wrapContent::after { display: none; }
+		}
+	}
+
+	/* remote carriage: accent-coloured and steady, so it never reads as the local caret */
+	.block.blockText {
+		.flex.withPresence { position: relative; }
+
+		.presenceCarriage {
+			position: absolute; width: 2px; margin-left: -1px; z-index: 1; pointer-events: none;
+			border-radius: 1px; background: var(--color-system-accent-50); opacity: 0.6;
+			transition: left 0.08s ease-out, top 0.08s ease-out;
+		}
+	}
+
+	.block {
+		> .blockPresence { position: absolute; right: 0px; top: -8px; z-index: 30; display: flex; gap: 0px 4px; pointer-events: none; }
+		> .blockPresence {
+			.chip {
+				position: relative; display: flex; align-items: center; height: 16px; padding: 0px 6px; border-radius: 2px;
+				background: linear-gradient(var(--color-system-highlight), var(--color-system-highlight)), var(--color-bg-primary);
+				color: var(--color-system-accent-50);
+				font-size: 10px; line-height: 16px; font-weight: 500; letter-spacing: 0.01em;
+				animation: blockPresenceIn 0.15s ease-out;
+			}
+			.chip {
+				/* the same outer glow the locked block carries, so the badge merges into it */
+				&::before {
+					content: ''; position: absolute; inset: 0px; pointer-events: none;
+					border-radius: inherit; opacity: 0.35;
+					box-shadow: 0px 0px 6px 0px var(--color-system-accent-100);
+				}
+
+				.name { max-width: 160px; @include text-overflow-nw; }
+			}
+		}
+	}
+}
+
+@keyframes blockPresenceIn {
+	from { opacity: 0; transform: translateY(2px); }
+	to { opacity: 1; transform: none; }
+}
+
+@keyframes blockPresenceGlowIn {
+	from { opacity: 0; }
+	to { opacity: 0.35; }
+}
+
+@keyframes blockPresenceDot {
+	0%, 60%, 100% { opacity: 0.35; transform: none; }
+	30% { opacity: 1; transform: translateY(-1px); }
+}

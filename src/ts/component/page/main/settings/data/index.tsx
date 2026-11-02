@@ -1,0 +1,132 @@
+import React, { forwardRef } from 'react';
+import { Title, Label, Button, Icon, Select } from 'Component';
+import * as I from 'Interface';
+
+const PageMainSettingsDataIndex = forwardRef<I.PageRef, I.PageSettingsComponent>((props, ref) => {
+
+	const { dataPath, spaceStorage, autoDownload } = S.Common;
+	const { localUsage } = spaceStorage;
+	const isLocalNetwork = U.Data.isLocalNetwork();
+	const suffix = isLocalNetwork ? 'LocalOnly' : '';
+	const dataCheck = U.Common.checkVaultPath(dataPath);
+	const MiB = 1048576;
+	const autoDownloadOptions = [
+		{ id: '-1', name: translate('commonOff') },
+		{ id: '20', name: U.File.size(20 * MiB) },
+		{ id: '100', name: U.File.size(100 * MiB) },
+		{ id: '250', name: U.File.size(250 * MiB) },
+		{ id: '1024', name: U.File.size(1024 * MiB) },
+		{ id: '0', name: translate('commonUnlimited') },
+	];
+
+	const onOffload = (e: any) => {
+		analytics.event('ScreenFileOffloadWarning');
+
+		S.Popup.open('confirm',{
+			data: {
+				title: translate('commonAreYouSure'),
+				text: translate(`popupSettingsDataOffloadWarningText${suffix}`),
+				textConfirm: isLocalNetwork ? translate('popupSettingsDataRemoveFiles') : translate('commonConfirm'),
+				textCancel: isLocalNetwork ? translate('popupSettingsDataKeepFiles') : translate('commonCancel'),
+				onConfirm: () => {
+					analytics.event('SettingsStorageOffload');
+
+					C.FileListOffload([], false, (message: any) => {
+						if (message.error.code) {
+							return;
+						};
+
+						S.Popup.open('confirm',{
+							data: {
+								title: translate('popupSettingsDataFilesOffloaded'),
+								textConfirm: translate('commonOk'),
+								canCancel: false,
+							}
+						});
+
+						analytics.event('FileOffload', { middleTime: message.middleTime });
+					});
+				},
+			},
+		});
+	};
+
+	const onOpenDataLocation = () => {
+		Action.openPath(dataPath);
+		analytics.event('ClickSettingsDataManagementLocation', { route: analytics.route.settings });
+	};
+
+	return (
+		<>
+			<Title text={translate('popupSettingsLocalStorageTitle')} />
+			<Label className="description" text={translate(`popupSettingsDataManagementLocalStorageText${suffix}`)} />
+
+			<div className="actionItems">
+
+				<div className="item storageUsage">
+					<div className="side left">
+						<Icon name="settings/drive" className="drive" />
+
+						<div className="txt">
+							<div className="name">{translate('popupSettingsDataLocalFiles')}</div>
+							<div className="type">{U.String.sprintf(translate(`popupSettingsDataManagementLocalStorageUsage`), U.File.size(localUsage))}</div>
+						</div>
+					</div>
+					<div className="side right">
+						<Button color="blank" size={28} text={translate(`popupSettingsDataManagementOffloadFiles${suffix}`)} onClick={onOffload} />
+					</div>
+				</div>
+
+				<div className="item">
+					<div className="side left">
+						<Icon name="settings/offline" className="offline" />
+
+						<div className="txt">
+							<Title text={translate('popupSettingsDataOfflineAccess')} />
+							<Label text={translate('popupSettingsDataOfflineAccessDescription')} />
+						</div>
+					</div>
+					<div className="side right">
+						<Select
+							id="autoDownloadLimit"
+							value={String(autoDownload)}
+							options={autoDownloadOptions}
+							onChange={v => {
+								const num = Number(v);
+
+								S.Common.autoDownloadSet(num);
+								U.Common.applyAutoDownload(num);
+							}}
+							arrowClassName="black"
+							menuParam={{ horizontal: I.MenuDirection.Right }}
+						/>
+					</div>
+				</div>
+
+				<div className="item">
+					<div className="side left">
+						<Icon name="settings/location" className="location" />
+
+						<div className="txt">
+							<Title text={translate('popupSettingsDataManagementDataLocation')} />
+							<Label text={dataPath} />
+						</div>
+					</div>
+					<div className="side right">
+						<Button color="blank" size={28} text={translate(`commonOpen`)} onClick={onOpenDataLocation} />
+					</div>
+				</div>
+
+				{dataCheck.unsafe ? (
+					<div className="dataLocationWarning" onClick={() => Action.vaultLocationWarning(dataCheck, { isLocalOnly: isLocalNetwork, route: analytics.route.settings })}>
+						<Icon name="popup/header/warning" className="warning" />
+						<Label text={translate('vaultLocationWarningLabel')} />
+					</div>
+				) : ''}
+			</div>
+		</>
+	);
+
+});
+
+export default PageMainSettingsDataIndex;

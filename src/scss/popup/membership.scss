@@ -1,0 +1,61 @@
+@import "~scss/_mixins";
+
+.popups {
+    .popup.popupMembershipFinalization {
+        .anyNameForm { padding: 32px 56px; width: 540px; }
+        .anyNameForm {
+            .icon.color { width: 120px; height: 120px; margin-bottom: 24px; }
+
+            .text { display: flex; flex-direction: column; gap: 8px 0px; margin-bottom: 16px; }
+            .title { margin-bottom: 0px; @include text-header1; }
+            .label { margin-bottom: 0px; color: var(--color-text-secondary); }
+
+            .statusBar { @include text-small; min-height: 18px; margin: 0px 0px 6px; color: var(--color-text-secondary);  }
+            .statusBar.error { color: var(--color-red); }
+            .statusBar.ok { color: var(--color-lime); }
+
+            .inputWrapper {
+                display: flex; padding: 0px 16px; align-items: center; height: 40px; margin-bottom: 8px; border-radius: 14px;
+                background-color: var(--color-shape-highlight-light-solid);
+            }
+            .inputWrapper:hover { background-color: var(--color-shape-highlight-medium); }
+            .inputWrapper:focus-within { background-color: var(--color-shape-highlight-medium); }
+            .inputWrapper {
+                .input { @include text-common; border: 0; height: 40px; line-height: 40px; padding: 6px 0px; background: none; border-radius: 0px; }
+                .ns { flex-shrink: 0; width: 27px; }
+            }
+
+            .button { width: 100%; }
+        }
+    }
+
+    .popup.popupMembershipActivation {
+        .innerWrap { width: 424px; padding: 32px 32px 18px 32px; text-align: center; }
+
+        .icon.popupHeaderActivation { margin: 0px 0px 12px 0px; }
+
+        .title { @include text-header3; margin: 0px 0px 4px 0px; }
+        .label { margin: 0px 0px 20px 0px; }
+
+        .inputWrapper { position: relative; height: 40px; margin: 0px 0px 12px 0px; border-radius: 14px; background-color: var(--color-shape-highlight-light-solid); }
+        .inputWrapper:hover { background-color: var(--color-shape-highlight-medium); }
+        .inputWrapper:focus-within { background-color: var(--color-shape-highlight-medium); }
+        .inputWrapper {
+            .input {
+                padding: 0px 32px 0px 16px; height: 40px; line-height: 40px;
+                border: 0; background: none; border-radius: 0px;
+            }
+
+            .icon.clear, .icon.commonClear { display: none; position: absolute; right: 12px; top: 10px; width: 20px; height: 20px; }
+
+            &.canClear {
+                .icon.clear { display: block; }
+            }
+        }
+
+        .buttons { display: flex; flex-direction: column; gap: 8px 0px; }
+        .button { width: 100%; }
+
+        .error { margin: 0px; padding-top: 12px; }
+    }
+}

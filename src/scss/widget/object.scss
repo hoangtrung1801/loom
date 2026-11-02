@@ -1,0 +1,37 @@
+@import "~scss/_mixins";
+
+.widget.widgetObject {
+	.contentWrapper { padding: 8px; }
+
+	.item { height: 28px; padding: 0px 8px; display: flex; flex-direction: row; align-items: center; position: relative; line-height: 20px; }
+	.item {
+		.side.left { display: flex; flex-direction: row; align-items: center; flex-grow: 1; gap: 0px 6px; overflow: hidden; }
+		.side.right { display: flex; flex-direction: row; align-items: center; gap: 0px 4px; }
+
+		.side.left {
+			.icon { width: 20px; height: 20px; }
+			.name { flex-grow: 1; @include text-overflow-nw; font-weight: 600; }
+		}
+
+		&.isMuted {
+			.side.left .name { color: var(--color-text-secondary); }
+		}
+
+		&::before {
+			content: ""; position: absolute; left: 0px; top: 0px; width: 100%; height: 100%; background: var(--color-shape-highlight-medium); z-index: 1; pointer-events: none;
+			opacity: 0; border-radius: 6px;
+		}
+		&:hover::before, &.active::before { opacity: 1; }
+		&:hover, &.active {
+			.buttons { display: flex; }
+		}
+
+		.buttons { flex-shrink: 0; display: flex; flex-direction: row; align-items: center; gap: 0px 6px; display: none; }
+		.buttons {
+			.icon { width: 24px; height: 24px; border-radius: 4px; z-index: 2; cursor: default; color: var(--color-text-secondary); }
+			.icon:hover { color: var(--color-text-primary); }
+		}
+	}
+
+	.empty { color: var(--color-text-secondary); padding: 3px 8px; }
+}

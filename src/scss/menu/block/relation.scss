@@ -1,0 +1,27 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuBlockRelationEdit { width: var(--menu-width-icon); }
+	.menu.menuBlockRelationEdit {
+		.content { padding: 0px; max-height: 400px; }
+		.form { padding: 8px 0px; }
+		.wrap { padding: 0px 16px 8px 16px; }
+		.line { height: 1px; margin: 8px 0px; background: var(--color-shape-secondary); }
+		.input { padding: 0px 8px; }
+		.switch { position: absolute; right: 16px; top: 50%; margin-top: -8px; }
+
+		.button { width: 100%; }
+		.button.grey { cursor: default; }
+
+		.item:hover::before { background: var(--color-shape-highlight-medium); }
+		.item.disabled:hover::before { opacity: 0; }
+
+		.item.withCaption {
+			.caption { @include text-common; line-height: 20px; width: 40px; padding-right: 16px; overflow: visible; }
+		}
+
+		.icon.arrow {
+			width: 20px; height: 20px; position: absolute; right: 14px; top: 50%; margin: -10px 0px 0px 0px;
+		}
+	}
+}

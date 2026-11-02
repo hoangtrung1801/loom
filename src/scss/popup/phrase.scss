@@ -1,0 +1,30 @@
+@import "~scss/_mixins";
+
+.popups {
+	.popup.popupPhrase {
+		.innerWrap { width: 548px; padding: 32px; }
+
+		.icon.commonClose {
+			position: absolute; right: 16px; top: 16px; width: 32px; height: 32px; border-radius: 50%;
+			background: var(--color-shape-highlight-medium);
+		}
+		.icon.commonClose:hover { background-color: var(--color-shape-highlight-dark); }
+		
+		.title { @include text-header1; margin: 0px 0px 40px 0px; }
+
+		.rows { display: flex; flex-direction: column; gap: 32px 0px; }
+		.row { display: flex; flex-direction: row; gap: 0px 12px; }
+		.row {
+			.icon { width: 56px; height: 56px; background-size: 56px; }
+			.icon.gameDie {  background-image: url('~img/icon/popup/phrase/gameDie.png'); }
+			.icon.scan {  background-image: url('~img/icon/popup/phrase/scan.png'); }
+			.icon.safetyBox {  background-image: url('~img/icon/popup/phrase/safetyBox.png'); }
+
+			dl { display: flex; flex-direction: column; gap: 4px 0px; }
+			dl {
+				dt { @include text-paragraph; font-weight: 600; color: var(--color-text-primary); }
+				dd { color: var(--color-text-secondary); }
+			}
+		}
+	}
+}

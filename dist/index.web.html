@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<base href="/dist/" />
+		<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Anytype Web</title>
+
+		<style type="text/css">
+			@keyframes bubble {
+				0%, 100% { transform: scale3d(0.9, 0.9, 1);  }
+				50% { transform: scale3d(1.1, 1.1, 1); }
+			}
+
+			#bubble-loader {
+				position: absolute; width: 154px; height: 154px; left: 50%; top: 50%; transform: translate3d(-50%, -50%, 0); z-index: 10001;
+				display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all cubic-bezier(0.5, 0, 0.75, 0) 1s;
+				transform-origin: 50% 50%;
+			}
+			#bubble-loader.small { width: 32px; height: 32px; }
+			#bubble-loader .bubble { animation: bubble ease-in-out infinite 3.2s; border-radius: 50%; width: 100%; height: 100%; background-color: transparent; }
+			#bubble-loader .bubble .img { width: 100%; height: 100%; background-size: 100%; background-image: url('./img/icon/bubble.svg'); transition: opacity cubic-bezier(0.5, 0, 0.75, 0) 1s; }
+			#bubble-loader.inflate { transform: scale3d(20,20,1); }
+			#bubble-loader.inflate .bubble { transition: background-color ease-in-out 1s; animation-play-state: paused; }
+			#bubble-loader.inflate .bubble .img { opacity: 0; }
+
+			html.themeDark #bubble-loader .bubble .img { background-image: url('./img/theme/dark/icon/bubble.svg'); }
+
+			/* Web mode indicator */
+			.web-mode-indicator {
+				position: fixed;
+				bottom: 10px;
+				right: 10px;
+				padding: 4px 8px;
+				background: rgba(0, 0, 0, 0.6);
+				color: #fff;
+				font-size: 11px;
+				border-radius: 4px;
+				z-index: 99999;
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="bubble-loader">
+			<div class="bubble">
+				<div class="img"></div>
+			</div>
+		</div>
+
+		<div id="root"></div>
+
+		<div class="web-mode-indicator">Web Mode</div>
+
+		<script type="text/javascript">
+			// Initialize theme based on user preference
+			(function() {
+				var savedTheme = localStorage.getItem('anytype_config');
+				var theme = '';
+
+				try {
+					if (savedTheme) {
+						var config = JSON.parse(savedTheme);
+						theme = config.theme || '';
+					}
+				} catch (e) {}
+
+				if (!theme) {
+					theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+				}
+
+				function ucFirst(str) {
+					return String(str || '').charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+				}
+
+				if (theme) {
+					document.documentElement.classList.add('theme' + ucFirst(theme));
+				}
+
+				var bgColor = theme === 'dark' ? '#171717' : '#fff';
+				document.body.style.backgroundColor = bgColor;
+			})();
+		</script>
+
+		<script type="module" src="/src/ts/entry.web.tsx"></script>
+	</body>
+</html>

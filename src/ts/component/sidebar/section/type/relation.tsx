@@ -1,0 +1,400 @@
+import React, { forwardRef, useState, useRef, useImperativeHandle, useEffect, MouseEvent } from 'react';
+import { Title, Label, Icon, ObjectName } from 'Component';
+import { DndContext, closestCenter, useSensors, useSensor, PointerSensor, KeyboardSensor, DragOverlay } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates, arrayMove, useSortable } from '@dnd-kit/sortable';
+import { restrictToVerticalAxis, restrictToFirstScrollableAncestor } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
+import * as I from 'Interface';
+
+const SidebarSectionTypeRelation = forwardRef<I.SidebarSectionRef, I.SidebarSectionComponent>((props, ref) => {
+
+	const { readonly, isPopup, object, onChange } = props;
+	const nodeRef = useRef(null);
+	const [ active, setActive ] = useState(null);
+	const [ dummy, setDummy ] = useState(0);
+	const [ isLoaded, setIsLoaded ] = useState(false);
+	const [ conflictIds, setConflictIds ] = useState([]);
+	const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    );
+
+	const skipKeys = [ 'name', 'description', 'setOf' ];
+	const filterMapper = it => it && !it.isArchived && !skipKeys.includes(it.relationKey);
+
+	const lists: any[] = [
+		{ id: I.SidebarRelationList.Featured, name: translate('sidebarTypeRelationHeader'), relationKey: 'recommendedFeaturedRelations' },
+		{ id: I.SidebarRelationList.Recommended, name: translate('sidebarTypeRelationSidebar'), relationKey: 'recommendedRelations' },
+		{ id: I.SidebarRelationList.Hidden, name: translate('sidebarTypeRelationHidden'), relationKey: 'recommendedHiddenRelations' },
+	];
+	for (const list of lists) {
+		list.data = Relation.getArrayValue(object[list.relationKey]).map(id => S.Record.getRelationById(id)).filter(filterMapper);
+	};
+
+	const addConfirm = (ids: string[]) => {
+		let title = '';
+		let text = '';
+		if (ids.length == 1) {
+			title = translate('popupConfirmLocalFieldsTitleSingle');
+			text = translate('popupConfirmLocalFieldsTextSingle');
+		} else {
+			title = translate('popupConfirmLocalFieldsTitlePlural');
+			text = translate('popupConfirmLocalFieldsTextPlural');
+		};
+
+		S.Popup.open('confirm', {
+			data: {
+				title,
+				text,
+				textConfirm: translate('commonAdd'),
+				colorConfirm: 'blank',
+				colorCancel: 'blank',
+				onConfirm: () => {
+					const recommendedRelations = Relation.getArrayValue(object.recommendedRelations);
+
+					onChange({ recommendedRelations: recommendedRelations.concat(ids) });
+					analytics.stackAdd('AddConflictRelation', { count: ids.length });
+				},
+			},
+		});
+	};
+
+	const onMore = (e: MouseEvent, item: any) => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		const element = U.Dom.select(`#item-${U.Common.esc(item.id)}`, nodeRef.current);
+
+		S.Menu.open('select', {
+			element: U.Dom.select('.icon.more', element),
+			className: 'fixed',
+			classNameWrap: 'fromSidebar',
+			horizontal: I.MenuDirection.Right,
+			onOpen: () => U.Dom.addClass(element, 'active'),
+			onClose: () => U.Dom.removeClass(element, 'active'),
+			data: {
+				options: [
+					{ id: 'addToType', name: translate('sidebarRelationLocalAddToType') },
+				],
+				onSelect: (e, option) => {
+					switch (option.id) {
+						case 'addToType': {
+							addConfirm([ item.id ]);
+							break;
+						};
+					};
+				},
+			},
+		});
+	};
+
+	if (conflictIds.length) {
+		const ids = lists.reduce((acc, list) => acc.concat(list.data.map(it => it.id)), []);
+		const systemKeys = Relation.systemKeysWithoutUser();
+
+		const conflictRelations = conflictIds.filter(it => !ids.includes(it)).map(id => S.Record.getRelationById(id)).filter(it => {
+			if (!it || systemKeys.includes(it.relationKey)) {
+				return false;
+			};
+
+			return filterMapper(it);
+		});
+
+		if (conflictRelations.length) {
+			lists.push({
+				id: I.SidebarRelationList.Local, name: translate('sidebarTypeRelationFound'), data: conflictRelations, relationKey: '',
+				description: translate('sidebarTypeRelationLocalDescription'),
+				onInfo: () => {
+					S.Menu.open('select', {
+						element: `#sidebarRight #button-more-${I.SidebarRelationList.Local}`,
+						className: 'fixed',
+						classNameWrap: 'fromSidebar',
+						horizontal: I.MenuDirection.Right,
+						data: {
+							options: [
+								{ id: 'addToType', name: translate('sidebarRelationLocalAddToType') },
+							],
+							onSelect: (e, option) => {
+								switch (option.id) {
+									case 'addToType': {
+										addConfirm(conflictRelations.map(it => it.id));
+										break;
+									};
+								};
+							},
+						}
+					});
+				},
+				onMore,
+			});
+		};
+	};
+
+	const onSortStart = (e: any) => {
+		keyboard.disableSelection(true);
+		setActive(e.active);
+		U.Dom.addClass(U.Dom.getScrollContainer(isPopup), 'isDraggingProperty');
+	};
+
+	const onSortCancel = () => {
+		keyboard.disableSelection(false);
+		U.Dom.removeClass(U.Dom.getScrollContainer(isPopup), 'isDraggingProperty');
+		setActive(null);
+	};
+
+	const onSortEnd = (event) => {
+		onSortCancel();
+
+		const { active, over } = event;
+		if (!over || (active.id == over.id)) {
+			return;
+		};
+
+		const from = lists.find(it => it.id == active.data.current.list.id);
+		const to = lists.find(it => it.id == over.data.current.list.id);
+
+        if (!from || !to) {
+			return;
+		};
+
+        const fromItems = Relation.getArrayValue(object[from.relationKey]);
+        const toItems = Relation.getArrayValue(object[to.relationKey]);
+        const oldIndex = fromItems.indexOf(active.id);
+        const newIndex = toItems.indexOf(over.id);
+		const element = U.Dom.select(`#item-${U.Common.esc(over.id)}`, nodeRef.current);
+		const rect = element ? element.getBoundingClientRect() : null;
+		const pointerY = active.rect.current.translated?.top ?? 0;
+		const offset = rect && (pointerY < (rect.top + rect.height / 2)) ? 0 : 1;
+
+		let analyticsId = '';
+
+        if (from.id == to.id) {
+            onChange({ [from.relationKey]: arrayMove(fromItems, oldIndex, newIndex) });
+
+			analyticsId = 'SameGroup';
+        } else 
+		if ((from.relationKey && to.relationKey) || (from.id == I.SidebarRelationList.Local)) {
+			toItems.splice(newIndex + offset, 0, active.id);
+
+			const update = {
+				[to.relationKey]: toItems,
+			};
+			if (from.relationKey) {
+				update[from.relationKey] = fromItems.filter(id => id != active.id);
+			};
+
+			onChange(update);
+			analyticsId = I.SidebarRelationList[to.id];
+        };
+
+		if (from.id == I.SidebarRelationList.Local) {
+			analytics.stackAdd('AddConflictRelation', { count: 1 });
+		};
+
+		analytics.stackAdd('ReorderRelation', { id: analyticsId });
+    };
+
+	const onAdd = (e: any, list: any) => {
+		const keys = U.Object.getTypeRelationKeys(object.id).concat('description');
+		const ids = list.data.map(it => it.id);
+
+		S.Menu.open('relationSuggest', {
+			element: e.currentTarget as HTMLElement,
+			horizontal: I.MenuDirection.Center,
+			className: 'fixed',
+			classNameWrap: 'fromSidebar',
+			data: {
+				filter: '',
+				rootId: object.id,
+				ref: 'type',
+				menuIdEdit: 'blockRelationEdit',
+				skipKeys: keys,
+				addCommand: (rootId: string, blockId: string, relation: any) => {
+					onChange({ [list.relationKey]: [ relation.id ].concat(ids) });
+				},
+			}
+		});
+	};
+
+	const onEdit = (e: any, list: any, id: string) => {
+		const allowed = S.Block.isAllowed(object.restrictions, [ I.RestrictionObject.Relation ]);
+		const ids = Relation.getArrayValue(object[list.relationKey]);
+		
+		S.Menu.open('blockRelationEdit', { 
+			element: `#sidebarRight #item-${U.Common.esc(id)}`,
+			horizontal: I.MenuDirection.Center,
+			classNameWrap: 'fromSidebar',
+			className: 'fixed',
+			data: {
+				rootId: object.id,
+				relationId: id,
+				readonly: !allowed,
+				noUnlink: list.id == I.SidebarRelationList.Local,
+				ref: 'type',
+				addCommand: (rootId: string, blockId: string, relation: any) => {
+					onChange({ [list.relationKey]: [ relation.id ].concat(ids) });
+				},
+				deleteCommand: () => {
+					onChange({ [list.relationKey]: ids.filter(it => it != id) });
+				},
+			}
+		});
+	};
+
+	const Item = (item: any) => {
+		const list = item.list;
+		const { attributes, listeners, transform, transition, isDragging, setNodeRef} = useSortable({ id: item.id, data: item, disabled: item.disabled });
+		const canDrag = !item.disabled;
+		const cn = [ 'item' ];
+		const style = {
+			transform: CSS.Transform.toString(transform),
+			transition,
+		};
+
+		let onClick = e => onEdit(e, list, item.id);
+		if (item.isEmpty) {
+			cn.push('empty');
+			onClick = e => onAdd(e, list);
+		};
+
+		if (isDragging) {
+			cn.push('isDragging');
+		};
+
+		return (
+			<div 
+				id={`item-${item.id}`}
+				ref={setNodeRef}
+				{...attributes}
+				{...listeners}
+				style={style}
+				className={cn.join(' ')}
+				onClick={onClick}
+				onContextMenu={onClick}
+			>
+				{!item.isEmpty ? (
+					<>
+						{canDrag ? <Icon name="common/dnd" /> : ''}
+						<Icon name={Relation.registryName(item.relationKey, item.format)} />
+					</>
+				) : ''}
+				<ObjectName object={item} />
+				{list.onMore ? <Icon name="common/more" className="more" onClick={e => list.onMore(e, item)} /> : ''}
+			</div>
+		);
+	};
+
+	const emptyId = (id: I.SidebarRelationList) => {
+		return [ id, 'empty' ].join('-');
+	};
+
+	const List = (list: any) => (
+		<SortableContext 
+			items={list.data.map(it => it.id)} 
+			strategy={verticalListSortingStrategy}
+		>
+			<div className="sectionNameWrap">
+				<div className="side left">
+					<Label text={list.name} />
+					{list.description ? (
+						<Icon 
+							name="common/question"
+							tooltipParam={{
+								text: list.description, 
+								className: 'relationGroupDescription',
+								typeX: I.MenuDirection.Center, 
+								typeY: I.MenuDirection.Top, 
+								offsetX: -8, 
+								delay: 0,
+							}}
+						/> 
+					) : ''}
+				</div>
+				<div className="side right">
+					{list.onInfo ? (
+						<Icon 
+							id={`button-more-${list.id}`}
+							name="common/more" className="more" withBackground={true}
+							tooltipParam={{ text: translate('commonActions') }}
+							onClick={list.onInfo}
+						/>
+					) : ''}
+				</div>
+			</div>
+			<div className="items">
+				{list.data.length ? (
+					<>
+						{list.data.map((item, i) => (
+							<Item 
+								key={[ list.id, item.id ].join('-')} 
+								{...item} 
+								list={list}
+								index={i}
+								disabled={readonly}
+							/>
+						))}
+					</>
+				) : (
+					<Item 
+						key={emptyId(list.id)} 
+						{...{ id: emptyId(list.id), name: translate('sidebarTypeRelationEmpty'), isEmpty: true }} 
+						list={list}
+						disabled={true}
+					/>
+				)}
+			</div>
+		</SortableContext>
+	);
+
+	useImperativeHandle(ref, () => ({
+		forceUpdate: () => setDummy(dummy + 1),
+	}));
+
+	useEffect(() => {
+		setIsLoaded(false);
+		setConflictIds([]);
+	}, [ object.id ]);
+
+	useEffect(() => {
+		if (isLoaded || !object.id) {
+			return;
+		};
+
+		U.Data.getConflictRelations(object.id, ids => {
+			setIsLoaded(true);
+			setConflictIds(ids);
+		});
+	});
+
+	return (
+		<div ref={nodeRef} className="wrap">
+			<div className="titleWrap">
+				<Title text={translate('sidebarTypeRelation')} />
+				<Icon
+					id="section-relation-plus"
+					name="plus/menu" className="plus" withBackground={true}
+					tooltipParam={{ text: translate('commonAddRelation') }}
+					onClick={e => onAdd(e, lists.find(it => it.id == I.SidebarRelationList.Recommended))} 
+				/>
+			</div>
+
+			<DndContext
+				sensors={sensors}
+				collisionDetection={closestCenter}
+				modifiers={[ restrictToVerticalAxis, restrictToFirstScrollableAncestor ]}
+				onDragStart={onSortStart}
+				onDragEnd={onSortEnd}
+				onDragCancel={onSortCancel}
+			>
+				{lists.map((list, i) => <List key={list.id} {...list} list={list.id} />)}
+
+				<DragOverlay>
+					{active ? <Item {...active.data.current} /> : null}
+				</DragOverlay>
+			</DndContext>
+		</div>
+	);
+
+});
+
+export default SidebarSectionTypeRelation;

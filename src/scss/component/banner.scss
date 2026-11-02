@@ -1,0 +1,31 @@
+@import "~scss/_mixins";
+
+.banner {
+    border-radius: 12px; padding: 12px 16px; box-shadow: 0px 4px 16px 0px rgba(0, 0, 0, 0.20); background-color: var(--color-bg-primary);
+	position: relative;
+}
+.banner {
+	.title { @include text-common; margin-bottom: 0px; }
+    .label { @include text-small; margin-bottom: 6px; }
+	.inner { display: flex; flex-direction: column; gap: 2px 0; align-items: flex-start; }
+
+	.button.simple { color: var(--color-text-primary); font-weight: 600; }
+	.button.simple {
+		.txt { line-height: var(--line-height-common); }
+	}
+
+    .icon.commonClose {
+		position: absolute; right: 6px; top: 6px;
+		width: 20px !important; height: 20px !important;
+	}
+}
+.banner.green { background-color: var(--color-very-light-lime); }
+
+.banner.sidebarUpdateBanner { width: 288px; left: 12px; }
+.banner.sidebarUpdateBanner {
+	.button { width: 100%; @include text-small; font-weight: 500; }
+	.button:before {
+		content: ''; display: inline-block; width: 16px; height: 16px;
+		margin: 0px 6px 0px -20px;
+	}
+}

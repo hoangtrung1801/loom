@@ -1,0 +1,110 @@
+import React, { forwardRef, useState, useImperativeHandle } from 'react';
+import { Icon, Label } from 'Component';
+import * as I from 'Interface';
+
+interface HeaderMainHistoryRefProps {
+	setVersion: (version: I.HistoryVersion) => void;
+};
+
+const HeaderMainHistory = forwardRef<HeaderMainHistoryRefProps, I.HeaderComponent>((props, ref) => {
+
+	const { rootId, isPopup, renderLeftIcons, menuOpen } = props;
+	const { dateFormat, timeFormat } = S.Common;
+	const [ version, setVersion ] = useState<I.HistoryVersion | null>(null);
+	const [ dummyState, setDummyState ] = useState(0);
+	const object = S.Detail.get(rootId, rootId, []);
+	const root = S.Block.getLeaf(rootId, rootId);
+	const isLocked = root ? root.isLocked() : false;
+	const isDeleted = object._empty_ || object.isDeleted;
+	const isTypeOrRelation = U.Object.isTypeOrRelationLayout(object.layout);
+	const isDate = U.Object.isDateLayout(object.layout);
+	const showShare = S.Block.isAllowed(object.restrictions, [ I.RestrictionObject.Publish ], true) && !isDeleted;
+	const showRelations = !isTypeOrRelation && !isDate && !isDeleted;
+	const showMenu = !isTypeOrRelation && !isDeleted;
+	const readonly = object.isArchived || isLocked;
+
+	let date = [];
+
+	if (version) {
+		date = date.concat([
+			U.Date.dateWithFormat(dateFormat, version.time),
+			U.Date.timeWithFormat(timeFormat, version.time),
+		]);
+	};
+
+	const onMore = () => {
+		menuOpen('object', '#button-header-more', {
+			horizontal: I.MenuDirection.Right,
+			subIds: J.Menu.object,
+			data: {
+				rootId,
+				blockId: rootId,
+				blockIds: [ rootId ],
+				isPopup,
+			}
+		});
+	};
+
+	const onRelation = () => {
+		sidebar.rightPanelToggle(isPopup, { page: 'object/relation', rootId, readonly });
+	};
+
+	const onShare = () => {
+		menuOpen('publish', '#button-header-share', {
+			horizontal: I.MenuDirection.Right,
+			data: {
+				rootId,
+			}
+		});
+
+		analytics.event('ClickShareObject', { objectType: object.type });
+	};
+
+	useImperativeHandle(ref, () => ({
+		setVersion,
+		forceUpdate: () => setDummyState(dummyState + 1),
+	}));
+
+	return (
+		<>
+			<div className="side left">{renderLeftIcons(true, true)}</div>
+
+			<div className="side center">
+				<div className="txt">{date.join(' ')}</div>
+			</div>
+
+			<div className="side right">
+				{showShare ? (
+					<Label
+						id="button-header-share"
+						text={translate('commonShare')}
+						className="share"
+						onClick={onShare}
+						onDoubleClick={e => e.stopPropagation()}
+					/>
+				) : ''}
+
+				{showRelations ? (
+					<Icon
+						id="button-header-relation"
+						tooltipParam={{ text: translate('commonRelations'), caption: keyboard.getCaption('relation'), typeY: I.MenuDirection.Bottom }}
+						name="header/relation" withBackground={true}
+						onClick={onRelation}
+					/>
+				) : ''}
+
+				{showMenu ? (
+					<Icon
+						id="button-header-more"
+						tooltipParam={{ text: translate('commonMenu'), typeY: I.MenuDirection.Bottom }}
+						name="common/more" withBackground={true}
+						onClick={onMore}
+					/>
+				) : ''}
+			</div>
+		</>
+	);
+
+});
+
+export default HeaderMainHistory;

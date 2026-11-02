@@ -1,0 +1,201 @@
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Header, Footer } from 'Component';
+
+import PageAccount from './account';
+import PageDelete from './delete';
+import PagePersonal from './personal';
+import PagePhrase from './phrase';
+import PageLanguage from './language';
+import PageApi from './api';
+
+import PageDataIndex from './data/index';
+import PageDataPublish from './data/publish';
+
+import PagePinIndex from './pin/index';
+import PagePinSelect from './pin/select';
+import PagePinConfirm from './pin/confirm';
+
+import PageImportIndex from './import/index';
+import PageImportNotion from './import/notion';
+import PageImportNotionWarning from './import/notion/warning';
+import PageImportCsv from './import/csv';
+import PageImportObsidian from './import/obsidian';
+
+import PageExportIndex from './export/index';
+import PageExportProtobuf from './export/protobuf';
+import PageExportMarkdown from './export/markdown';
+import PageExportAnyBlockV2 from './export/anyBlockV2';
+
+import PageSpaceIndex from './space/index';
+import PageSpaceStorage from './space/storage';
+import PageSpaceShare from './space/share';
+import PageSpaceList from './space/list';
+import PageSpaceNotifications from './space/notifications';
+import PageSpaceDeletionAudit from './space/deletionAudit';
+
+import PageMainSet from '../set';
+import PageMainRelation from '../relation';
+import PageMainArchive from '../archive';
+
+import PageMembership from './membership/index';
+import * as I from 'Interface';
+import Storage from 'Lib/storage';
+
+const Components: any = {
+	index: 				 PageAccount,
+	account:			 PageAccount,
+	delete:				 PageDelete,
+	personal:			 PagePersonal,
+	phrase:				 PagePhrase,
+	membership:			 PageMembership,
+	language:			 PageLanguage,
+	api:				 PageApi,
+
+	pinIndex:			 PagePinIndex,
+	pinSelect:			 PagePinSelect,
+	pinConfirm:			 PagePinConfirm,
+
+	dataIndex: 			 PageDataIndex,
+	dataPublish:		 PageDataPublish,
+
+	importIndex:		 PageImportIndex,
+	importNotion:		 PageImportNotion,
+	importNotionWarning: PageImportNotionWarning,
+	importCsv:			 PageImportCsv,
+	importObsidian:		 PageImportObsidian,
+
+	exportIndex:		 PageExportIndex,
+	exportProtobuf:		 PageExportProtobuf,
+	exportMarkdown:		 PageExportMarkdown,
+	exportAnyBlockV2:	 PageExportAnyBlockV2,
+
+	spaceIndex:			 PageSpaceIndex,
+	spaceStorage:		 PageSpaceStorage,
+	spaceShare:			 PageSpaceShare,
+	spaceList:			 PageSpaceList,
+	spaceNotifications:	 PageSpaceNotifications,
+	spaceDeletionAudit:	 PageSpaceDeletionAudit,
+
+	set:				 PageMainSet,
+	relation:			 PageMainRelation,
+	archive: 			 PageMainArchive,
+};
+
+// These render their own Header/Footer and full-width wrapper instead of sitting in
+// .settingsPageContainer's 640px column.
+const SKIP_CONTAINER = [ 'set', 'relation', 'archive', 'spaceDeletionAudit' ];
+
+const PageMainSettingsIndex = forwardRef<{}, I.PageComponent>((props, ref) => {
+
+	const { isPopup } = props;
+	const { id = 'account' } = keyboard.getMatch(isPopup).params;
+	const pageId = U.String.toCamelCase(`pageSettings-${id}`);
+	const confirmPinRef = useRef<any>(null);
+	const childRef = useRef(null);
+	const [ dummy, setDummy ] = useState(0);
+	const Component = Components[id];
+
+	const init = () => {
+		let page = '';
+
+		if (!U.Common.getSpaceSettingsPages().includes(id)) {
+			page = 'settings';
+		} else {
+			if (!U.Space.canMyParticipantWrite()) {
+				return;
+			};
+
+			switch (id) {
+				case 'set': {
+					page = 'settings/types';
+					break;
+				};
+
+				case 'relation': {
+					page = 'settings/relations';
+					break;
+				};
+
+				default: {
+					page = 'settings/space';
+					break;
+				};
+			};
+		};
+
+		if (page) {
+			sidebar.leftPanelSubPageOpen(page, false, false);
+		};
+
+		sidebar.rightPanelClose(isPopup, false);
+	};
+
+	const onExport = (type: I.ExportType, param: any) => {
+		Action.export(S.Common.space, [], type, { ...param, route: analytics.route.settings });
+		analytics.event('ClickExport', { type, route: analytics.route.settings });
+	};
+
+	const setConfirmPin = (v: () => void) => {
+		confirmPinRef.current = v;
+		setDummy(dummy + 1);
+	};
+
+	const onSpaceTypeTooltip = (e) => {
+		Preview.tooltipShow({
+			title: translate('popupSettingsSpaceIndexSpaceTypePersonalTooltipTitle'),
+			text: translate('popupSettingsSpaceIndexSpaceTypePersonalTooltipText'),
+			className: 'big',
+			element: e.currentTarget as HTMLElement,
+			typeY: I.MenuDirection.Bottom,
+			typeX: I.MenuDirection.Left,
+		});
+	};
+
+	useEffect(() => init(), [ id ]);
+
+	const resize = () => {
+		childRef.current?.resize?.();
+	};
+
+	useImperativeHandle(ref, () => ({
+		resize,
+	}));
+
+	if (!Components[id]) {
+		return null;
+	};
+
+	let content = (
+		<div id={pageId} className={[ 'settingsPage', pageId ].join(' ')} >
+			<Component
+				ref={childRef}
+				{...props}
+				getId={() => pageId}
+				onPage={id => Action.openSettings(id, '')}
+				onExport={onExport}
+				onConfirmPin={confirmPinRef.current}
+				setConfirmPin={setConfirmPin}
+				onSpaceTypeTooltip={onSpaceTypeTooltip}
+				storageGet={() => Storage.get(pageId) || {}}
+				storageSet={data => Storage.set(pageId, data)}
+			/>
+		</div>
+	);
+
+	if (!SKIP_CONTAINER.includes(id)) {
+		content = (
+			<>
+				<Header {...props} component="mainSettings" />
+				<div className="settingsPageContainer" id="settingsPageContainer">
+					{content}
+				</div>
+				<Footer component="mainObject" {...props} />
+			</>
+		);
+	};
+
+	return content;
+
+});
+
+export default PageMainSettingsIndex;

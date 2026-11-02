@@ -1,0 +1,272 @@
+
+
+export default {
+	sentry:				 'https://44e6df81644c4e36b21b1dbea62b8a1a@sentry.anytype.io/3',
+	amplitude:			 '1ba981d1a9afb8af8c81847ef3383a20',
+	googleMaps:			 'AIzaSyAgXu3wCb6mPJv4wNWKe2E3YycaYuqFm9o',
+	protocol:			 'anytype',
+	appName:			 'Anytype',
+	anytypeProfileId:	 '_anytype_profile',
+	missingObjectId:	 '_missing_object',
+	blankId:			 '_blank_',
+	fontCode:			 'plex',
+	popupPinIds:		 [ 'search' ],
+	textColor:			 [ 'grey', 'yellow', 'orange', 'red', 'pink', 'purple', 'blue', 'ice', 'teal', 'lime' ],
+	namespace:			 { 0: '.any' },
+
+	day:				 86400,
+
+	allowedSchemes:		 [ 'http', 'https', 'mailto', 'tel' ],
+
+	count: {
+		icon:			 10,
+		phrase:			 { letter: 8, word: 12 }
+	},
+	
+	networkId: {
+		production:		 'N83gJpVd9MuNRZAuJLZ7LiMntTThhPc6DtzWWVjb1M3PouVU',
+		development:	 'N9DU6hLkTAbvcpji3TCKPPd3UQWKGyzUxGmgJEyvhByqAjfD',
+		testing:		 'N4N1wDHFpFpovXBqdbq2TDXE9tXdXbtV1eTJFpKJW4YeaJqR'
+	},
+
+	platforms: {
+		win32:			 'Windows',
+		darwin:			 'Mac',
+		linux:			 'Linux'
+	},
+
+	limit: {
+		menuRecords:	 	 			 100,
+		notification:	 	 			 20,
+		graphDepth:		 	 			 5,
+		cellEntry:		 	 			 320,
+		listObject:		 	 			 50,
+		tableOfContents:	 			 50,
+
+		space: {
+			name:						 50,
+			description:				 200,
+			nameThreshold:				 10,
+			descriptionThreshold:		 50,
+			pin:						 6, 
+		},
+
+		chat: {
+			messages:					 50,
+			attachments:				 10,
+			files:						 10,
+			mentions:					 10,
+			text:						 4000,
+			reactions: {
+				self:					 3,
+				all:					 12,
+			},
+		},
+		comment: {
+			text:						 8000,
+		},
+
+		relation: {
+			option:						 4,
+		},
+
+		string: {
+			mention:					 300,
+			fileName:					 24,
+		},
+	},
+
+	default: {
+		interfaceLang:	 'en-US',
+		spellingLang:	 'en',
+		codeLang:		 'plain',
+		typeKey:		 'ot-page',
+		pinTime:		 600,
+	},
+
+	delay: {
+		menu:			 200,
+		popup:			 200,
+		toast:			 2500,
+		route:			 200,
+		keyboard:		 500,
+		notification:	 200,
+		widget:			 400,
+		widgetItem:		 200,
+		sidebar:		 200,
+		sidebarHover:	 300,
+		highlight:  	 1000,
+		chatHistory:	 500,
+		chatMessage:	 200,
+		spacePreload:	 2000,
+		recoveryStatus:	 5000,
+		cleanupSuggestions: 3000,
+		inviteSecurity:	 3000,
+	},
+
+	fileExtension: {
+		image:			 [ 'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'heic', 'heif' ],
+		video:			 [ 'mp4', 'm4v', 'mov' ],
+		cover:			 [ 'jpg', 'jpeg', 'png', 'gif', 'webp' ],
+		audio:			 [ 'mp3', 'm4a', 'flac', 'ogg', 'wav' ],
+		pdf:			 [ 'pdf' ],
+
+		// Handed to the system handler after a download. Everything outside this
+		// list is revealed in the file manager instead: opening an archive
+		// extracts it, opening a script or an installer runs it, and neither is
+		// what a click on a file block asks for
+		autoOpen: [
+			'pdf', 'epub',
+			'doc', 'docx', 'odt', 'rtf', 'txt', 'md',
+			'xls', 'xlsx', 'ods', 'csv',
+			'ppt', 'pptx', 'odp',
+			'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff',
+			'mp4', 'm4v', 'mov', 'mkv', 'webm',
+			'mp3', 'm4a', 'flac', 'ogg', 'wav', 'aac', 'opus',
+		],
+
+		import: {
+			1:			 [ 'zip', 'md' ],
+			3:			 [ 'zip', 'pb', 'json' ],
+			4:			 [ 'zip', 'html', 'htm', 'mhtml' ],
+			5:			 [ 'zip', 'txt' ],
+			6:			 [ 'zip', 'csv' ],
+		},
+	},
+
+	graphId: {
+		global:			 'graphGlobal',
+		dataview:		 'graphDataview'
+	},
+
+	subId: {
+		profile:		 		'profile',
+		deleted:		 		'deleted',
+		archived:		 		'archived',
+		type:			 		'type',
+		typeStore:		 		'typeStore',
+		relation:		 		'relation',
+		relationStore:	 		'relationStore',
+		option:			 		'option',
+		store:			 		'store',
+		archive:		 		'archive',
+		sidebar:		 		'sidebar',
+		space:			 		'space',
+		participant:	 		'participant',
+		subSpace:		 		'subSpace',
+		library: 		 		'library',
+		chatSpace:		 		'lastMessage',
+		template:		 		'template',
+		fileManagerSynced: 		'fileManagerSynced',
+		fileManagerNotSynced: 	'fileManagerNotSynced',
+		chatPreview:	 		'chatPreview',
+		chat:			 		'chat',
+		chatGlobal:	 			'chatGlobal',
+		discussion:				'discussion',
+		discussionGlobal:		'discussionGlobal',
+		recentEditMe:	 		'recentEditMe',
+		recentEditAll:	 		'recentEditAll',
+		treeEdges:		 		'treeEdges',
+		treeParents:	 		'treeParents',
+		treeProbe:		 		'treeProbe',
+	},
+
+	typeKey: {
+		page:			 'ot-page',
+		set:			 'ot-set',
+		space:			 'ot-space',
+		spaceview:		 'ot-spaceView',
+		template:		 'ot-template',
+		type:			 'ot-objectType',
+		image:			 'ot-image',
+		file:			 'ot-file',
+		video:			 'ot-video',
+		audio:			 'ot-audio',
+		relation:		 'ot-relation',
+		note:			 'ot-note',
+		task:			 'ot-task',
+		bookmark:		 'ot-bookmark',
+		option:			 'ot-relationOption',
+		collection:		 'ot-collection',
+		dashboard:		 'ot-dashboard',
+		date:			 'ot-date',
+		profile:		 'ot-profile',
+		chat:			 'ot-chat',
+		chatDerived:	 'ot-chatDerived',
+		discussion:		 'ot-discussion',
+		project:		 'ot-project',
+		human:			 'ot-human',
+		participant:	 'ot-participant',
+	},
+
+	templateId: {
+		new:			 'newTemplate'
+	},
+
+	blockId: {
+		title:			 'title',
+		description:	 'description',
+		featured:		 'featuredRelations',
+		dataview:		 'dataview',
+		type:			 'type',
+		header:			 'header',
+		chat:			 'chat',
+		virtualLast:	 'virtualLastBlock',
+	},
+
+	widgetId: {
+		allObject:			 'allObject',
+		favorite:			 'favorite',
+		recentEdit:			 'recent',
+		recentOpen:			 'recentOpen',
+		space:				 'space',
+		home:				 'home',
+		unread:				 'unread',
+		type:				 'type',
+		bin:				 'bin',
+		tree:				 'tree',
+		chat:				 'chat',
+		pinned:				 'pinned',
+		personalWidgets:	 'personalWidgets',
+		personalWidgetsPrefix: '_personalWidgets_',
+	},
+
+	monthDays: {
+		1:				 31,
+		2:				 28,
+		3:				 31,
+		4:				 30,
+		5:				 31,
+		6:				 30,
+		7:				 31,
+		8:				 31,
+		9:				 30,
+		10:				 31,
+		11:				 30,
+		12:				 31
+	},
+
+	mcpConfig: `
+		{
+			"mcpServers": {
+				"anytype": {
+					"command": "npx",
+					"args": ["-y", "@anyproto/anytype-mcp"],
+					"env": {
+						"OPENAPI_MCP_HEADERS": "{\\"Authorization\\":\\"Bearer %s\\"}",
+						"ANYTYPE_API_BASE_URL": "http://localhost:%s"
+					}
+				}
+			}
+		}
+	`,
+
+	currencySymbol: {
+		USD: '$',
+		EUR: '€',
+	},
+
+	storageKey: {
+		sidebarData: 'sidebarData',
+	},
+};

@@ -1,0 +1,735 @@
+import React, { forwardRef, useEffect, useRef, useImperativeHandle, useState } from 'react';
+import { arrayMove } from '@dnd-kit/sortable';
+
+import raf from 'raf';
+import { StickyScrollbar } from 'Component';
+import Empty from '../empty';
+import Column from './board/column';
+import * as I from 'Interface';
+
+const PADDING = 46;
+
+const ViewBoard = forwardRef<I.ViewRef, I.ViewComponent>((props, ref) => {
+
+	const { rootId, block, getView, getTarget, className, onViewSettings, isInline, isPopup, readonly, objectOrderUpdate, getWrapperWidth } = props;
+	const view = getView();
+	const relation = S.Record.getRelationByKey(view.groupRelationKey);
+	const cn = [ 'viewContent', className ];
+	const nodeRef = useRef(null);
+	const scrollRef = useRef(null);
+	const stickyScrollRef = useRef<I.StickyScrollbarRef>(null);
+	const isSyncingScroll = useRef(false);
+	const hoverId = useRef('');
+	const newIndex = useRef(-1);
+	const newGroupId = useRef('');
+	const frame = useRef(0);
+	const cache = useRef({});
+	const isDraggingColumn = useRef(false);
+	const isDraggingCard = useRef(false);
+	const ox = useRef(0);
+	const columnRefs = useRef(new Map());
+	const selectedRecordIds = useRef<string[]>([]);
+	const [ dummy, setDummy ] = useState(0);
+
+	useEffect(() => {
+		resize();
+		rebind();
+
+		return () => {
+			unbind();
+			columnRefs.current.clear();
+			cache.current = {};
+		};
+	}, []);
+
+	useEffect(() => {
+		resize();
+		U.Dom.triggerResizeEditor(isPopup);
+
+		const selection = S.Common.getRef('selectionProvider');
+		const ids = selection?.get(I.SelectType.Record) || [];
+
+		if (ids.length) {
+			selection?.renderSelection();
+		};
+	});
+
+	const scrollViewHandlerRef = useRef<(() => void) | null>(null);
+
+	const scrollHorizontalHandlerRef = useRef<(() => void) | null>(null);
+
+	const rebind = () => {
+		const scroll = scrollRef.current;
+
+		unbind();
+
+		scrollHorizontalHandlerRef.current = () => onScrollHorizontal();
+		if (scroll) {
+			U.Dom.addEvent(scroll, 'scroll', scrollHorizontalHandlerRef.current);
+		};
+		scrollViewHandlerRef.current = onScrollView;
+		const pageContainer = U.Dom.getPageContainer(isPopup);
+		if (pageContainer) {
+			U.Dom.addEvent(pageContainer, 'scroll', scrollViewHandlerRef.current);
+		};
+
+		stickyScrollRef.current?.bind(scroll, isSyncingScroll.current);
+	};
+
+	const unbind = () => {
+		const scroll = scrollRef.current;
+
+		if (scrollHorizontalHandlerRef.current && scroll) {
+			U.Dom.removeEvent(scroll, 'scroll', scrollHorizontalHandlerRef.current);
+			scrollHorizontalHandlerRef.current = null;
+		};
+		stickyScrollRef.current?.unbind();
+		const pageContainer = U.Dom.getPageContainer(isPopup);
+		if (scrollViewHandlerRef.current && pageContainer) {
+			U.Dom.removeEvent(pageContainer, 'scroll', scrollViewHandlerRef.current);
+			scrollViewHandlerRef.current = null;
+		};
+	};
+
+	const onScrollHorizontal = () => {
+		if (stickyScrollRef.current) {
+			isSyncingScroll.current = stickyScrollRef.current.sync(scrollRef.current, isSyncingScroll.current);
+		};
+	};
+
+	const load = () => {
+		const object = getTarget();
+		const view = getView();
+
+		S.Record.groupsClear(rootId, block.id);
+
+		if (!view.groupRelationKey) {
+			setDummy(dummy + 1);
+		} else {
+			Dataview.loadGroupList(rootId, block.id, view.id, object);
+		};
+	};
+
+	const getGroups = (withHidden: boolean) => {
+		const view = getView();
+		return view ? Dataview.getGroups(rootId, block.id, view.id, withHidden) : [];
+	};
+
+	const initCacheColumn = () => {
+		const groups = getGroups(true);
+		const node = nodeRef.current;
+
+		cache.current = {};
+		groups.forEach((group: any, i: number) => {
+			const el = U.Dom.select(`#column-${group.id}`, node);
+			const item = {
+				id: group.id,
+				index: i,
+				x: 0,
+				y: 0,
+				width: 0,
+				height: 0,
+			};
+
+			if (el) {
+				const rect = el.getBoundingClientRect();
+
+				item.x = rect.left + window.scrollX;
+				item.y = rect.top + window.scrollY;
+				item.width = el.offsetWidth;
+				item.height = el.offsetHeight;
+			};
+
+			cache.current[group.id] = item;
+		});
+	};
+
+	const initCacheCard = () => {
+		const groups = getGroups(false);
+		const node = nodeRef.current;
+
+		cache.current = {};
+
+		groups.forEach((group: any, i: number) => {
+			const column = columnRefs.current.get(group.id);
+			if (!column) {
+				return;
+			};
+
+			const items = column.getItems() || [];
+
+			items.push({ id: `${group.id}-add`, isAdd: true });
+			items.forEach((item: any, i: number) => {
+				const el = U.Dom.select(`#record-${U.Common.esc(item.id)}`, node);
+				if (!el) {
+					return;
+				};
+
+				const rect = el.getBoundingClientRect();
+				cache.current[item.id] = {
+					id: item.id,
+					groupId: group.id,
+					x: rect.left + window.scrollX,
+					y: rect.top + window.scrollY,
+					width: el.offsetWidth,
+					height: el.offsetHeight,
+					index: i,
+					isAdd: item.isAdd,
+				};
+			});
+		});
+	};
+
+	const dragOverHandlerRef = useRef<((e: Event) => void) | null>(null);
+	const dragHandlerRef = useRef<((e: Event) => void) | null>(null);
+	const dragEndHandlerRef = useRef<((e: Event) => void) | null>(null);
+
+	const onDragStartCommon = (e: any, target: HTMLElement) => {
+		e.stopPropagation();
+
+		const selection = S.Common.getRef('selectionProvider');
+		const node = nodeRef.current;
+		const viewEl = U.Dom.select('.viewContent', node);
+		const clone = target.cloneNode(true) as HTMLElement;
+		const columnsEl = U.Dom.select('#columns', node);
+		const columnsRect = columnsEl?.getBoundingClientRect();
+
+		ox.current = (columnsRect?.left ?? 0) + window.scrollX;
+
+		U.Dom.addClass(target, 'isDragging');
+		clone.id = '';
+		U.Dom.addClass(clone, 'isClone');
+		U.Dom.css(clone, { zIndex: '10000', position: 'fixed', left: '-10000px', top: '-10000px' });
+		viewEl?.appendChild(clone);
+
+		if (dragOverHandlerRef.current) {
+			U.Dom.removeEvent(document, 'dragover', dragOverHandlerRef.current);
+		};
+		dragOverHandlerRef.current = (e: Event) => e.preventDefault();
+		U.Dom.addEvent(document, 'dragover', dragOverHandlerRef.current);
+
+		if (dragHandlerRef.current) {
+			U.Dom.removeEvent(window, 'drag', dragHandlerRef.current);
+		};
+		if (dragEndHandlerRef.current) {
+			U.Dom.removeEvent(window, 'dragend', dragEndHandlerRef.current);
+		};
+
+		U.Dom.addClass(document.body, 'grab');
+
+		e.dataTransfer.setDragImage(clone, 0, 0);
+
+		keyboard.setDragging(true);
+		keyboard.disableSelection(true);
+		keyboard.disableCommonDrop(true);
+
+		selection.clear();
+	};
+
+	const onDragEndCommon = (e: any) => {
+		e.preventDefault();
+
+		const node = nodeRef.current;
+
+		U.Dom.removeClass(document.body, 'grab');
+
+		if (dragHandlerRef.current) {
+			U.Dom.removeEvent(window, 'drag', dragHandlerRef.current);
+			dragHandlerRef.current = null;
+		};
+		if (dragEndHandlerRef.current) {
+			U.Dom.removeEvent(window, 'dragend', dragEndHandlerRef.current);
+			dragEndHandlerRef.current = null;
+		};
+
+		U.Dom.selectAll('.isClone', node).forEach(el => el.remove());
+		U.Dom.selectAll('.isDragging', node).forEach(el => U.Dom.removeClass(el, 'isDragging'));
+		U.Dom.selectAll('.isOver', node).forEach(el => {
+			U.Dom.removeClass(el, 'isOver');
+			U.Dom.removeClass(el, 'left');
+			U.Dom.removeClass(el, 'right');
+			U.Dom.removeClass(el, 'top');
+			U.Dom.removeClass(el, 'bottom');
+		});
+
+		keyboard.disableSelection(false);
+		keyboard.disableCommonDrop(false);
+		keyboard.setDragging(false);
+
+		if (frame.current) {
+			raf.cancel(frame.current);
+			frame.current = 0;
+		};
+	};
+
+	const onDragStartColumn = (e: any, groupId: string) => {
+		if (readonly) {
+			e.preventDefault();
+			e.stopPropagation();
+			return;
+		};
+
+		const node = nodeRef.current;
+		const columnEl = U.Dom.select(`#column-${groupId}`, node);
+
+		if (!columnEl) {
+			return;
+		};
+
+		onDragStartCommon(e, columnEl);
+		initCacheColumn();
+		isDraggingColumn.current = true;
+
+		dragHandlerRef.current = (e: Event) => onDragMoveColumn(e, groupId);
+		dragEndHandlerRef.current = (e: Event) => onDragEndColumn(e, groupId);
+		U.Dom.addEvents(window, [
+			['drag', dragHandlerRef.current],
+			['dragend', dragEndHandlerRef.current],
+		]);
+	};
+
+	const onDragMoveColumn = (e: any, groupId: any) => {
+		const node = nodeRef.current;
+		const current = cache.current[groupId];
+		const groups = getGroups(false);
+
+		if (!current) {
+			return;
+		};
+
+		let isLeft = false;
+
+		hoverId.current = '';
+
+		for (const group of groups) {
+			const rect = cache.current[group.id];
+			if (!rect || (group.id == groupId)) {
+				continue;
+			};
+
+			if (rect && cache.current[groupId] && U.Common.rectsCollide({ x: e.pageX, y: e.pageY, width: current.width, height: current.height }, rect)) {
+				isLeft = e.pageX <= rect.x + rect.width / 2;
+				hoverId.current = group.id;
+
+				newIndex.current = rect.index;
+
+				if (isLeft && (rect.index > current.index)) {
+					newIndex.current--;
+				};
+
+				if (!isLeft && (rect.index < current.index)) {
+					newIndex.current++;
+				};
+				break;
+			};
+		};
+
+		if (frame.current) {
+			raf.cancel(frame.current);
+			frame.current = 0;
+		};
+
+		frame.current = raf(() => {
+			U.Dom.selectAll('.isOver', node).forEach(el => {
+				U.Dom.removeClass(el, 'isOver');
+				U.Dom.removeClass(el, 'left');
+				U.Dom.removeClass(el, 'right');
+			});
+
+			if (hoverId.current) {
+				const hoverEl = U.Dom.select(`#column-${hoverId.current}`, node);
+				if (hoverEl) {
+					U.Dom.addClass(hoverEl, 'isOver');
+					U.Dom.addClass(hoverEl, isLeft ? 'left' : 'right');
+				};
+			};
+		});
+	};
+
+	const onDragEndColumn = (e: any, groupId: string) => {
+		if (hoverId.current) {
+			const view = getView();
+			const update: any[] = [];
+			const current = cache.current[groupId];
+
+			let groups = getGroups(true);
+			groups = arrayMove(groups, current.index, newIndex.current);
+			S.Record.groupsSet(rootId, block.id, groups);
+
+			groups.forEach((it: any, i: number) => {
+				update.push({ ...it, groupId: it.id, index: i });
+			});
+
+			Dataview.groupUpdate(rootId, block.id, view.id, update);
+			C.BlockDataviewGroupOrderUpdate(rootId, block.id, { viewId: view.id, groups: update });
+		};
+
+		cache.current = {};
+		isDraggingColumn.current = false;
+		onDragEndCommon(e);
+		resize();
+	};
+
+	const onDragStartCard = (e: any, groupId: any, record: any) => {
+		if (readonly) {
+			e.preventDefault();
+			e.stopPropagation();
+			return;
+		};
+		
+		const selection = S.Common.getRef('selectionProvider');
+		const selectedIds = selection?.get(I.SelectType.Record) || [];
+
+		// Store selected record IDs before they get cleared in onDragStartCommon
+		// Include the dragged record if it's not already in the selection
+		if (selectedIds.length > 0 && selectedIds.includes(record.id)) {
+			selectedRecordIds.current = selectedIds;
+		} else {
+			selectedRecordIds.current = [record.id];
+		};
+
+		onDragStartCommon(e, e.currentTarget as HTMLElement);
+		initCacheCard();
+		isDraggingCard.current = true;
+
+		dragHandlerRef.current = (e: Event) => onDragMoveCard(e, record);
+		dragEndHandlerRef.current = (e: Event) => onDragEndCard(e, record);
+		U.Dom.addEvents(window, [
+			['drag', dragHandlerRef.current],
+			['dragend', dragEndHandlerRef.current],
+		]);
+	};
+
+	const onDragMoveCard = (e: any, record: any) => {
+		const node = nodeRef.current;
+		const current = cache.current[record.id];
+
+		if (!current) {
+			return;
+		};
+
+		let isTop = false;
+		
+		hoverId.current = '';
+
+		for (const i in cache.current) {
+			const rect = cache.current[i];
+			if (!rect || (rect.id == record.id)) {
+				continue;
+			};
+
+			if (U.Common.rectsCollide({ x: e.pageX, y: e.pageY, width: current.width, height: current.height + 8 }, rect)) {
+				isTop = rect.isAdd || (e.pageY <= rect.y + rect.height / 2);
+
+				hoverId.current = rect.id;
+				newGroupId.current = rect.groupId;
+				newIndex.current = isTop ? rect.index : rect.index + 1;
+				break;
+			};
+		};
+
+		if (frame.current) {
+			raf.cancel(frame.current);
+			frame.current = 0;
+		};
+
+		frame.current = raf(() => {
+			U.Dom.selectAll('.isOver', node).forEach(el => {
+				U.Dom.removeClass(el, 'isOver');
+				U.Dom.removeClass(el, 'top');
+				U.Dom.removeClass(el, 'bottom');
+			});
+
+			if (hoverId.current) {
+				const hoverEl = U.Dom.select(`#record-${U.Common.esc(hoverId.current)}`, node);
+				if (hoverEl) {
+					U.Dom.addClass(hoverEl, 'isOver');
+					U.Dom.addClass(hoverEl, isTop ? 'top' : 'bottom');
+				};
+			};
+		});
+	};
+
+	const onDragEndCard = (e: any, record: any) => {
+		const current = cache.current[record.id];
+
+		if (!current) {
+			return;
+		};
+
+		onDragEndCommon(e);
+		cache.current = {};
+		isDraggingCard.current = false;
+
+		if (
+			!hoverId.current ||
+			!current.groupId ||
+			!newGroupId.current ||
+			((current.index == newIndex.current) && (current.groupId == newGroupId.current))
+		) {
+			selectedRecordIds.current = [];
+			return;
+		};
+
+		const view = getView();
+		const oldSubId = S.Record.getGroupSubId(rootId, block.id, current.groupId);
+		const newSubId = S.Record.getGroupSubId(rootId, block.id, newGroupId.current);
+		const newGroup = S.Record.getGroup(rootId, block.id, newGroupId.current);
+		const change = current.groupId != newGroupId.current;
+
+		let records: any[] = [];
+		let orders: any[] = [];
+
+		const recordsBySourceGroup = new Map<string, string[]>();
+		const allGroupIds = getGroups(true).map((g: any) => g.id);
+
+		selectedRecordIds.current.forEach(id => {
+			// Find which group this record belongs to by checking each group
+			for (const groupId of allGroupIds) {
+				const groupSubId = S.Record.getGroupSubId(rootId, block.id, groupId);
+				const groupRecordIds = S.Record.getRecordIds(groupSubId, '');
+				if (groupRecordIds.includes(id)) {
+					if (!recordsBySourceGroup.has(groupId)) {
+						recordsBySourceGroup.set(groupId, []);
+					}
+					recordsBySourceGroup.get(groupId).push(id);
+					break;
+				};
+			};
+		});
+
+		// Ensure the dragged record is included (in case it wasn't in selection)
+		if (!selectedRecordIds.current.includes(record.id)) {
+			if (!recordsBySourceGroup.has(current.groupId)) {
+				recordsBySourceGroup.set(current.groupId, []);
+			}
+			const groupRecords = recordsBySourceGroup.get(current.groupId);
+			if (!groupRecords.includes(record.id)) {
+				groupRecords.push(record.id);
+			};
+		};
+
+		if (change) {
+			// Move all selected records to the new group
+			const allRecordIds: string[] = [];
+			const recordDetails: any[] = [];
+			const targetIndex = newIndex.current;
+
+			// Process each source group
+			recordsBySourceGroup.forEach((ids, sourceGroupId) => {
+				if (sourceGroupId === newGroupId.current) {
+					// Records already in target group, don't move them
+					return;
+				};
+
+				const sourceSubId = S.Record.getGroupSubId(rootId, block.id, sourceGroupId);
+
+				ids.forEach((id, idx) => {
+					const relations = view.relations;
+					const r = S.Detail.get(sourceSubId, id, relations.map(it => it.relationKey));
+
+					S.Detail.update(newSubId, { id, details: r }, true);
+					S.Detail.delete(sourceSubId, id, Object.keys(r));
+					S.Record.recordDelete(sourceSubId, '', id);
+					// Add at targetIndex to maintain order
+					S.Record.recordAdd(newSubId, '', id, targetIndex + idx);
+
+					recordDetails.push(r);
+					allRecordIds.push(id);
+				});
+
+				// Update order for this source group
+				orders.push({
+					viewId: view.id,
+					groupId: sourceGroupId,
+					objectIds: S.Record.getRecordIds(sourceSubId, '')
+				});
+			});
+
+			// Update order for target group
+			orders.push({
+				viewId: view.id,
+				groupId: newGroupId.current,
+				objectIds: S.Record.getRecordIds(newSubId, '')
+			});
+
+			if (allRecordIds.length > 0) {
+				C.ObjectListSetDetails(allRecordIds, [ { key: view.groupRelationKey, value: newGroup.value } ], () => {
+					objectOrderUpdate(orders, allRecordIds);
+				});
+			};
+		} else {
+			// Moving within the same group - only move the dragged record for simplicity
+			if (current.index + 1 == newIndex.current) {
+				selectedRecordIds.current = [];
+				return;
+			};
+
+			if (newIndex.current > current.index) {
+				newIndex.current -= 1;
+			};
+
+			records = arrayMove(S.Record.getRecordIds(oldSubId, ''), current.index, newIndex.current);
+			orders = [ { viewId: view.id, groupId: current.groupId, objectIds: records } ];
+
+			objectOrderUpdate(orders, records, () => S.Record.recordsSet(oldSubId, '', records));
+		};
+
+		selectedRecordIds.current = [];
+	};
+
+	const onScrollView = () => {
+		const groups = getGroups(false);
+		const node = nodeRef.current;
+
+		if (isDraggingColumn.current) {
+			groups.forEach((group: any, i: number) => {
+				const rect = cache.current[group.id];
+				if (!rect) {
+					return;
+				};
+
+				const el = U.Dom.select(`#column-${group.id}`, node);
+				if (!el) {
+					return;
+				};
+
+				const elRect = el.getBoundingClientRect();
+				rect.x = elRect.left + window.scrollX;
+				rect.y = elRect.top + window.scrollY;
+			});
+		} else
+		if (isDraggingCard.current) {
+			groups.forEach((group: any, i: number) => {
+				const column = columnRefs.current.get(group.id);
+				if (!column) {
+					return;
+				};
+
+				const items = column.getItems();
+				items.forEach((item: any, i: number) => {
+					const el = U.Dom.select(`#record-${U.Common.esc(item.id)}`, node);
+					if (!el) {
+						return;
+					};
+
+					const elRect = el.getBoundingClientRect();
+					cache.current[item.id].x = elRect.left + window.scrollX;
+					cache.current[item.id].y = elRect.top + window.scrollY;
+				});
+			});
+		};
+	};
+
+	const getSubId = (id: string): string => {
+		return S.Record.getGroupSubId(rootId, block.id, id);
+	};
+
+	const resize = () => {
+		const parent = S.Block.getParentLeaf(rootId, block.id);
+		const node = nodeRef.current;
+		const scroll = scrollRef.current;
+		const viewEl = U.Dom.select('.viewContent', node);
+		const container = U.Dom.getPageContainer(isPopup);
+		const cw = container?.clientWidth ?? 0;
+		const size = J.Size.dataview.board;
+		const groups = getGroups(false);
+		const width = groups.length * (size.card + size.margin) - size.margin;
+
+		if (!isInline) {
+			const mw = cw - PADDING * 2;
+			const margin = (cw - mw) / 2;
+			const vw = Math.max(mw, width) + (width > mw ? PADDING : 0);
+			const pr = width > mw ? PADDING : 0;
+
+			if (scroll) {
+				U.Dom.css(scroll, { width: `${cw - 4}px`, marginLeft: `${-margin - 2}px`, paddingLeft: `${margin}px` });
+			};
+			if (viewEl) {
+				U.Dom.css(viewEl, { width: `${vw}px`, paddingRight: `${pr}px` });
+			};
+
+			stickyScrollRef.current?.resize({
+				width: mw,
+				left: margin,
+				paddingLeft: margin,
+				display: vw <= mw ? 'none' : '',
+				trackWidth: vw,
+			});
+		} else
+		if (parent && (parent.isPage() || parent.isLayoutDiv())) {
+			const wrapper = U.Dom.select('#editorWrapper', container);
+			const ww = getWrapperWidth ? getWrapperWidth() : U.Dom.contentWidth(wrapper);
+			const margin = Math.max(0, (cw - ww) / 2);
+			const vw = width + margin + 2;
+
+			if (scroll) {
+				U.Dom.css(scroll, { width: `${cw}px`, marginLeft: `${-margin}px`, paddingLeft: `${margin}px` });
+			};
+			if (viewEl) {
+				U.Dom.css(viewEl, { width: `${vw}px` });
+			};
+
+			stickyScrollRef.current?.resize({
+				width: ww,
+				left: 0,
+				paddingLeft: 0,
+				display: (vw + margin) <= cw ? 'none' : '',
+				trackWidth: vw,
+			});
+		} else {
+			stickyScrollRef.current?.resize({ display: 'none' });
+		};
+	};
+
+	if (!relation) {
+		return (
+			<Empty
+				{...props}
+				title={translate('blockDataviewBoardRelationDeletedTitle')}
+				description={translate('blockDataviewBoardRelationDeletedDescription')}
+				button={translate('blockDataviewBoardOpenViewMenu')}
+				className="withHead"
+				onClick={onViewSettings}
+			/>
+		);
+	};
+
+	const groups = getGroups(false);
+
+	useImperativeHandle(ref, () => ({
+		load,
+		resize,
+	}));
+
+	return (
+		<div
+			ref={nodeRef}
+			className="wrap"
+		>
+			<div id="scrollWrap" className="scrollWrap">
+				<div ref={scrollRef} id="scroll" className="scroll">
+					<div className={cn.join(' ')}>
+						<div id="columns" className="columns">
+							{groups.map((group: any, i: number) => (
+								<Column
+									key={`board-column-${group.id}`}
+									ref={ref => columnRefs.current.set(group.id, ref)}
+									{...props}
+									{...group}
+									onDragStartColumn={onDragStartColumn}
+									onDragStartCard={onDragStartCard}
+									getSubId={() => getSubId(group.id)}
+								/>
+							))}
+						</div>
+					</div>
+				</div>
+			</div>
+			<StickyScrollbar ref={stickyScrollRef} />
+		</div>
+	);	
+
+});
+
+export default ViewBoard;

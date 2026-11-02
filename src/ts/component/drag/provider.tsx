@@ -1,0 +1,1274 @@
+import React, { forwardRef, useRef, useEffect, useImperativeHandle, ReactNode } from 'react';
+import raf from 'raf';
+import { DragLayer } from 'Component';
+import * as I from 'Interface';
+import { focus } from 'Lib/focus';
+
+interface Props {
+	children?: ReactNode;
+};
+
+const OFFSET = 100;
+const COLUMN_LATCH_TIMEOUT = 1000;
+
+const DragProvider = forwardRef<I.DragProviderRefProps, Props>((props, ref: any) => {
+
+	const { children } = props;
+	const nodeRef = useRef(null);
+	const layerRef = useRef(null);
+	const isInitialised = useRef(false);
+	const position = useRef(I.BlockPosition.None);
+	const hoverData = useRef(null);
+	const canDrop = useRef(false);
+	const frame = useRef(0);
+	const objectData = useRef(new Map());
+	const origin = useRef(null);
+	const dragActive = useRef(false);
+	const timeoutDragOver = useRef(0);
+	const prevTargetKey = useRef<string | null>(null);
+	const lastKnownCoords = useRef({ x: 0, y: 0 });
+	const lastValidTarget = useRef<{ data: any, position: I.BlockPosition } | null>(null);
+	const lastColumnTarget = useRef<{ data: any, position: I.BlockPosition, time: number } | null>(null);
+	const positionFromRealCoords = useRef(false);
+	const dragData = useRef<any>(null);
+
+	const dragHandler = useRef<((e: any) => void) | null>(null);
+	const dragEndHandler = useRef<((e: any) => void) | null>(null);
+	const dragOverHandler = useRef<((e: any) => void) | null>(null);
+
+	const getContainer = () => {
+		const isPopup = keyboard.isPopup();
+		return isPopup ? U.Dom.get('popupPage-innerWrap') : U.Dom.get('dragProvider');
+	};
+
+	const initData = () => {
+		if (isInitialised.current) {
+			return;
+		};
+
+		clearState();
+		isInitialised.current = true;
+
+		const cnt = getContainer();
+		if (cnt) {
+			U.Dom.selectAll('.dropTarget.isDroppable', cnt).forEach((el: HTMLElement, i: number) => {
+				const data = initNode(el, i);
+				if (data) {
+					objectData.current.set(data.cacheKey, data);
+				};
+			});
+		};
+	};
+
+	const initNode = (el: any, index: number) => {
+		if (!el) {
+			return null;
+		};
+
+		const keys = [
+			'id',
+			'root-id',
+			'cache-key',
+			'drop-type',
+			'type',
+			'style',
+			'target-context-id',
+			'view-type',
+		];
+
+		const data: any = {};
+
+		keys.forEach(key => {
+			data[U.String.toCamelCase(key)] = el.getAttribute(`data-${key}`);
+		});
+
+		return {
+			...data,
+			obj: el,
+			index,
+			...getNodeRect(el, data),
+			isTargetTop: U.Dom.hasClass(el, 'targetTop'),
+			isTargetBot: U.Dom.hasClass(el, 'targetBot'),
+			isTargetCol: U.Dom.hasClass(el, 'targetCol'),
+			isEmptyToggle: U.Dom.hasClass(el, 'emptyToggle'),
+		};
+	};
+
+	const getNodeRect = (el: any, data: any): { x: number, y: number, width: number, height: number } => {
+		const elRect = el.getBoundingClientRect();
+		const x = elRect.left + window.scrollX;
+		const width = U.Dom.contentWidth(el);
+
+		let y = elRect.top + window.scrollY;
+		let height = U.Dom.contentHeight(el);
+
+		// Add block's paddings to height
+		if ((data.dropType == I.DropType.Block) && (data.type != I.BlockType.Layout)) {
+			const block = U.Dom.get(`block-${data.id}`);
+			if (block) {
+				const top = parseInt(getComputedStyle(block).paddingTop);
+				const bot = parseInt(getComputedStyle(block).paddingBottom);
+
+				y -= top + 2;
+				height += top + bot + 2;
+			};
+		};
+
+		return { x, y, width, height };
+	};
+
+	const onDropCommon = (e: any) => {
+		e.preventDefault();
+		dragData.current = null;
+
+		if (keyboard.isCommonDropDisabled) {
+			clearState();
+			return;
+		};
+
+		const rootId = keyboard.getRootId();
+		const root = S.Block.getLeaf(rootId, rootId);
+
+		if (!root || root.isLocked()) {
+			return;
+		};
+
+		const electron = U.Common.getElectron();
+		const dataTransfer = e.dataTransfer;
+		const items = U.Common.getDataTransferItems(dataTransfer.items);
+		const isFileDrop = dataTransfer.files && dataTransfer.files.length;
+		const last = S.Block.getFirstBlock(rootId, -1, it => it && it.canCreateBlock());
+
+		let data: any = null;
+		let targetId = '';
+		let target: any = null;
+
+		const hasCoords = e.pageX || e.pageY || e.clientX || e.clientY;
+
+		if (hoverData.current && (position.current != I.BlockPosition.None)) {
+			data = hoverData.current;
+
+			// On Linux the drop event carries no coordinates — if a late dragover
+			// flipped a freshly shown column indicator to Top/Bottom for the same
+			// target, restore the column position the user saw (JS-9377)
+			if (!hasCoords) {
+				const latched = getLatchedColumnPosition(data, position.current);
+				if (latched != I.BlockPosition.None) {
+					position.current = latched;
+				};
+			};
+		} else
+		if (lastValidTarget.current) {
+			data = lastValidTarget.current.data;
+			position.current = lastValidTarget.current.position;
+
+			// Same restoration for the fallback path: hoverData was cleared by a
+			// late bogus dragover right before the drop (JS-9377)
+			if (!hasCoords) {
+				const latched = getLatchedColumnPosition(data, position.current);
+				if (latched != I.BlockPosition.None) {
+					position.current = latched;
+				};
+			};
+		} else
+		if (last && isFileDrop) {
+			data = objectData.current.get([ I.DropType.Block, last.id ].join('-'));
+			position.current = I.BlockPosition.Bottom;
+		};
+
+		// DOM-based fallback for Linux where coordinate tracking may fail
+		if (!data && !isFileDrop) {
+			const dropEl = (e.target as HTMLElement).closest('.dropTarget.isDroppable');
+			if (dropEl) {
+				data = initNode(dropEl, 0);
+				if (data) {
+					const dropX = e.pageX || e.clientX || lastKnownCoords.current.x || 0;
+					const dropY = e.pageY || e.clientY || lastKnownCoords.current.y || 0;
+					const col1 = data.x - J.Size.blockMenu / 4;
+					const col2 = data.x + data.width;
+
+					if (dropX && (dropX <= col1)) {
+						position.current = I.BlockPosition.Left;
+					} else
+					if (dropX && (dropX > col2)) {
+						position.current = I.BlockPosition.Right;
+					} else
+					if (dropY && data.height) {
+						position.current = (dropY <= data.y + data.height * 0.5) ? I.BlockPosition.Top : I.BlockPosition.Bottom;
+					} else {
+						position.current = I.BlockPosition.Bottom;
+					};
+				};
+			};
+		};
+
+		if (!data && !isFileDrop) {
+			console.log('[DragProvider].onDropCommon no valid drop target');
+		};
+
+		if (data) {
+			targetId = String(data.id || '');
+			target = S.Block.getLeaf(rootId, targetId);
+		};
+
+		// Last drop zone
+		if (targetId == 'blockLast') {
+			targetId = '';
+			position.current = I.BlockPosition.Bottom;
+		};
+
+		// String items drop
+		if (items && items.length) {
+			U.Common.getDataTransferString(items, (html: string) => {
+				C.BlockPaste(rootId, targetId, { from: 0, to: 0 }, [], false, { html }, '');
+			});
+
+			clearState();
+			return;
+		};
+
+		if (isFileDrop) {
+			const filePaths: string[] = [];
+			const dirPaths: string[] = [];
+
+			for (const file of dataTransfer.files) {
+				const path = electron.webFilePath(file);
+				if (!path) {
+					continue;
+				};
+
+				if (electron.isDirectory(path)) {
+					dirPaths.push(path);
+				} else {
+					filePaths.push(path);
+				};
+			};
+
+			console.log('[DragProvider].onDrop filePaths', filePaths, 'dirPaths', dirPaths);
+
+			const allPaths = filePaths.concat(dirPaths);
+			let contextId = rootId;
+
+			if (data && (data.dropType == I.DropType.Menu)) {
+				contextId = targetId;
+				targetId = '';
+				position.current = I.BlockPosition.Bottom;
+			};
+
+			if (data && (data.dropType == I.DropType.Widget)) {
+				const { widgets } = S.Block;
+				const childrenIds = S.Block.getChildrenIds(widgets, targetId);
+				const child = childrenIds.length ? S.Block.getLeaf(widgets, childrenIds[0]) : null;
+				const widgetTargetId = child?.getTargetObjectId();
+
+				if (widgetTargetId) {
+					contextId = widgetTargetId;
+					targetId = '';
+					position.current = I.BlockPosition.Bottom;
+				};
+			};
+
+			const detailsId = (data && (data.dropType == I.DropType.Widget)) ? S.Block.widgets : rootId;
+			const contextObject = S.Detail.get(detailsId, contextId, [ 'layout' ], true);
+			const isSetLayout = U.Object.isInSetLayouts(contextObject.layout);
+
+			if (allPaths.length && isSetLayout) {
+				Preview.toastShow({ text: translate('toastSetFileDrop') });
+			} else
+			if (allPaths.length && !isSetLayout) {
+				C.FileDrop(contextId, targetId, position.current, allPaths, (message: any) => {
+					U.File.showFileDropError(message);
+
+					if (!message.error.code) {
+						const isWidget = data && (data.dropType == I.DropType.Widget);
+						const route = isWidget ? analytics.route.uploadDnDWidget : analytics.route.uploadDnDEditor;
+
+						if (filePaths.length) {
+							analytics.event('UploadFile', { route, count: filePaths.length });
+						};
+
+						if (dirPaths.length) {
+							analytics.event('CreateCollectionFromFolder', { route, filesCount: filePaths.length });
+						};
+					};
+
+					if (target && (target.canToggle()) && (position.current == I.BlockPosition.InnerFirst)) {
+						S.Block.toggle(rootId, targetId, true);
+					};
+				});
+			};
+		} else
+		if (data && canDrop && (position.current != I.BlockPosition.None)) {
+			onDrop(e, data.dropType, targetId, position.current);
+		};
+
+		clearState();
+	};
+
+	const onDragStart = (e: any, dropType: I.DropType, ids: string[], component: I.DragComponentProps) => {
+		const rootId = keyboard.getRootId();
+		const isPopup = keyboard.isPopup();
+		const selection = S.Common.getRef('selectionProvider');
+		const node = nodeRef.current;
+		const containerEl = U.Dom.getScrollContainer(isPopup);
+		const sidebarEl = S.Common.getRef('sidebarLeft')?.getNode();
+		const layer = U.Dom.get('dragLayer');
+		const dataTransfer = { rootId, dropType, ids, withAlt: e.altKey };
+
+		origin.current = component;
+		dragData.current = dataTransfer;
+
+		e.stopPropagation();
+		focus.clear(true);
+
+		console.log('[DragProvider].onDragStart', dropType, ids);
+
+		layerRef.current.show(rootId, dropType, ids, component);
+		setClass(ids);
+		initData();
+		unbind();
+
+		if (layer) {
+			e.dataTransfer.setDragImage(layer, 0, 0);
+		};
+		e.dataTransfer.setData('text/plain', JSON.stringify(dataTransfer));
+		e.dataTransfer.setData(`data-${JSON.stringify(dataTransfer)}`, '1');
+
+		U.Dom.addClass(node, 'isDragging');
+		U.Dom.addClass(document.body, 'isDragging');
+
+		keyboard.setDragging(true);
+		keyboard.disableSelection(true);
+		Preview.hideAll();
+
+		dragHandler.current = (e: any) => onDrag(e);
+		dragEndHandler.current = (e: any) => onDragEnd(e);
+		dragOverHandler.current = (e: any) => {
+			e.preventDefault();
+			const ox = e.pageX || e.clientX || 0;
+			const oy = e.pageY || e.clientY || 0;
+			if (ox || oy) {
+				lastKnownCoords.current = { x: ox, y: oy };
+			};
+		};
+
+		U.Dom.addEvents(window, [
+			['drag', dragHandler.current],
+			['dragend', dragEndHandler.current],
+			['dragover', dragOverHandler.current],
+		]);
+
+		const scrollDragHandler = (e: any) => onScroll(e);
+		if (containerEl) {
+			U.Dom.addEvent(containerEl, 'scroll', scrollDragHandler);
+			(containerEl as any)._scrollDragHandler = scrollDragHandler;
+		};
+		if (sidebarEl) {
+			U.Dom.addEvent(sidebarEl, 'scroll', scrollDragHandler);
+			(sidebarEl as any)._scrollDragHandler = scrollDragHandler;
+		};
+
+		U.Dom.selectAll('.colResize.active', nodeRef.current).forEach(el => U.Dom.removeClass(el, 'active'));
+		scrollOnMove.onMouseDown({
+			container: containerEl || undefined,
+			onMouseUp: () => onDragEnd(e),
+		});
+
+		if (dropType == I.DropType.Block) {
+			selection?.set(I.SelectType.Block, ids);
+		};
+		selection?.hide();
+	};
+
+	const onDragOver = (e: any) => {
+		if (keyboard.isCommonDropDisabled) {
+			return;
+		};
+
+		e.preventDefault();
+		e.stopPropagation();
+
+		let x = e.pageX || e.clientX || 0;
+		let y = e.pageY || e.clientY || 0;
+
+		const hasRealCoords = Boolean(x || y);
+
+		// Save last known good coordinates for Linux fallback
+		if (hasRealCoords) {
+			lastKnownCoords.current = { x, y };
+		} else
+		if (lastKnownCoords.current.x || lastKnownCoords.current.y) {
+			x = lastKnownCoords.current.x;
+			y = lastKnownCoords.current.y;
+		};
+
+		scrollOnMove.onMouseMove(e.clientX || x, e.clientY || y);
+		initData();
+
+		// Only run target detection with valid coordinates.
+		// On Linux, dragover events may report (0, 0) — calling checkNodes
+		// with bad coords clears hoverData without finding a replacement.
+		if (x || y) {
+			// Recomputations from fallback coordinates are untrusted — the column
+			// latch only overrides those (JS-9377)
+			positionFromRealCoords.current = hasRealCoords;
+			checkNodes(e, x, y);
+		};
+
+		if (!dragActive.current) {
+			dragActive.current = true;
+		};
+
+		window.clearTimeout(timeoutDragOver.current);
+		timeoutDragOver.current = window.setTimeout(() => {
+			if (dragActive.current) {
+				const { x, y } = lastKnownCoords.current;
+				const isInsideWindow = (x > 0) && (y > 0) && (x < window.innerWidth) && (y < window.innerHeight);
+
+				// On Linux, drag events may have gaps even when inside window
+				// Only clear styles if coordinates suggest we're outside the window
+				if (!isInsideWindow) {
+					dragActive.current = false;
+					clearStyle();
+					prevTargetKey.current = null;
+				};
+			};
+		}, 100);
+	};
+
+	const onDrag = (e: any) => {
+		let x = e.pageX;
+		let y = e.pageY;
+		const hasRealCoords = !!(x || y);
+
+		if (!hasRealCoords && (lastKnownCoords.current.x || lastKnownCoords.current.y)) {
+			x = lastKnownCoords.current.x;
+			y = lastKnownCoords.current.y;
+		};
+
+		scrollOnMove.onMouseMove(e.clientX || x, e.clientY || y);
+		initData();
+
+		// Only run target detection when drag event has real coordinates.
+		// On Linux, drag events report (0, 0) — using stale fallback coords
+		// causes checkNodes to clear hoverData without finding a valid replacement.
+		if (hasRealCoords) {
+			positionFromRealCoords.current = true;
+			checkNodes(e, x, y);
+		};
+
+		// Reset timeout to prevent blinking on Linux where dragover events may not fire consistently
+		window.clearTimeout(timeoutDragOver.current);
+		timeoutDragOver.current = window.setTimeout(() => {
+			if (dragActive.current) {
+				const { x, y } = lastKnownCoords.current;
+				const isInsideWindow = (x > 0) && (y > 0) && (x < window.innerWidth) && (y < window.innerHeight);
+
+				// On Linux, drag events may have gaps even when inside window
+				// Only clear styles if coordinates suggest we're outside the window
+				if (!isInsideWindow) {
+					dragActive.current = false;
+					clearStyle();
+					prevTargetKey.current = null;
+				};
+			};
+		}, 100);
+	};
+
+	const onDragEnd = (e: any) => {
+		// On Linux, the drop event may not fire. If hoverData is still set,
+		// it means onDropCommon never ran - perform the drop using saved drag data.
+		// Fall back to lastValidTarget if hoverData was cleared by a late event.
+		try {
+			let target = hoverData.current || lastValidTarget.current?.data;
+			let pos = (position.current != I.BlockPosition.None) ? position.current : (lastValidTarget.current?.position ?? I.BlockPosition.None);
+
+			// This fallback drop only runs when the drop event never fired (Linux) —
+			// if a late dragover flipped a freshly shown column indicator to
+			// Top/Bottom for the same target, restore the column position (JS-9377)
+			if (target) {
+				const latched = getLatchedColumnPosition(target, pos);
+				if (latched != I.BlockPosition.None) {
+					pos = latched;
+				};
+			};
+
+			// DOM-based fallback using last known coordinates when coordinate tracking failed
+			if (!target && dragData.current) {
+				const { x, y } = lastKnownCoords.current;
+				if (x || y) {
+					const el = document.elementFromPoint(x, y);
+					if (el) {
+						const dropEl = (el as HTMLElement).closest('.dropTarget.isDroppable');
+						if (dropEl) {
+							target = initNode(dropEl, 0);
+							if (target) {
+								const col1 = target.x - J.Size.blockMenu / 4;
+								const col2 = target.x + target.width;
+
+								if (x && (x <= col1)) {
+									pos = I.BlockPosition.Left;
+								} else
+								if (x && (x > col2)) {
+									pos = I.BlockPosition.Right;
+								} else
+								if (y && target.height) {
+									pos = (y <= target.y + target.height * 0.5) ? I.BlockPosition.Top : I.BlockPosition.Bottom;
+								} else {
+									pos = I.BlockPosition.Bottom;
+								};
+							};
+						};
+					};
+				};
+			};
+
+			if (target && (pos != I.BlockPosition.None) && dragData.current) {
+				const ids = dragData.current.ids || [];
+				const isValid = (dragData.current.dropType != I.DropType.Block) || checkParentIds(ids, String(target.id || ''));
+
+				if (isValid) {
+					let targetId = String(target.id || '');
+
+					if (targetId == 'blockLast') {
+						targetId = '';
+						position.current = I.BlockPosition.Bottom;
+					};
+
+					const fakeEvent = {
+						dataTransfer: {
+							getData: () => JSON.stringify(dragData.current),
+						},
+					};
+
+					onDrop(fakeEvent, target.dropType, targetId, pos);
+				};
+			};
+		} catch (err) {
+			console.error('[DragProvider].onDragEnd drop failed', err);
+		};
+
+		dragData.current = null;
+
+		const isPopup = keyboard.isPopup();
+		const node = nodeRef.current;
+		const endContainerEl = U.Dom.getScrollContainer(isPopup);
+		const sidebarEl = S.Common.getRef('sidebarLeft')?.getNode();
+
+		layerRef.current.hide();
+		clearState();
+		clearStyle();
+		unbind();
+
+		keyboard.setDragging(false);
+		keyboard.disableSelection(false);
+
+		U.Dom.removeClass(node, 'isDragging');
+		U.Dom.removeClass(document.body, 'isDragging');
+
+		if (endContainerEl && (endContainerEl as any)._scrollDragHandler) {
+			U.Dom.removeEvent(endContainerEl, 'scroll', (endContainerEl as any)._scrollDragHandler);
+			delete (endContainerEl as any)._scrollDragHandler;
+		};
+		if (sidebarEl && (sidebarEl as any)._scrollDragHandler) {
+			U.Dom.removeEvent(sidebarEl, 'scroll', (sidebarEl as any)._scrollDragHandler);
+			delete (sidebarEl as any)._scrollDragHandler;
+		};
+
+		U.Dom.selectAll('.isDragging', nodeRef.current).forEach(el => U.Dom.removeClass(el, 'isDragging'));
+		scrollOnMove.onMouseUp(true);
+
+		window.clearTimeout(timeoutDragOver.current);
+	};
+
+	const onDrop = (e: any, targetType: string, targetId: string, position: I.BlockPosition) => {
+		const selection = S.Common.getRef('selectionProvider');
+
+		let data: any = {};
+		try { data = JSON.parse(e.dataTransfer.getData('text/plain')) || {}; } catch (e) {};
+
+		const { rootId, dropType, withAlt } = data;
+		const ids = data.ids || [];
+		const contextId = rootId;
+
+		if (!ids.length) {
+			return;
+		};
+
+		let targetContextId = keyboard.getRootId();
+		let isToggle = false;
+
+		const processSourceBlock = () => {
+			const cb = () => {
+				if (isToggle && (position == I.BlockPosition.InnerFirst)) {
+					S.Block.toggle(contextId, targetId, true);
+				};
+
+				selection?.renderSelection();
+				raf(() => {
+					U.Dom.eventDispatch(window, 'resize');
+				});
+			};
+
+			if (withAlt) {
+				Action.duplicate(contextId, targetContextId, targetId, ids, position, cb);
+			} else {
+				Action.move(contextId, targetContextId, targetId, ids, position, cb);
+			};
+		};
+
+		const processAddRecord = () => {
+			U.Object.getById(targetContextId, {}, (object) => {
+				// Add to collection
+				if (U.Object.isCollectionLayout(object.layout)) {
+					C.ObjectCollectionAdd(targetContextId, ids);
+				} else {
+					ids.forEach((key: string) => {
+						const newBlock = {
+							type: I.BlockType.Link,
+							content: {
+								...U.Data.defaultLinkSettings(),
+								targetBlockId: key,
+							}
+						};
+						C.BlockCreate(targetContextId, targetId, position, newBlock);
+					});
+				};
+			});
+		};
+
+		// DropTarget type
+		switch (targetType) {
+			case I.DropType.Block: {
+
+				// Drop into column is targeting last block
+				if (hoverData.current?.isTargetCol) {
+					const childrenIds = S.Block.getChildrenIds(targetContextId, targetId);
+				
+					targetId = childrenIds.length ? childrenIds[childrenIds.length - 1] : '';
+				};
+
+				const target = S.Block.getLeaf(targetContextId, targetId);
+
+				if (ids.includes(targetId)) {
+					console.log('[DragProvider].onDrop ids includes targetId');
+					return;
+				};
+				
+				if (target) {
+					isToggle = target.canToggle();
+		
+					if ((target.isLink() || target.isBookmark()) && (position == I.BlockPosition.InnerFirst)) {
+						targetContextId = target.getTargetObjectId();
+						targetId = '';
+
+						if (contextId == targetContextId) {
+							console.log('[DragProvider].onDrop Contexts are equal');
+							return;
+						};
+					} else {
+						const parent = S.Block.getParentLeaf(targetContextId, targetId);
+
+						if (parent && parent.isLayoutColumn() && ([ I.BlockPosition.Left, I.BlockPosition.Right ].indexOf(position) >= 0)) {
+							targetId = parent.id;
+						};
+					};
+				};
+
+				// Source type
+				switch (dropType) {
+					case I.DropType.Block: {
+						processSourceBlock();
+						break;
+					};
+
+					case I.DropType.Relation: {
+						const object = S.Detail.get(targetContextId, targetContextId);
+
+						if (U.Object.isInFileLayouts(object.layout)) {
+							const type = S.Record.getTypeById(object.type);
+
+							if (!type) {
+								break;
+							};
+
+							const list = Relation.getArrayValue(type.recommendedFileRelations);
+							const idx = list.findIndex(id => id == targetId);
+							const dir = position == I.BlockPosition.Bottom ? 1 : -1;
+
+							if (idx < 0) {
+								break;
+							};
+
+							for (let i = 0; i < ids.length; i++) {
+								list.splice(Math.max(0, i + idx + dir), 0, ids[i]);
+							};
+
+							C.ObjectListSetDetails([ type.id ], [ { key: 'recommendedFileRelations', value: U.Common.arrayUnique(list) } ]);
+						} else {
+							const keys = ids.map(id => S.Record.getRelationById(id)?.relationKey).filter(it => it);
+
+							keys.forEach((key: string) => {
+								C.BlockCreate(targetContextId, targetId, position, { type: I.BlockType.Relation, content: { key } });
+							});
+						};
+						break;
+					};
+				};
+
+				break;
+			};
+
+			case I.DropType.Relation: {
+				break;
+			};
+
+			case I.DropType.Menu: {
+				targetContextId = targetId;
+				targetId = '';
+
+				// Source type
+				switch (dropType) {
+					case I.DropType.Block: {
+						processSourceBlock();
+						break;
+					};
+
+					case I.DropType.Record: {
+						processAddRecord();
+						break;
+					};
+				};
+				break;
+			};
+
+			case I.DropType.Record: {
+
+				switch (position) {
+					case I.BlockPosition.Top:
+					case I.BlockPosition.Bottom: {
+						origin.current?.onRecordDrop?.(targetId, ids, position);
+						break;
+					};
+
+					case I.BlockPosition.InnerFirst: {
+						processAddRecord();
+						break;
+					};
+				};
+
+				break;
+			};
+
+			case I.DropType.View: {
+
+				switch (position) {
+					case I.BlockPosition.InnerFirst: {
+						origin.current?.onViewDrop?.(targetId, ids);
+						break;
+					};
+				};
+
+				break;
+			};
+
+			case I.DropType.Widget: {
+				let create = false;
+				let objectId = '';
+
+				// Source type
+				switch (dropType) {
+					case I.DropType.Block: {
+						const blocks = S.Block.getBlocks(contextId, it => ids.includes(it.id) && it.canBecomeWidget());
+						if (!blocks.length) {
+							break;
+						};
+
+						const block = blocks[0];
+						if (block.isText()) {
+							const marks = block.content.marks.filter(it => [ I.MarkType.Object, I.MarkType.Mention ].includes(it.type));
+							if (!marks.length) {
+								break;
+							};
+
+							objectId = marks[0].param;
+						} else {
+							objectId = block.getTargetObjectId();
+						};
+
+						if (objectId) {
+							create = true;
+						};
+						break;
+					};
+
+					case I.DropType.Record: {
+						objectId = ids[0];
+						create = true;
+						break;
+					};
+				};
+
+				if (create) {
+					Action.createWidgetFromObject(contextId, objectId, targetId, position, analytics.route.addWidgetDnD);
+				};
+
+				break;
+			};
+
+		};
+
+		console.log('[DragProvider].onDrop from:', contextId, 'to: ', targetContextId);
+	};
+
+	const onScroll = (e: any) => {
+		if (!keyboard.isDragging) {
+			return;
+		};
+
+		const cnt = getContainer();
+		if (cnt) {
+			U.Dom.selectAll('.dropTarget.isDroppable', cnt).forEach((el: HTMLElement, i: number) => {
+				const cacheKey = el.getAttribute('data-cache-key');
+
+				let data = {};
+
+				if (objectData.current.has(cacheKey)) {
+					data = objectData.current.get(cacheKey);
+
+					objectData.current.set(cacheKey, {
+						...data,
+						...getNodeRect(el, data),
+					});
+				} else {
+					const data = initNode(el, i);
+					if (data) {
+						objectData.current.set(data.cacheKey, data);
+					};
+				};
+			});
+		};
+	};
+
+	const checkNodes = (e: any, ex: number, ey: number) => {
+		const dataTransfer = e.dataTransfer;
+		const isItemDrag = U.Common.getDataTransferItems(dataTransfer.items).length ? true : false;
+		const isFileDrag = dataTransfer.types.includes('Files');
+
+		let data: any = {};
+		try {
+			for (const type of dataTransfer.types) {
+				if (type.match(/^data-/)) {
+					data = JSON.parse(type.replace(/^data-/, ''));
+					break;
+				};
+			};
+		} catch (e) { };
+
+		setHoverData(null);
+		setPosition(I.BlockPosition.None);
+
+		for (const [ key, value ] of objectData.current) {
+			const { y, height, dropType } = value;
+
+			let { x, width } = value;
+			if (dropType == I.DropType.Block) {
+				x -= OFFSET;
+				width += OFFSET * 2;
+			};
+
+			if ((ex >= x) && (ex <= x + width) && (ey >= y) && (ey <= y + height)) {
+				setHoverData(value);
+				break;
+			};
+		};
+
+		let hd = hoverData.current;
+		const dropType = String(data.droptype) || '';
+		const rootId = String(data.rootid) || '';
+		const ids = data.ids || [];
+
+		let x = 0;
+		let y = 0;
+		let width = 0;
+		let height = 0;
+		let isTargetTop = false;
+		let isTargetBot = false;
+		let isTargetCol = false;
+		let isEmptyToggle = false;
+		let obj = null;
+		let type: any = '';
+		let style = 0;
+		let canDropMiddle = 0;
+		let isReversed = 0;
+		let col1 = 0;
+		let col2 = 0;
+
+		if (hd) {
+			canDrop.current = true;
+
+			if (!isFileDrag && (dropType == I.DropType.Block)) {
+				canDrop.current = checkParentIds(ids, hd.id);
+			};
+
+			const initVars = () => {
+				if (!hd) {
+					return;
+				};
+
+				x = hd.x;
+				y = hd.y;
+				width = hd.width;
+				height = hd.height;
+				isTargetTop = hd.isTargetTop;
+				isTargetBot = hd.isTargetBot;
+				isTargetCol = hd.isTargetCol;
+				isEmptyToggle = hd.isEmptyToggle;
+
+				obj = hd.obj;
+				type = obj.getAttribute('data-type');
+				style = Number(obj.getAttribute('data-style')) || 0;
+				canDropMiddle = Number(obj.getAttribute('data-drop-middle')) || 0;
+				isReversed = Number(obj.getAttribute('data-reversed')) || 0;
+
+				col1 = x - J.Size.blockMenu / 4;
+				col2 = x + width;
+			};
+
+			initVars();
+
+			if (ex <= col1) {
+				setPosition(I.BlockPosition.Left);
+			} else
+			if ((ex > col1) && (ex <= col2)) {
+				if (ey <= y + height * 0.3) {
+					setPosition(I.BlockPosition.Top);
+				} else
+				if (ey >= y + height * 0.7) {
+					setPosition(I.BlockPosition.Bottom);
+				} else {
+					setPosition(I.BlockPosition.InnerFirst);
+				};
+			} else
+			if (ex > col2) {
+				setPosition(I.BlockPosition.Right);
+			};
+
+			if (position.current == I.BlockPosition.Bottom) {
+				const targetBot = objectData.current.get(hd.cacheKey + '-bot');
+				if (targetBot) {
+					setHoverData(targetBot);
+					hd = targetBot;
+					initVars();
+				};
+			};
+
+			// Save early before position adjustments that may reset to None
+			// (e.g. text block bottom-hover). The final save after adjustments
+			// will overwrite this with the fully-adjusted position when valid.
+			if ((position.current != I.BlockPosition.None) && canDrop.current) {
+				saveValidTarget(hd, position.current);
+			};
+
+			// canDropMiddle flag for restricted objects
+			if ((position.current == I.BlockPosition.InnerFirst) && !canDropMiddle) {
+				recalcPositionY(ey, y, height);
+			};
+
+			// Recalc position if dataTransfer items are dragged
+			if (isItemDrag && (position.current != I.BlockPosition.None)) {
+				recalcPositionY(ey, y, height);
+			};
+
+			// You can drop vertically on Layout.Row
+			if ((type == I.BlockType.Layout) && (style == I.LayoutStyle.Row)) {
+				if (isTargetTop) {
+					setPosition(I.BlockPosition.Top);
+				};
+				if (isTargetBot) {
+					setPosition(I.BlockPosition.Bottom);
+				};
+			};
+
+			if (!isTargetBot &&
+				[
+					I.TextStyle.Paragraph, 
+					I.TextStyle.Toggle, 
+					I.TextStyle.Checkbox, 
+					I.TextStyle.Numbered, 
+					I.TextStyle.Bulleted, 
+					I.TextStyle.Callout,
+					I.TextStyle.Quote,
+				].includes(style) && 
+				(position.current == I.BlockPosition.Bottom)
+			) {
+				setPosition(I.BlockPosition.None);
+			};
+
+			if (position.current != I.BlockPosition.None) {
+
+				// You can only drop inside of menu items
+				if (hd.dropType == I.DropType.Menu) {
+					setPosition(I.BlockPosition.InnerFirst);
+
+					if (rootId == hd.targetContextId) {
+						setPosition(I.BlockPosition.None);
+					};
+				};
+
+				// You can only drop inside of views
+				if (hd.dropType == I.DropType.View) {
+					setPosition(I.BlockPosition.InnerFirst);
+				};
+
+				if (isTargetTop || (hd.id == 'blockLast')) {
+					setPosition(I.BlockPosition.Top);
+				};
+
+				if (isTargetBot || isTargetCol) {
+					setPosition(I.BlockPosition.Bottom);
+				};
+
+				if (isEmptyToggle) {
+					setPosition(I.BlockPosition.InnerFirst);
+				};
+			};
+
+			// You can only drop records into views
+			if ((hd.dropType == I.DropType.View) && (dropType != I.DropType.Record)) {
+				setPosition(I.BlockPosition.None);
+			};
+
+			if ((dropType == I.DropType.Record) && (hd.dropType == I.DropType.Record) && !canDropMiddle) {
+				isReversed ? recalcPositionX(ex, x, width) : recalcPositionY(ey, y, height);
+			};
+
+			if (hd.dropType == I.DropType.Widget) {
+				recalcPositionY(ey, y, height);
+
+				if (isTargetTop) {
+					setPosition(I.BlockPosition.Top);
+				};
+				if (isTargetBot) {
+					setPosition(I.BlockPosition.Bottom);
+				};
+			};
+		};
+
+		if (hd && (position.current != I.BlockPosition.None) && canDrop.current) {
+			saveValidTarget(hd, position.current);
+		};
+
+		if (frame.current) {
+			raf.cancel(frame.current);
+		};
+
+		const currentKey = hd ? hd.cacheKey : null;
+		const currentPosition = position.current;
+		const currentObj = obj;
+
+		frame.current = raf(() => {
+			const shouldShow = (currentPosition != I.BlockPosition.None) && canDrop.current && hd;
+			const dirClass = getDirectionClass(currentPosition);
+			const targetChanged = prevTargetKey.current !== currentKey;
+			const prevKey = prevTargetKey.current;
+
+			// Only clear the previous target if it changed
+			if (targetChanged && prevKey) {
+				const prevData = objectData.current.get(prevKey);
+				if (prevData && prevData.obj) {
+					U.Dom.removeClass(prevData.obj, 'isOver top bottom left right middle');
+				};
+			};
+
+			// Apply new styles
+			if (shouldShow && currentObj) {
+				// Remove direction classes first, then add current ones
+				U.Dom.removeClass(currentObj, 'top bottom left right middle');
+				U.Dom.addClass(currentObj, `isOver ${dirClass}`);
+			} else
+			if (targetChanged && !shouldShow) {
+				// Clear all styles if we're not hovering anything valid
+				clearStyle();
+			};
+
+			prevTargetKey.current = shouldShow ? currentKey : null;
+		});
+	};
+
+	const recalcPositionY = (ey: number, y: number, height: number) => {
+		setPosition(ey <= y + height * 0.5 ? I.BlockPosition.Top : I.BlockPosition.Bottom);
+	};
+
+	const recalcPositionX = (ex: number, x: number, width: number) => {
+		setPosition(ex <= x + width * 0.5 ? I.BlockPosition.Top : I.BlockPosition.Bottom);
+	};
+
+	const setClass = (ids: string[]) => {
+		U.Dom.selectAll('.block.isDragging', nodeRef.current).forEach(el => U.Dom.removeClass(el, 'isDragging'));
+
+		for (const id of ids) {
+			U.Dom.addClass(U.Dom.get(`block-${id}`), 'isDragging');
+		};
+	};
+
+	const checkParentIds = (ids: string[], id: string): boolean => {
+		const parentIds: string[] = [];
+
+		getParentIds(id, parentIds);
+
+		for (const dropId of ids) {
+			if ((dropId == id) || (parentIds.length && parentIds.includes(dropId))) {
+				return false;
+			};
+		};
+		return true;
+	};
+
+	const getParentIds = (blockId: string, parentIds: string[]) => {
+		const rootId = keyboard.getRootId();
+		const item = S.Block.getMapElement(rootId, blockId);
+
+		if (!item || (item.parentId == rootId)) {
+			return;
+		};
+
+		parentIds.push(item.parentId);
+		getParentIds(item.parentId, parentIds);
+	};
+
+	const getDirectionClass = (dir: I.BlockPosition) => {
+		let c = '';
+		switch (dir) {
+			case I.BlockPosition.None:		 c = ''; break;
+			case I.BlockPosition.Top:		 c = 'top'; break;
+			case I.BlockPosition.Bottom:	 c = 'bottom'; break;
+			case I.BlockPosition.Left:		 c = 'left'; break;
+			case I.BlockPosition.Right:		 c = 'right'; break;
+			case I.BlockPosition.Inner:
+			case I.BlockPosition.InnerFirst: c = 'middle'; break;
+		};
+		return c;
+	};
+
+	const clearStyle = () => {
+		U.Dom.selectAll('.dropTarget.isOver', nodeRef.current).forEach(el => U.Dom.removeClass(el, 'isOver top bottom left right middle'));
+	};
+
+	const clearState = () => {
+		if (hoverData.current) {
+			setHoverData(null);
+		};
+
+		// Cancel any pending RAF to prevent re-adding styles after clear
+		if (frame.current) {
+			raf.cancel(frame.current);
+			frame.current = 0;
+		};
+
+		clearStyle();
+		setPosition(I.BlockPosition.None);
+
+		isInitialised.current = false;
+		objectData.current.clear();
+		prevTargetKey.current = null;
+		lastKnownCoords.current = { x: 0, y: 0 };
+		lastValidTarget.current = null;
+		lastColumnTarget.current = null;
+		positionFromRealCoords.current = false;
+		canDrop.current = false;
+		dragActive.current = false;
+	};
+
+	const setHoverData = (v: any) => {
+		hoverData.current = v;
+	};
+
+	const setPosition = (v: I.BlockPosition) => {
+		position.current = v;
+	};
+
+	const isColumnPosition = (v: I.BlockPosition): boolean => {
+		return [ I.BlockPosition.Left, I.BlockPosition.Right ].includes(v);
+	};
+
+	const saveValidTarget = (data: any, v: I.BlockPosition) => {
+		lastValidTarget.current = { data, position: v };
+
+		// Remember the last shown column (Left/Right) indicator separately: on
+		// Linux a late dragover recomputed from unreliable coordinates can flip
+		// it to Top/Bottom right before the drop lands, making new columns
+		// impossible to create (JS-9377). The latch is only consulted inside
+		// getLatchedColumnPosition, where the freshness window applies —
+		// lastValidTarget itself always tracks the latest valid position
+		if (isColumnPosition(v)) {
+			lastColumnTarget.current = { data, position: v, time: performance.now() };
+		};
+	};
+
+	// Returns the latched column (Left/Right) position for the given target when
+	// it was shown recently and the candidate position disagrees — used by the
+	// drop fallbacks to restore the column indicator the user saw (JS-9377).
+	// A live position recomputed from real event coordinates reflects a
+	// deliberate user move to another drop zone and is never overridden — the
+	// latch only counters bogus flips recomputed from stale fallback coordinates
+	const getLatchedColumnPosition = (data: any, v: I.BlockPosition): I.BlockPosition => {
+		const lct = lastColumnTarget.current;
+
+		if (!lct || !data || positionFromRealCoords.current) {
+			return I.BlockPosition.None;
+		};
+
+		const isFresh = (performance.now() - lct.time) <= COLUMN_LATCH_TIMEOUT;
+		const isSameTarget = lct.data?.id == data.id;
+
+		if (isFresh && isSameTarget && !isColumnPosition(v)) {
+			return lct.position;
+		};
+
+		return I.BlockPosition.None;
+	};
+
+	const unbind = () => {
+		if (dragHandler.current) {
+			U.Dom.removeEvent(window, 'drag', dragHandler.current);
+			dragHandler.current = null;
+		};
+		if (dragEndHandler.current) {
+			U.Dom.removeEvent(window, 'dragend', dragEndHandler.current);
+			dragEndHandler.current = null;
+		};
+		if (dragOverHandler.current) {
+			U.Dom.removeEvent(window, 'dragover', dragOverHandler.current);
+			dragOverHandler.current = null;
+		};
+	};
+
+	useEffect(() => {
+		return () => {
+			window.clearTimeout(timeoutDragOver.current);
+		};
+	}, []);
+
+	useImperativeHandle(ref, () => ({
+		onDragStart,
+		onScroll,
+		clearStyle,
+	}));
+
+	return (
+		<div
+			ref={nodeRef}
+			id="dragProvider" 
+			className="dragProvider" 
+			onDragOver={onDragOver} 
+			onDrop={onDropCommon}
+		>
+			<DragLayer {...props} ref={layerRef} />
+			{children}
+		</div>
+	);
+
+});
+
+export default DragProvider;

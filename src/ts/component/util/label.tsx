@@ -1,0 +1,91 @@
+import React, { FC, MouseEvent, useEffect, useRef } from 'react';
+import { Icon } from 'Component';
+import * as I from 'Interface';
+
+interface Props {
+	id?: string;
+	text: string;
+	color?: string;
+	className?: string;
+	iconParam?: I.IconParam;
+	tooltipParam?: Partial<I.TooltipParam>;
+	dataset?: any;
+	onMouseEnter?: (e: any) => void;
+	onMouseLeave?: (e: any) => void;
+	onMouseDown?: (e: any) => void;
+	onClick?: (e: any) => void;
+	onDoubleClick?: (e: any) => void;
+};
+
+const Label: FC<Props> = ({
+	id = '',
+	text = '',
+	color = '',
+	className = '',
+	iconParam,
+	tooltipParam = {},
+	dataset = {},
+	onClick,
+	onMouseDown,
+	onMouseEnter,
+	onMouseLeave,
+	onDoubleClick,
+}) => {
+	const nodeRef = useRef<HTMLDivElement | null>(null);
+	const cn = [ 'label' ];
+	const dataProps = { ...dataset };
+
+	if (className.match(/animation/)) {
+		dataProps['animation-type'] = I.AnimType.Text;
+		dataProps.content = text;
+	};
+
+	if (className) {
+		cn.push(className);
+	};
+	if (color) {
+		cn.push(`textColor textColor-${color}`);
+	};
+
+	const mouseEnterHandler = (e: MouseEvent) => {
+		const { text = '', caption = '' } = tooltipParam;
+		const t = Preview.tooltipCaption(text, caption);
+
+		if (t) {
+			Preview.tooltipShow({ ...tooltipParam, text: t, element: nodeRef.current });
+		};
+
+		onMouseEnter?.(e);
+	};
+
+	const mouseLeaveHandler = (e: MouseEvent) => {
+		Preview.tooltipHide(false);
+		onMouseLeave?.(e);
+	};
+
+	useEffect(() => {
+		if (nodeRef.current) {
+			U.Dom.renderLinks(nodeRef.current);
+		};
+	}, []);
+
+	return (
+		<div
+			ref={nodeRef}
+			id={id}
+			className={cn.join(' ')}
+			onClick={onClick}
+			onMouseDown={onMouseDown}
+			onMouseEnter={mouseEnterHandler}
+			onMouseLeave={mouseLeaveHandler}
+			onDoubleClick={onDoubleClick}
+			{...U.Common.dataProps(dataProps)}
+		>
+			{iconParam ? <Icon {...iconParam} /> : ''}
+			<span dangerouslySetInnerHTML={{ __html: U.String.sanitize(text) }} />
+		</div>
+	);
+
+};
+
+export default Label;

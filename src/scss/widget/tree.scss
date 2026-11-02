@@ -1,0 +1,72 @@
+@import "~scss/_mixins";
+
+.widget.widgetTree {
+	#innerWrap { padding-bottom: 8px; }
+	.ReactVirtualized__List { padding: 0px 8px; width: 100%; }
+
+	.head { padding-bottom: 0px; }
+
+	.item { position: relative; }
+	.item {
+		.inner {
+			display: flex; flex-direction: row; gap: 0px 2px; align-items: center; justify-content: space-between; position: relative;
+			height: 28px; padding: 0px 4px;
+		}
+		.inner::before {
+			content: ""; position: absolute; left: 0px; top: 0px; width: 100%; height: 100%; background: var(--color-shape-highlight-medium); z-index: 1; pointer-events: none;
+			border-radius: 6px; opacity: 0; transition: opacity $transitionCommon;
+		}
+		.inner:hover::before, .inner.hover::before { opacity: 1; }
+
+		&.isSection {
+			.inner { padding-left: 8px; }
+		}
+
+		.dropTarget { border-radius: 4px; }
+
+		.iconObject { flex-basis: 20px; margin-right: 6px; }
+
+		.arrowWrap { width: 24px; height: 24px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; cursor: default; }
+		.arrowWrap {
+			&:hover {
+				.icon.arrow { background-color: var(--color-shape-highlight-medium); }
+			}
+
+			.icon { width: 20px; height: 20px; flex-shrink: 0; transition: background $transitionCommon; border-radius: 4px; cursor: default; color: var(--color-text-primary); }
+			.icon.arrow { transform: rotate(-90deg); }
+		}
+
+		.clickable {
+			flex-grow: 1; display: flex; flex-direction: row; width: calc(100% - 30px); align-items: center; justify-content: space-between;
+			line-height: 20px;
+		}
+		.name { flex-grow: 1; @include text-overflow-nw; }
+	}
+
+	.item.hover, .item.active {
+		.inner::before { background: var(--color-shape-highlight-medium); opacity: 1; }
+	}
+	.item.isOpen {
+		.icon.arrow { transform: rotate(0deg); }
+	}
+	.item.isMore {
+		.name { color: var(--color-text-tertiary); }
+	}
+}
+
+.widget.widgetTree.isSidebarSection {
+	.contentWrapper { padding-top: 8px; }
+
+	.emptyWrap { height: auto; }
+	.emptyWrap {
+		.label { @include clamp5; }
+	}
+}
+
+.widget.widgetTree.isPreview {
+	.ReactVirtualized__List { padding: 8px; }
+}
+
+.widget.widgetTree.isClosed {
+	.contentWrapper { height: 8px; }
+}

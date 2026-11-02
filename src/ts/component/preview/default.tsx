@@ -1,0 +1,83 @@
+import React, { forwardRef, useEffect, useState, useRef } from 'react';
+import IconObject from 'Component/util/iconObject';
+import Loader from 'Component/util/loader';
+import ObjectName from 'Component/util/object/name';
+import ObjectDescription from 'Component/util/object/description';
+import ObjectType from 'Component/util/object/type';
+
+interface Props {
+	id?: string;
+	rootId?: string;
+	object?: any;
+	className?: string;
+	withPlural?: boolean;
+	noLoad?: boolean;
+	setObject?: (object: any) => void;
+};
+
+const PreviewDefault = forwardRef<{}, Props>((props, ref) => {
+
+	const { 
+		id = '',
+		rootId = '',
+		className = '',
+		object: initialObject,
+		setObject: setParentObject,
+		withPlural = false,
+		noLoad = false,
+	} = props;
+	const [ isLoading, setIsLoading ] = useState(false);
+	const [ object, setObject ] = useState(initialObject);
+	const idRef = useRef(null);
+	const cn = [ 'previewDefault', className ];
+	const type = S.Record.getTypeById(object?.type);
+
+	if (object && U.Object.isParticipantLayout(object.layout)) {
+		object.name = object.globalName || object.name;
+	};
+
+	const load = () => {
+		if (isLoading || (idRef.current == rootId) || noLoad) {
+			return;
+		};
+
+		idRef.current = rootId;
+		setIsLoading(true);
+
+		U.Object.getById(rootId, {}, object => {
+			setIsLoading(false);
+
+			if (!object) {
+				return;
+			};
+
+			setObject(object);
+
+			if (setParentObject) {
+				setParentObject(object);
+			};
+		});
+	};
+
+	useEffect(() => load(), [ rootId ]);
+
+	return (
+		<div id={id} className={cn.join(' ')} data-id={object?.id}>
+			{isLoading ? <Loader /> : (
+				<>
+					<div className="previewHeader">
+						<IconObject object={object} />
+						<ObjectName object={object} withPlural={withPlural} withLatex={true} />
+					</div>
+					<ObjectDescription object={object} />
+					<div className="featured">
+						<ObjectType object={type} />
+					</div>
+				</>
+			)}
+		</div>
+	);
+
+});
+
+export default PreviewDefault;

@@ -1,0 +1,121 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuOnboarding { width: var(--menu-width-set); border-radius: 16px; }
+	.menu.menuOnboarding {
+		.content { padding: 16px; max-height: unset; border-radius: inherit; }
+		.wrap { display: flex; flex-direction: column; gap: 16px 0px; }
+		.category,
+		.counter { @include text-small; color: var(--color-text-secondary); }
+
+		.name { @include text-paragraph; font-weight: 600; }
+
+		.descr {
+			.icon { width: 16px; height: 16px; margin: -2px 0px 0px 0px; }
+			p { margin: 0px 0px 8px 0px; }
+			p:last-child { margin-bottom: 0px; }
+		}
+
+		.highlight { 
+			background: var(--color-shape-secondary); white-space: nowrap; border-radius: 4px; padding: 2px 6px; color: var(--color-text-primary); 
+			font-family: 'Plex'; @include text-common; line-height: 14px;
+		}
+		a { color: var(--color-text-inversion); text-decoration: underline; }
+
+		.icon.close {
+			width: 16px; height: 16px; position: absolute; right: 16px; top: 17px; border-radius: 4px; z-index: 10;
+		}
+		.icon.close:hover { color: var(--color-text-primary); }
+
+		video { border-radius: 4px; border: 1px solid var(--color-shape-secondary); cursor: zoom-in; aspect-ratio: 16/9; object-fit: cover; }
+
+		.imgWrapper { display: flex; flex-direction: column; gap: 8px 0px; }
+		.imgWrapper {
+			img { width: 100%; height: auto; }
+			.caption { @include text-small; font-style: italic; }
+		}
+
+		.confettiCanvas { position: absolute; pointer-events: none; width: 100%;  height: 100%; left: 0; top: 0; }
+		
+		.bottom { display: flex; flex-direction: column; gap: 12px 0px; }
+		.bottom:empty { display: none; }
+
+		.bottom {
+			.buttons { display: flex; flex-direction: column; gap: 8px 0px; width: 100%; }
+			.buttons {
+				.button { width: 100%; }
+				.button.blank { font-weight: 500; }
+				.button.black { font-weight: 500; background-color: #d4d4d4; color: #171717; }
+				.button.black:not(.disabled):hover,
+				.button.black:not(.disabled).hover { background: #737373; }
+			}
+		}
+	}
+
+	.menu.menuOnboarding.invertedColor { box-shadow: inset 0px 0px 0px 1px var(--color-control-inactive), 0px 4px 12px 0px rgba(37, 37, 37, 0.20); background-color: var(--color-bg-primary); color: var(--color-text-primary); }
+
+	.menu.menuOnboarding.isSpace {
+		video { height: auto; }
+	}
+
+	.menu.menuOnboarding.productHunt {
+		.textWrapper { position: relative; padding-left: 58px; }
+		.textWrapper {
+			&:before {
+				content: ''; position: absolute; left: 0px; top: 50%; margin-top: -24px; width: 48px; height: 48px;
+				background: url('~img/icon/onboarding/productHunt.png') 0px 0px / 48px 48px no-repeat;
+			}
+		}
+	}
+}
+
+.onboardingElement { transition: none !important; }
+.onboardingElement.onboardingSettingsItem { background-color: var(--color-shape-tertiary) !important; }
+.onboardingElement.onboardingClonedSection {
+	.nameWrap > .name { -webkit-text-fill-color: var(--color-text-primary) !important; }
+}
+.onboardingElement.onboardingClonedSectionDark { height: auto !important; padding-bottom: 8px !important; border-radius: 8px !important; }
+.onboardingElement.onboardingClonedSectionDark {
+	.nameWrap > .name { -webkit-text-fill-color: var(--color-text-primary) !important; }
+}
+.onboardingElement.onboardingHeaderSync.sync { background-color: var(--color-shape-tertiary) !important; }
+.onboardingElement.onboardingIconP2P { background-color: var(--color-shape-tertiary) !important; border-radius: 50% !important; }
+
+.onboardingElement {
+	* { transition: none !important; }
+
+	&#sidebarPageVault { background-color: var(--color-bg-primary) !important; }
+	&#sidebarPageWidget,
+	#sidebarPageWidget { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; }
+
+	&.icon.withBackground,
+	&.widgetSection > .items > .widget { background-color: var(--color-bg-primary) !important; }
+
+	&.widgetSpaceHead {
+		background-color: var(--color-bg-primary) !important;
+		padding: 8px 0px !important;
+		margin-top: -8px !important;
+
+		&:before, &:after { content: ''; position: absolute; height: 100%; width: 12px; top: 0px; background-color: var(--color-bg-primary); }
+		&:before { border-radius: 8px 0px 0px 8px; left: -12px; }
+		&:after { border-radius: 0px 8px 8px 0px; right: -12px; }
+	}
+
+	&#page.pageMainChat { background-color: var(--color-bg-primary) !important; }
+
+	&.onboardingDimmer { opacity: 0 !important; }
+}
+
+.onboardingElement.onboardingElementDark {
+	&#pageWrapper #sidebarPageVault {
+		.bottom {
+			.grad { display: none !important; }
+		}
+	}
+}
+
+#button-chat-attachment.onboardingMarked {
+	background-color: var(--color-system-highlight) !important;
+	color: var(--color-system-accent-100) !important;
+}
+#button-chat-attachment.onboardingMarked svg path { fill: var(--color-system-accent-100) !important; }

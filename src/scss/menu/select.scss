@@ -1,0 +1,141 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuSelect {
+		.content { overflow: hidden; padding: 0px; display: flex; flex-direction: column; }
+		.items { overflow: auto; flex-grow: 1; }
+
+		.filter { flex-shrink: 0; }
+		.bottom { padding: 8px 0px; position: relative; flex-shrink: 0; }
+		.bottom::before {
+			content: ''; position: absolute; top: 0px; left: 14px; height: 1px; width: calc(100% - 28px); background: var(--color-shape-secondary);
+		}
+
+		.item { display: flex; align-items: center; }
+		.item {
+			.name { width: 100%; @include text-overflow-nw; }
+		}
+
+		.item.isInitial { padding: 2px 16px; line-height: 18px; margin-bottom: 2px; }
+		.item.isInitial {
+			.name { text-transform: uppercase; @include text-very-small; }
+		}
+
+		.emojiQuickReaction {
+			position: absolute; bottom: 100%; margin-bottom: 8px; left: 50%; transform: translateX(-50%);
+			display: flex; align-items: center; gap: 8px; padding: 0px 12px; height: 44px; border-radius: 22px;
+			background: var(--color-bg-primary); box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.2);
+		}
+		.emojiQuickReaction {
+			.emojiItem { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 20px; border-radius: 50%; }
+			.emojiItem:hover { background: var(--color-shape-highlight-medium); }
+			.emojiItem:not(.emojiPlus) { padding-top: 2px; }
+			.emojiPlus { background: var(--color-shape-highlight-medium); border-radius: 50%; }
+			.emojiPlus:hover { background: var(--color-shape-highlight-dark); }
+			.emojiPlus {
+				.icon.plus { width: 20px; height: 20px; }
+			}
+		}
+
+		&.withFilter {
+			.content { padding: 12px 0px 0px 0px; }
+		}
+
+		&.withMaxHeight {
+			.content { max-height: unset; }
+		}
+	}
+
+	.menu.menuSelect.skip { width: var(--menu-width-value); }
+	.menu.menuSelect.skip {
+		.name { margin: 0px; width: calc(100% - 24px); @include text-overflow-nw; }
+	}
+
+	.menu.menuSelect.button {
+		.item { white-space: nowrap; display: inline-block; margin-right: 16px; color: var(--color-control-active); font-weight: 500; }
+		.item:hover { color: var(--color-text-primary); }
+		.item:last-child { margin-right: 0px; }
+	}
+
+	.menu.menuSelect.center {
+		.item { text-align: center; }
+	}
+
+	.menu.menuSelect.withFullDescripion {
+		.content { overflow: auto; padding: 0px; }
+
+		.item.withDescription { height: auto; }
+		.item.withDescription {
+			.iconObject { background-color: var(--color-shape-highlight-medium); }
+			.descr { overflow: visible; white-space: normal; height: auto; }
+		}
+	}
+
+	.menu.menuSelect.noScroll {
+		.content { overflow: hidden; max-height: unset; }
+	}
+
+	.menu.menuSelect.noVirtualisation {
+		.items { padding: 8px 0px; }
+	}
+
+	.menu.menuSelect.spaceSelect { width: var(--menu-width-set); }
+	.menu.menuSelect.spaceSelect {
+		.item { padding: 4px 16px; }
+		.item {
+			.icon.plus {
+				border-radius: 8px; border: 1px solid var(--color-shape-secondary); background-color: var(--color-shape-highlight-light);
+				width: 48px; height: 48px;
+			}
+			.iconObject, .icon { margin: 0px; }
+			.iconObject.isSpaceView { border-radius: 8px !important; }
+			.clickable { align-items: center; gap: 0px 12px; }
+		}
+
+		.item.add { gap: 0px 12px; }
+	}
+
+	.menu.menuSelect.spaceCreate {
+		.content { height: auto !important; }
+
+		.caption { display: flex; align-items: center; }
+		.caption {
+			.icon { margin: 0px; }
+		}
+	}
+
+	/* Type layout conflict */
+	.menu.menuSelect.menuTypeLayout { width: var(--menu-width-icon); }
+	.menu.menuSelect.menuTypeLayout, .menu.menuSelect.menuWidgetTree {
+		.sectionName > .name { overflow: visible; white-space: normal; height: auto; }
+	}
+
+	/* Links, Backlinks */
+	.menu.menuSelect.featuredLinks {
+		.item {
+			.info { width: 100%; }
+			.iconObject { margin: 0px; background-color: var(--color-shape-highlight-medium); }
+		}
+	}
+
+	/* Chat attachment */
+	.menu.menuSelect.chatAttachment {
+	}
+
+	/* Invite Link */
+	.menu.menuSelect.inviteLinkType { width: var(--menu-width-large); }
+	.menu.menuSelect.inviteLinkType {
+		.item {
+			.icon {
+				width: 40px; height: 40px; border-radius: 50%; background-size: 20px;
+				background-position: 50% 50%; background-color: var(--color-shape-highlight-medium);
+			}
+		}
+	}
+
+	/* Shortcut conflict */
+	.menu.menuSelect.shortcutConflict { width: var(--menu-width-set); }
+	.menu.menuSelect.shortcutConflict {
+		.content { height: unset !important; }
+	}
+}

@@ -1,0 +1,289 @@
+import React, { forwardRef, useRef, useEffect, useImperativeHandle } from 'react';
+import { MenuItemVertical } from 'Component';
+import * as I from 'Interface';
+
+const MenuBlockLinkSettings = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
+	
+	const { id, param, getId, getSize, onKeyDown, setActive, position } = props;
+	const { data, className, classNameWrap } = param;
+	const { rootId, blockId, blockIds } = data;
+	const n = useRef(-1);
+
+	const keydownHandler = useRef(null);
+
+	const rebind = () => {
+		unbind();
+		keydownHandler.current = (e: any) => onKeyDown(e);
+		U.Dom.addEvent(window, 'keydown', keydownHandler.current);
+		window.setTimeout(() => setActive(), 15);
+	};
+
+	const unbind = () => {
+		if (keydownHandler.current) {
+			U.Dom.removeEvent(window, 'keydown', keydownHandler.current);
+			keydownHandler.current = null;
+		};
+	};
+
+	const onClick = (e: any, item: any) => {
+		if (item.withSwitch) {
+			item.onSwitch(e, !hasRelationKey(item.itemId));
+		} else 
+		if (item.arrow) {
+			onOver(e, item);
+		};
+	};
+
+	const onOver = (e: any, item: any) => {
+		if (!keyboard.isMouseDisabled) {
+			setActive(item, false);
+		};
+
+		if (!item.arrow) {
+			S.Menu.close('select');
+			return;
+		};
+
+		const content = getContent();
+		const menuId = 'select';
+
+		const menuParam: any = {
+			menuKey: item.id,
+			element: `#${getId()} #item-${U.Common.esc(item.id)}`,
+			offsetX: getSize().width,
+			vertical: I.MenuDirection.Center,
+			isSub: true,
+			rebind: rebind,
+			parentId: id,
+			className,
+			classNameWrap,
+			data: {
+				value: String(content[item.itemId]),
+				options: [],
+				onSelect: (e: any, el: any) => {
+					save(item.itemId, el.id);
+				},
+			},
+		};
+
+		let options: any[] = [];
+
+		switch (item.itemId) {
+			case 'iconSize':
+				options = getIcons();
+				break;
+
+			case 'cardStyle':
+				options = getStyles();
+				break;
+
+			case 'description':
+				options = getDescriptions();
+				break;
+		};
+
+		menuParam.data = Object.assign(menuParam.data, { options });
+
+		if (!S.Menu.isOpen(menuId, item.id)) {
+			S.Menu.closeAll(J.Menu.object, () => {
+				S.Menu.open(menuId, menuParam);
+			});
+		};
+	};
+
+	const getContent = (): I.ContentLink => {
+		const block = S.Block.getLeaf(rootId, blockId);
+		
+		if (!block) {
+			return {} as I.ContentLink;
+		};
+
+		const object = S.Detail.get(rootId, block.getTargetObjectId());
+
+		return U.Data.checkLinkSettings(block.content, object.layout);
+	};
+
+	const getStyles = () => {
+		return [
+			{ id: I.LinkCardStyle.Text, name: translate('menuBlockLinkSettingsStyleText') },
+			{ id: I.LinkCardStyle.Card, name: translate('menuBlockLinkSettingsStyleCard') },
+		].map((it: any) => {
+			it.iconParam = { name: `menu/linkStyle/${String(I.LinkCardStyle[it.id]).toLowerCase()}` };
+			return it;
+		});
+	};
+
+	const getIcons = () => {
+		return [
+			{ id: I.LinkIconSize.None, name: translate('commonNone') },
+			{ id: I.LinkIconSize.Small, name: translate('menuBlockLinkSettingsSizeSmall') },
+			{ id: I.LinkIconSize.Medium, name: translate('menuBlockLinkSettingsSizeMedium') },
+		];
+	};
+
+	const getDescriptions = () => {
+		return [
+			{ id: I.LinkDescription.None, name: translate('commonNone') },
+			{ id: I.LinkDescription.Added, name: translate('menuBlockLinkSettingsDescriptionRelationDescription') },
+			{ id: I.LinkDescription.Content, name: translate('menuBlockLinkSettingsDescriptionContentPreview') },
+		];
+	};
+
+	const getSections = () => {
+		const block = S.Block.getLeaf(rootId, blockId);
+
+		if (!block) {
+			return [];
+		};
+
+		const object = S.Detail.get(rootId, block.getTargetObjectId());
+		const content = getContent();
+		const isCard = content.cardStyle == I.LinkCardStyle.Card;
+		const isText = content.cardStyle == I.LinkCardStyle.Text;
+		const isTask = U.Object.isTaskLayout(object.layout);
+		const isNote = U.Object.isNoteLayout(object.layout);
+
+		const canIcon = !isTask && !isNote;
+		const canIconSize = canIcon && isCard;
+		const canIconSwitch = canIcon && isText;
+		const canCover = !isNote && isCard;
+		const canDescription = !isNote;
+
+		const styles = getStyles();
+		const style = styles.find(it => it.id == content.cardStyle) || styles[0];
+
+		let icon: any = {};
+		let icons: any[] = [];
+
+		let description: any = {};
+		let descriptions: any[] = [];
+
+		if (canIcon) {
+			icons = getIcons();
+			icon = icons.find(it => it.id == content.iconSize) || icons[0];
+		};
+
+		if (canDescription) {
+			descriptions = getDescriptions();
+			description = descriptions.find(it => it.id == content.description) || descriptions[0];
+		};
+
+		const itemStyle = { id: 'cardStyle', name: translate('menuBlockLinkSettingsPreviewLayout'), caption: style.name, arrow: true };
+		const itemIconSize = canIconSize ? { id: 'iconSize', name: translate('commonIcon'), caption: icon.name, arrow: true } : null;
+		const itemIconSwitch = canIconSwitch ? { id: 'iconSwitch', name: translate('commonIcon'), withSwitch: true, switchValue: (icon.id != I.LinkIconSize.None) } : null;
+		const itemCover = canCover ? { id: 'cover', name: translate('menuBlockLinkSettingsCover'), withSwitch: true, switchValue: hasRelationKey('cover') } : null;
+		const itemName = { id: 'name', name: translate('menuBlockLinkSettingsName'), iconParam: { name: 'relation/shortText' } };
+		const itemDescription = canDescription ? {
+			id: 'description', name: translate('menuBlockLinkSettingsDescription'), iconParam: { name: 'relation/longText' },
+			caption: description.name, arrow: true
+		} : null;
+		const itemType = { id: 'type', name: translate('commonObjectType'), iconParam: { name: 'relation/object' }, withSwitch: true, switchValue: hasRelationKey('type') };
+
+		let sections: any[] = [
+			{ children: [ itemStyle, itemIconSize, itemIconSwitch, itemCover ] },
+			{ name: translate('menuBlockLinkSettingsAttributes'), children: [ itemName, itemDescription, itemType ] },
+		];
+
+		sections = sections.map((s: any) => {
+			s.children = s.children.filter(it => it);
+			return s;
+		});
+		sections = U.Menu.sectionsMap(sections);
+
+		sections = sections.map((s: any) => {
+			s.children = s.children.map((child: any) => {
+				if (child.withSwitch) {
+					child.onSwitch = (e: any, v: boolean) => {
+						let key = '';
+
+						if (child.itemId == 'iconSwitch') {
+							content.iconSize = v ? I.LinkIconSize.Small : I.LinkIconSize.None;
+							key = 'iconSize';
+						} else {
+							content.relations = v ? content.relations.concat([ child.itemId ]) : content.relations.filter(it => it != child.itemId);
+							key = 'relations';
+						};
+
+						save(key, content[key]);
+					};
+				};
+				return child;
+			});
+			return s;
+		});
+
+		return sections;
+	};
+
+	const getItems = () => {
+		let items: any[] = [];
+		for (const section of sections) {
+			items = items.concat(section.children);
+		};
+
+		return items;
+	};
+
+	const save = (id: string, v: any) => {
+		const content = getContent();
+
+		content[id] = v;
+		C.BlockLinkListSetAppearance(rootId, blockIds, content.iconSize, content.cardStyle, content.description, content.relations);
+	};
+
+	const hasRelationKey = (key: string) => {
+		return (getContent().relations || []).includes(key);
+	};
+
+	const sections = getSections();
+
+	const Section = (item: any) => (
+		<div className="section">
+			<div className="name">{item.name}</div>
+			<div className="items">
+				{item.children.map((action: any, i: number) => (
+					<MenuItemVertical 
+						key={i}
+						{...action}
+						onClick={e => onClick(e, action)}
+						onMouseEnter={e => onOver(e, action)} 
+					/>
+				))}
+			</div>
+		</div>
+	);
+
+	useEffect(() => {
+		rebind();
+
+		return () => {
+			unbind();
+		};
+	}, []);
+
+	useEffect(() => {
+		setActive();
+		position();
+	});
+
+	useImperativeHandle(ref, () => ({
+		rebind,
+		unbind,
+		getItems,
+		getIndex: () => n.current,
+		setIndex: (i: number) => n.current = i,
+		onClick,
+		onOver,
+	}), []);
+
+	return (
+		<div>
+			{sections.map((section: any, i: number) => (
+				<Section key={i} {...section} />
+			))}
+		</div>
+	);
+	
+});
+
+export default MenuBlockLinkSettings;

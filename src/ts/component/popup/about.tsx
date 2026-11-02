@@ -1,0 +1,32 @@
+import React, { forwardRef } from 'react';
+import { Title, Icon, Label, Button } from 'Component';
+import * as I from 'Interface';
+
+const PopupAbout = forwardRef<{}, I.Popup>(() => {
+
+	const version = U.Common.getElectron().version.app;
+
+	return (
+		<>
+			<div className="iconWrapper">
+				<Icon />
+			</div>
+			<Title text={translate('popupAboutTitle')} />
+			<Label text={translate('popupAboutDescription')} />
+
+			<div className="version">
+				{U.String.sprintf(translate('popupAboutVersion'), version)}
+				<Button 
+					onClick={() => U.Common.copyToast(translate('commonVersion'), version)} 
+					text={translate('commonCopy')} 
+					size={28}
+					color="blank" 
+				/>
+			</div>
+			<div className="copyright">{translate('popupAboutCopyright')}</div>
+		</>
+	);
+
+});
+
+export default PopupAbout;

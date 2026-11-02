@@ -1,0 +1,104 @@
+@import "~scss/_mixins";
+
+.blocks {
+	.block.blockRelation { @include text-common; }
+	.block.blockRelation > .wrapContent > .selectionTarget > .dropTarget { padding: 0px; }
+
+	.block.blockRelation {
+		.icon.edit { display: none; }
+
+		.input { @include text-common; line-height: 22px; vertical-align: top; display: inline-block; height: 22px; padding: 0px; background: none; border: 0px; border-radius: 0px; }
+
+		.sides { display: flex; width: 100%; }
+
+		.info { 
+			padding: 6px 2px; line-height: 20px; width: 30%; min-width: 40px; flex-shrink: 0; @include text-overflow-nw; 
+			display: flex; align-items: flex-start; gap: 0px 6px;
+		}
+		.info.noValue { width: 100%; color: var(--color-text-tertiary); }
+
+		.info {
+			.name { 
+				display: inline-block; vertical-align: top; @include text-common; line-height: 20px; @include text-overflow-nw; 
+				color: var(--color-text-secondary); width: 100%;
+			}
+			.icon.ghost { width: 20px; height: 20px; }
+		}
+
+		.wrap.isDeleted {
+			.info .name { color: var(--color-text-secondary); }
+		}
+
+		.cell { @include text-common; width: 70%; position: relative; padding: 5px 8px; border-radius: 8px; transition: background $transitionCommon; }
+		.cell {
+			&.canEdit:hover { background: var(--color-shape-highlight-light); }
+		
+			&.c-select { padding: 4px 8px; line-height: 24px; }
+			&.c-select {
+				.empty { line-height: 24px; }
+			}
+
+			.cellContent.canEdit {
+				.empty { display: block; }
+			}
+
+			&.c-select, 
+			&.c-object, 
+			&.c-file {
+				.over { flex-wrap: wrap; }
+			}
+
+			&.isEditing { padding: 0px; }
+			&.isEditing {
+				.cellContent { position: relative; height: auto !important; min-height: 32px; border-radius: 8px; }
+				.cellContent.isName .input { height: 20px; line-height: 20px; width: calc(100% - 24px); }
+				.icon.clear { right: 6px; top: 6px; }
+
+				#entry { line-height: inherit; height: 24px; vertical-align: top; display: inline-block; }
+
+				&.c-select {
+					.cellContent, .placeholder  { padding: 4px 8px 0px 8px; }
+					.tagItem {
+						.tagRemove { top: 50%; transform: translateY(-50%); }
+					}
+
+					.cellContent { width: 100%; border: 0px; border-radius: 8px; line-height: 0px; }
+					.over { width: calc(100% - 26px); }
+				}
+
+				&.c-shortText, 
+				&.c-number, 
+				&.c-url, 
+				&.c-phone, 
+				&.c-email
+				{
+					.cellContent { padding: 5px 8px !important; }
+				}
+
+				&.c-date {
+					.cellContent { padding: 5px 8px 4px 8px !important; }
+				}
+
+				&.c-object {
+					.element { background: none !important; }
+				}
+
+				&.c-object {
+					.cellContent, .placeholder { padding: 5px 8px 1px 8px !important; }
+				}
+
+				&.c-file {
+					.cellContent, .placeholder { padding: 5px 8px !important; }
+				}
+
+				&.c-longText {
+					.cellContent { box-shadow: 0px 0px; visibility: hidden; border: 0px; padding: 5px 8px; }
+					.cellContent span:empty { height: 22px; }
+				}
+			}
+		}
+	}
+
+	.block.blockRelation > .wrapContent > .dropTarget.targetBot { display: block; height: 2px; }
+	.block.blockRelation > .wrapContent.bgColor > .selectionTarget > .dropTarget .info { padding-left: 8px; }
+}

@@ -1,0 +1,1208 @@
+{
+	"name": "anytype",
+	"version": "0.57.4",
+	"description": "Anytype",
+	"main": "electron.js",
+	"scripts": {
+		"precommit": "bunx lint-staged",
+		"typecheck": "bunx tsc --noEmit -p tsconfig.json && bunx tsc --noEmit -p tsconfig.electron.json",
+		"lint": "bunx biome lint src/ && eslint .",
+		"lint:fix": "bunx biome check --write src/",
+		"format": "bunx biome format --write src/",
+		"format:check": "bunx biome format src/",
+		"release:notes": "node scripts/generate-release-notes.js",
+		"electron": "bunx electron .",
+		"electron-win": "bunx electron.cmd .",
+		"start:watch": "cross-env-shell vite --config vite.config.ts --port ${SERVER_PORT:-8080}",
+		"start:electron-wait-vite": "cross-env-shell node scripts/wait-for-localhost.js ${SERVER_PORT:-8080} && bun run electron",
+		"start:electron-wait-vite-win": "cross-env-shell node scripts/wait-for-localhost.js ${SERVER_PORT:-8080} && bun run electron-win",
+		"start:dev": "node scripts/build-electron.js && node scripts/start-dev.js",
+		"start:dev-win": "node scripts/build-electron.js && node scripts/start-dev.js",
+		"build:electron": "node scripts/build-electron.js",
+		"watch:electron": "node scripts/build-electron.js --watch",
+		"build": "node scripts/build-electron.js && vite build --config vite.config.ts",
+		"build:dev": "node scripts/build-electron.js && vite build --config vite.config.ts --mode development",
+		"build:ext": "vite build --config vite.extension.config.ts",
+		"build:deps": "node scripts/analyze-deps.js",
+		"build:nmh": "go build -o dist/nativeMessagingHost ./go/nativeMessagingHost.go",
+		"build:nmh-win": "go build -o dist/nativeMessagingHost.exe ./go/nativeMessagingHost.go",
+		"build:pixi": "vite build --config vite.worker.config.ts",
+		"generate:icons": "bun scripts/convert-icons.ts",
+		"generate:protos": "bash scripts/generate-protos.sh",
+		"dist:mac": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --macos --arm64 --x64",
+		"dist:macarm": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --macos --arm64",
+		"dist:macamd": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --macos --x64",
+		"dist:win": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && electron-builder --windows",
+		"dist:linux": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --linux --arm64 --x64",
+		"dist:linuxamd": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --linux --x64",
+		"dist:linuxamd-appimage": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --linux appImage --x64",
+		"dist:linuxarm": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --linux --arm64",
+		"dist:linuxarm-appimage": "bun run build:electron && bun run build:deps && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` electron-builder --linux appImage --arm64",
+		"publish:mac": "bun run build:electron && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` BUILD_NUMBER=`git rev-parse --short HEAD` electron-builder --macos --publish  always",
+		"publish:linux": "bun run build:electron && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` BUILD_NUMBER=`git rev-parse --short HEAD` electron-builder --linux --publish  always",
+		"publish:win": "bun run build:electron && vite build --config vite.config.ts && DATE=`date '+%Y-%m-%d_%H_%M'` GIT_COMMIT=`git rev-parse --short HEAD` BUILD_NUMBER=`git rev-parse --short HEAD` electron-builder --windows --publish  always",
+		"postinstall": "bunx patch-package && electron-builder install-app-deps",
+		"prepare": "husky install",
+		"update:locale": "node ./electron/hook/locale.js",
+		"ext:manifest:firefox": "node electron/hook/switch-manifest.js firefox",
+		"ext:manifest:chromium": "node electron/hook/switch-manifest.js chromium",
+		"start:web": "node scripts/start-web.js",
+		"start:dev-web": "cross-env WEB_OPEN_BROWSER=1 node scripts/start-web.js",
+		"build:web": "vite build --config vite.web.config.ts",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"storybook": "storybook dev -p 6006",
+		"storybook:build": "storybook build"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/anyproto/anytype-ts.git"
+	},
+	"author": {
+		"name": "Any Association",
+		"email": "info@anytype.io"
+	},
+	"license": "SEE LICENSE IN LICENSE.md",
+	"bugs": {
+		"url": "https://github.com/anyproto/anytype-ts/issues"
+	},
+	"homepage": "https://anytype.io",
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.8",
+		"@electron/notarize": "^3.1.1",
+		"@storybook/addon-essentials": "^8",
+		"@storybook/react": "^8",
+		"@storybook/react-vite": "^8",
+		"@tomjs/electron-devtools-installer": "^4.0.1",
+		"@types/history": "^4.7.8",
+		"@types/katex": "^0.16.7",
+		"@types/lodash": "^4.14.165",
+		"@types/node": "^24.9.1",
+		"@types/prismjs": "^1.16.1",
+		"@types/raf": "^3.4.0",
+		"@types/react": "^18.3.26",
+		"@types/react-dom": "^18.3.7",
+		"@types/react-router-dom": "^5.3.3",
+		"@vitejs/plugin-react-swc": "^4.2.0",
+		"ajv": "^7.2.4",
+		"cross-env": "^10.1.0",
+		"electron": "^43.7.3",
+		"electron-builder": "^26.16.1",
+		"eslint": "^9.26.0",
+		"eslint-plugin-react": "^7.37.5",
+		"globals": "^16.0.0",
+		"husky": "^8.0.3",
+		"license-checker": "^25.0.1",
+		"lint-staged": "^13.0.3",
+		"npm-run-all": "^4.1.5",
+		"patch-package": "^6.4.7",
+		"sass": "1.77.6",
+		"storybook": "^8",
+		"terser": "^5.36.0",
+		"ts-proto": "^2.11.5",
+		"typescript": "^5.3.3",
+		"typescript-eslint": "^8.54.0",
+		"unplugin-auto-import": "^21.0.0",
+		"vite": "^6.3.0",
+		"vite-plugin-static-copy": "^2.3.0",
+		"vitest": "^4.1.0"
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "^2.11.0",
+		"@dnd-kit/core": "^6.3.1",
+		"@dnd-kit/modifiers": "^9.0.0",
+		"@dnd-kit/sortable": "^10.0.0",
+		"@dnd-kit/utilities": "^3.2.2",
+		"@electron/remote": "^2.1.3",
+		"@excalidraw/excalidraw": "^0.17.6",
+		"@lexical/link": "^0.40.0",
+		"@lexical/list": "^0.40.0",
+		"@lexical/markdown": "^0.40.0",
+		"@lexical/react": "^0.40.0",
+		"@lexical/rich-text": "^0.40.0",
+		"@lexical/selection": "^0.40.0",
+		"@lexical/utils": "^0.40.0",
+		"@mermaid-js/layout-elk": "^0.2.0",
+		"@number-flow/react": "^0.5.11",
+		"@sentry/browser": "^7.39.0",
+		"@sentry/cli": "^2.18.1",
+		"@sindresorhus/slugify": "^3.0.0",
+		"@types/d3": "^7.4.3",
+		"@viz-js/viz": "^3.2.4",
+		"amplitude-js": "^8.21.9",
+		"blueimp-load-image": "^5.16.0",
+		"check-disk-space": "^3.4.0",
+		"d3": "^7.9.0",
+		"d3-force": "^3.0.0",
+		"d3-force-cluster": "^0.1.2",
+		"date-fns": "^4.1.0",
+		"diff": "^5.2.0",
+		"dompurify": "^3.4.15",
+		"electron-dl": "^3.5.2",
+		"electron-json-storage": "^4.6.0",
+		"electron-log": "^5.4.3",
+		"electron-updater": "^6.8.9",
+		"electron-util": "^0.12.3",
+		"electron-window-state": "^5.0.3",
+		"elkjs": "^0.11.0",
+		"file-type": "^21.3.0",
+		"findandreplacedomtext": "^0.4.6",
+		"google-protobuf": "^3.21.4",
+		"grpc-web": "^1.5.0",
+		"history": "^4.10.1",
+		"inputmask": "^5.0.5",
+		"katex": "^0.16.22",
+		"keytar": "7.9.0",
+		"lazy-val": "^1.0.4",
+		"lexical": "^0.40.0",
+		"libphonenumber-js": "^1.12.31",
+		"linux-distro": "^4.0.1",
+		"lodash": "^4.18.1",
+		"lodash.isequal": "^4.5.0",
+		"mermaid": "^11.17.2",
+		"mime-types": "^3.0.1",
+		"mobx": "^6.15.0",
+		"mobx-logger": "^0.7.1",
+		"mobx-react-lite": "^4.1.0",
+		"motion": "^12.23.24",
+		"node-gyp": "^12.1.0",
+		"p-finally": "^2.0.1",
+		"pako": "^2.1.0",
+		"pdfjs-dist": "^5.4.296",
+		"pixi.js": "^8.16.0",
+		"prismjs": "^1.21.0",
+		"qrcode.react": "^4.1.0",
+		"raf": "^3.4.1",
+		"react": "^18.3.1",
+		"react-canvas-confetti": "^2.0.7",
+		"react-dom": "^18.3.1",
+		"react-minimal-pie-chart": "^9.1.2",
+		"react-pdf": "^10.2.0",
+		"react-router-dom": "^5.3.4",
+		"react-virtualized": "^9.22.5",
+		"read-chunk": "^5.0.0",
+		"regedit": "^5.1.3",
+		"sanitize-filename": "^1.6.3",
+		"scheduler": "^0.23.2",
+		"selection-ranges": "^4.0.3",
+		"sha1": "^1.1.1",
+		"swiper": "^12.0.3",
+		"usehooks-ts": "^3.1.1",
+		"util": "^0.12.5",
+		"with-open-file": "^0.1.7"
+	},
+	"overrides": {
+		"async": "^3.2.5",
+		"getos": "^3.2.1",
+		"jsonfile": "^6.1.0",
+		"lodash-es": "^4.17.23",
+		"micromatch": "^4.0.8",
+		"node-abi": "^4.35.0",
+		"node-gyp": "^12.1.0",
+		"tar": "^7.5.7",
+		"tmp": "^0.2.4",
+		"trim-newlines": "^3.0.1"
+	},
+	"build": {
+		"npmRebuild": true,
+		"buildDependenciesFromSource": true,
+		"generateUpdatesFilesForAllChannels": true,
+		"beforeBuild": "./electron/hook/beforebuild.js",
+		"afterSign": "./electron/hook/aftersign.js",
+		"afterPack": "./electron/hook/afterpack.js",
+		"appId": "com.anytype.anytype",
+		"compression": "normal",
+		"productName": "Anytype",
+		"protocols": [
+			{
+				"name": "Anytype",
+				"role": "Editor",
+				"schemes": [
+					"anytype"
+				]
+			}
+		],
+		"asarUnpack": [
+			"dist/index.html",
+			"dist/tabs.html",
+			"dist/lib",
+			"dist/anytypeHelper",
+			"dist/anytypeHelper.exe",
+			"dist/nativeMessagingHost.exe",
+			"dist/nativeMessagingHost",
+			"dist/font/**/*",
+			"dist/workers/**/*",
+			"dist/*.node",
+			"dist/cmaps/**/*",
+			"dist/wasm/**/*",
+			"dist/embed/**/*",
+			"dist/linkApproval/**/*",
+			"dist/img/**/*",
+			"dist/css/**/*",
+			"dist/js/**/*",
+			"dist/audio/**/*",
+			"electron/img/*",
+			"electron/img/icons/*",
+			"electron/js/preload.cjs",
+			"build",
+			"node_modules/keytar/build/Release/keytar.node",
+			"node_modules/read-chunk",
+			"node_modules/@electron/remote",
+			"node_modules/with-open-file",
+			"node_modules/p-try",
+			"node_modules/p-finally",
+			"node_modules/file-type",
+			"node_modules/regedit",
+			"node_modules/mime-types",
+			"node_modules/mime-db"
+		],
+		"extraResources": [
+			{
+				"from": "node_modules/regedit/vbs",
+				"to": "regedit/vbs",
+				"filter": [
+					"**/*"
+				]
+			}
+		],
+		"files": [
+			"electron.js",
+			"electron/js/**/*",
+			"electron/json/*",
+			"electron/env.json",
+			"electron/img/*",
+			"electron/img/icons/*",
+			"build",
+			"!dist/*",
+			"dist/index.html",
+			"dist/tabs.html",
+			"dist/embed/**/*",
+			"dist/linkApproval/**/*",
+			"dist/lib/**/*",
+			"!dist/lib/pb/**/*",
+			"!dist/lib/pkg/**/*",
+			"!dist/lib/protos/**/*",
+			"dist/img/**/*",
+			"dist/css/**/*",
+			"dist/js/**/*",
+			"dist/audio/**/*",
+			"dist/assets/**/*",
+			"dist/*.js",
+			"!dist/js/main.js.map",
+			"dist/anytypeHelper.exe",
+			"dist/anytypeHelper",
+			"dist/nativeMessagingHost.exe",
+			"dist/nativeMessagingHost",
+			"dist/*.node",
+			"dist/cmaps/**/*",
+			"dist/font/**/*",
+			"dist/workers/**/*",
+			"!node_modules/**/*",
+			{
+				"from": "node_modules/@borewit/text-codec",
+				"to": "node_modules/@borewit/text-codec"
+			},
+			{
+				"from": "node_modules/@electron/remote",
+				"to": "node_modules/@electron/remote"
+			},
+			{
+				"from": "node_modules/@isaacs/cliui",
+				"to": "node_modules/@isaacs/cliui"
+			},
+			{
+				"from": "node_modules/@tokenizer/inflate",
+				"to": "node_modules/@tokenizer/inflate"
+			},
+			{
+				"from": "node_modules/@tokenizer/token",
+				"to": "node_modules/@tokenizer/token"
+			},
+			{
+				"from": "node_modules/@tomjs/electron-devtools-installer",
+				"to": "node_modules/@tomjs/electron-devtools-installer"
+			},
+			{
+				"from": "node_modules/@tomjs/unzip-crx",
+				"to": "node_modules/@tomjs/unzip-crx"
+			},
+			{
+				"from": "node_modules/ansi-regex",
+				"to": "node_modules/ansi-regex"
+			},
+			{
+				"from": "node_modules/ansi-styles",
+				"to": "node_modules/ansi-styles"
+			},
+			{
+				"from": "node_modules/argparse",
+				"to": "node_modules/argparse"
+			},
+			{
+				"from": "node_modules/array-find-index",
+				"to": "node_modules/array-find-index"
+			},
+			{
+				"from": "node_modules/async",
+				"to": "node_modules/async"
+			},
+			{
+				"from": "node_modules/balanced-match",
+				"to": "node_modules/balanced-match"
+			},
+			{
+				"from": "node_modules/base64-js",
+				"to": "node_modules/base64-js"
+			},
+			{
+				"from": "node_modules/bl",
+				"to": "node_modules/bl"
+			},
+			{
+				"from": "node_modules/brace-expansion",
+				"to": "node_modules/brace-expansion"
+			},
+			{
+				"from": "node_modules/buffer",
+				"to": "node_modules/buffer"
+			},
+			{
+				"from": "node_modules/builder-util-runtime",
+				"to": "node_modules/builder-util-runtime"
+			},
+			{
+				"from": "node_modules/camelcase",
+				"to": "node_modules/camelcase"
+			},
+			{
+				"from": "node_modules/camelcase-keys",
+				"to": "node_modules/camelcase-keys"
+			},
+			{
+				"from": "node_modules/check-disk-space",
+				"to": "node_modules/check-disk-space"
+			},
+			{
+				"from": "node_modules/chownr",
+				"to": "node_modules/chownr"
+			},
+			{
+				"from": "node_modules/color-convert",
+				"to": "node_modules/color-convert"
+			},
+			{
+				"from": "node_modules/color-name",
+				"to": "node_modules/color-name"
+			},
+			{
+				"from": "node_modules/concat-map",
+				"to": "node_modules/concat-map"
+			},
+			{
+				"from": "node_modules/core-util-is",
+				"to": "node_modules/core-util-is"
+			},
+			{
+				"from": "node_modules/cross-spawn",
+				"to": "node_modules/cross-spawn"
+			},
+			{
+				"from": "node_modules/cross-spawn-async",
+				"to": "node_modules/cross-spawn-async"
+			},
+			{
+				"from": "node_modules/currently-unhandled",
+				"to": "node_modules/currently-unhandled"
+			},
+			{
+				"from": "node_modules/debug",
+				"to": "node_modules/debug"
+			},
+			{
+				"from": "node_modules/decamelize",
+				"to": "node_modules/decamelize"
+			},
+			{
+				"from": "node_modules/decompress-response",
+				"to": "node_modules/decompress-response"
+			},
+			{
+				"from": "node_modules/deep-extend",
+				"to": "node_modules/deep-extend"
+			},
+			{
+				"from": "node_modules/detect-libc",
+				"to": "node_modules/detect-libc"
+			},
+			{
+				"from": "node_modules/electron-dl",
+				"to": "node_modules/electron-dl"
+			},
+			{
+				"from": "node_modules/electron-is-dev",
+				"to": "node_modules/electron-is-dev"
+			},
+			{
+				"from": "node_modules/electron-json-storage",
+				"to": "node_modules/electron-json-storage"
+			},
+			{
+				"from": "node_modules/electron-log",
+				"to": "node_modules/electron-log"
+			},
+			{
+				"from": "node_modules/electron-updater",
+				"to": "node_modules/electron-updater"
+			},
+			{
+				"from": "node_modules/electron-util",
+				"to": "node_modules/electron-util"
+			},
+			{
+				"from": "node_modules/electron-window-state",
+				"to": "node_modules/electron-window-state"
+			},
+			{
+				"from": "node_modules/emoji-regex",
+				"to": "node_modules/emoji-regex"
+			},
+			{
+				"from": "node_modules/end-of-stream",
+				"to": "node_modules/end-of-stream"
+			},
+			{
+				"from": "node_modules/error-ex",
+				"to": "node_modules/error-ex"
+			},
+			{
+				"from": "node_modules/escape-goat",
+				"to": "node_modules/escape-goat"
+			},
+			{
+				"from": "node_modules/execa",
+				"to": "node_modules/execa"
+			},
+			{
+				"from": "node_modules/expand-template",
+				"to": "node_modules/expand-template"
+			},
+			{
+				"from": "node_modules/ext-list",
+				"to": "node_modules/ext-list"
+			},
+			{
+				"from": "node_modules/ext-name",
+				"to": "node_modules/ext-name"
+			},
+			{
+				"from": "node_modules/file-type",
+				"to": "node_modules/file-type"
+			},
+			{
+				"from": "node_modules/find-up",
+				"to": "node_modules/find-up"
+			},
+			{
+				"from": "node_modules/foreground-child",
+				"to": "node_modules/foreground-child"
+			},
+			{
+				"from": "node_modules/fs-constants",
+				"to": "node_modules/fs-constants"
+			},
+			{
+				"from": "node_modules/fs-extra",
+				"to": "node_modules/fs-extra"
+			},
+			{
+				"from": "node_modules/fs.realpath",
+				"to": "node_modules/fs.realpath"
+			},
+			{
+				"from": "node_modules/function-bind",
+				"to": "node_modules/function-bind"
+			},
+			{
+				"from": "node_modules/get-stream",
+				"to": "node_modules/get-stream"
+			},
+			{
+				"from": "node_modules/getos",
+				"to": "node_modules/getos"
+			},
+			{
+				"from": "node_modules/github-from-package",
+				"to": "node_modules/github-from-package"
+			},
+			{
+				"from": "node_modules/glob",
+				"to": "node_modules/glob"
+			},
+			{
+				"from": "node_modules/graceful-fs",
+				"to": "node_modules/graceful-fs"
+			},
+			{
+				"from": "node_modules/has-flag",
+				"to": "node_modules/has-flag"
+			},
+			{
+				"from": "node_modules/hasown",
+				"to": "node_modules/hasown"
+			},
+			{
+				"from": "node_modules/hosted-git-info",
+				"to": "node_modules/hosted-git-info"
+			},
+			{
+				"from": "node_modules/human-signals",
+				"to": "node_modules/human-signals"
+			},
+			{
+				"from": "node_modules/ieee754",
+				"to": "node_modules/ieee754"
+			},
+			{
+				"from": "node_modules/if-async",
+				"to": "node_modules/if-async"
+			},
+			{
+				"from": "node_modules/immediate",
+				"to": "node_modules/immediate"
+			},
+			{
+				"from": "node_modules/imurmurhash",
+				"to": "node_modules/imurmurhash"
+			},
+			{
+				"from": "node_modules/indent-string",
+				"to": "node_modules/indent-string"
+			},
+			{
+				"from": "node_modules/inflight",
+				"to": "node_modules/inflight"
+			},
+			{
+				"from": "node_modules/inherits",
+				"to": "node_modules/inherits"
+			},
+			{
+				"from": "node_modules/ini",
+				"to": "node_modules/ini"
+			},
+			{
+				"from": "node_modules/is-arrayish",
+				"to": "node_modules/is-arrayish"
+			},
+			{
+				"from": "node_modules/is-core-module",
+				"to": "node_modules/is-core-module"
+			},
+			{
+				"from": "node_modules/is-finite",
+				"to": "node_modules/is-finite"
+			},
+			{
+				"from": "node_modules/is-fullwidth-code-point",
+				"to": "node_modules/is-fullwidth-code-point"
+			},
+			{
+				"from": "node_modules/is-plain-obj",
+				"to": "node_modules/is-plain-obj"
+			},
+			{
+				"from": "node_modules/is-stream",
+				"to": "node_modules/is-stream"
+			},
+			{
+				"from": "node_modules/isarray",
+				"to": "node_modules/isarray"
+			},
+			{
+				"from": "node_modules/isexe",
+				"to": "node_modules/isexe"
+			},
+			{
+				"from": "node_modules/jackspeak",
+				"to": "node_modules/jackspeak"
+			},
+			{
+				"from": "node_modules/js-yaml",
+				"to": "node_modules/js-yaml"
+			},
+			{
+				"from": "node_modules/json-parse-better-errors",
+				"to": "node_modules/json-parse-better-errors"
+			},
+			{
+				"from": "node_modules/jsonfile",
+				"to": "node_modules/jsonfile"
+			},
+			{
+				"from": "node_modules/jszip",
+				"to": "node_modules/jszip"
+			},
+			{
+				"from": "node_modules/keytar",
+				"to": "node_modules/keytar"
+			},
+			{
+				"from": "node_modules/lazy-val",
+				"to": "node_modules/lazy-val"
+			},
+			{
+				"from": "node_modules/lie",
+				"to": "node_modules/lie"
+			},
+			{
+				"from": "node_modules/linux-distro",
+				"to": "node_modules/linux-distro"
+			},
+			{
+				"from": "node_modules/load-json-file",
+				"to": "node_modules/load-json-file"
+			},
+			{
+				"from": "node_modules/locate-path",
+				"to": "node_modules/locate-path"
+			},
+			{
+				"from": "node_modules/lockfile",
+				"to": "node_modules/lockfile"
+			},
+			{
+				"from": "node_modules/lodash",
+				"to": "node_modules/lodash"
+			},
+			{
+				"from": "node_modules/lodash.escaperegexp",
+				"to": "node_modules/lodash.escaperegexp"
+			},
+			{
+				"from": "node_modules/lodash.isequal",
+				"to": "node_modules/lodash.isequal"
+			},
+			{
+				"from": "node_modules/loud-rejection",
+				"to": "node_modules/loud-rejection"
+			},
+			{
+				"from": "node_modules/lru-cache",
+				"to": "node_modules/lru-cache"
+			},
+			{
+				"from": "node_modules/map-obj",
+				"to": "node_modules/map-obj"
+			},
+			{
+				"from": "node_modules/meow",
+				"to": "node_modules/meow"
+			},
+			{
+				"from": "node_modules/merge-stream",
+				"to": "node_modules/merge-stream"
+			},
+			{
+				"from": "node_modules/mime-db",
+				"to": "node_modules/mime-db"
+			},
+			{
+				"from": "node_modules/mime-types",
+				"to": "node_modules/mime-types"
+			},
+			{
+				"from": "node_modules/mimic-fn",
+				"to": "node_modules/mimic-fn"
+			},
+			{
+				"from": "node_modules/mimic-response",
+				"to": "node_modules/mimic-response"
+			},
+			{
+				"from": "node_modules/minimatch",
+				"to": "node_modules/minimatch"
+			},
+			{
+				"from": "node_modules/minimist",
+				"to": "node_modules/minimist"
+			},
+			{
+				"from": "node_modules/minipass",
+				"to": "node_modules/minipass"
+			},
+			{
+				"from": "node_modules/mkdirp",
+				"to": "node_modules/mkdirp"
+			},
+			{
+				"from": "node_modules/mkdirp-classic",
+				"to": "node_modules/mkdirp-classic"
+			},
+			{
+				"from": "node_modules/modify-filename",
+				"to": "node_modules/modify-filename"
+			},
+			{
+				"from": "node_modules/ms",
+				"to": "node_modules/ms"
+			},
+			{
+				"from": "node_modules/napi-build-utils",
+				"to": "node_modules/napi-build-utils"
+			},
+			{
+				"from": "node_modules/new-github-issue-url",
+				"to": "node_modules/new-github-issue-url"
+			},
+			{
+				"from": "node_modules/node-abi",
+				"to": "node_modules/node-abi"
+			},
+			{
+				"from": "node_modules/node-addon-api",
+				"to": "node_modules/node-addon-api"
+			},
+			{
+				"from": "node_modules/normalize-package-data",
+				"to": "node_modules/normalize-package-data"
+			},
+			{
+				"from": "node_modules/npm-run-path",
+				"to": "node_modules/npm-run-path"
+			},
+			{
+				"from": "node_modules/object-assign",
+				"to": "node_modules/object-assign"
+			},
+			{
+				"from": "node_modules/once",
+				"to": "node_modules/once"
+			},
+			{
+				"from": "node_modules/onetime",
+				"to": "node_modules/onetime"
+			},
+			{
+				"from": "node_modules/p-limit",
+				"to": "node_modules/p-limit"
+			},
+			{
+				"from": "node_modules/p-locate",
+				"to": "node_modules/p-locate"
+			},
+			{
+				"from": "node_modules/package-json-from-dist",
+				"to": "node_modules/package-json-from-dist"
+			},
+			{
+				"from": "node_modules/pako",
+				"to": "node_modules/pako"
+			},
+			{
+				"from": "node_modules/parse-json",
+				"to": "node_modules/parse-json"
+			},
+			{
+				"from": "node_modules/path-exists",
+				"to": "node_modules/path-exists"
+			},
+			{
+				"from": "node_modules/path-is-absolute",
+				"to": "node_modules/path-is-absolute"
+			},
+			{
+				"from": "node_modules/path-key",
+				"to": "node_modules/path-key"
+			},
+			{
+				"from": "node_modules/path-parse",
+				"to": "node_modules/path-parse"
+			},
+			{
+				"from": "node_modules/path-scurry",
+				"to": "node_modules/path-scurry"
+			},
+			{
+				"from": "node_modules/path-type",
+				"to": "node_modules/path-type"
+			},
+			{
+				"from": "node_modules/pify",
+				"to": "node_modules/pify"
+			},
+			{
+				"from": "node_modules/prebuild-install",
+				"to": "node_modules/prebuild-install"
+			},
+			{
+				"from": "node_modules/process-nextick-args",
+				"to": "node_modules/process-nextick-args"
+			},
+			{
+				"from": "node_modules/pseudomap",
+				"to": "node_modules/pseudomap"
+			},
+			{
+				"from": "node_modules/pump",
+				"to": "node_modules/pump"
+			},
+			{
+				"from": "node_modules/pupa",
+				"to": "node_modules/pupa"
+			},
+			{
+				"from": "node_modules/rc",
+				"to": "node_modules/rc"
+			},
+			{
+				"from": "node_modules/read-pkg",
+				"to": "node_modules/read-pkg"
+			},
+			{
+				"from": "node_modules/read-pkg-up",
+				"to": "node_modules/read-pkg-up"
+			},
+			{
+				"from": "node_modules/readable-stream",
+				"to": "node_modules/readable-stream"
+			},
+			{
+				"from": "node_modules/redent",
+				"to": "node_modules/redent"
+			},
+			{
+				"from": "node_modules/regedit",
+				"to": "node_modules/regedit"
+			},
+			{
+				"from": "node_modules/repeating",
+				"to": "node_modules/repeating"
+			},
+			{
+				"from": "node_modules/resolve",
+				"to": "node_modules/resolve"
+			},
+			{
+				"from": "node_modules/rimraf",
+				"to": "node_modules/rimraf"
+			},
+			{
+				"from": "node_modules/safe-buffer",
+				"to": "node_modules/safe-buffer"
+			},
+			{
+				"from": "node_modules/sanitize-filename",
+				"to": "node_modules/sanitize-filename"
+			},
+			{
+				"from": "node_modules/sax",
+				"to": "node_modules/sax"
+			},
+			{
+				"from": "node_modules/semver",
+				"to": "node_modules/semver"
+			},
+			{
+				"from": "node_modules/setimmediate",
+				"to": "node_modules/setimmediate"
+			},
+			{
+				"from": "node_modules/shebang-command",
+				"to": "node_modules/shebang-command"
+			},
+			{
+				"from": "node_modules/shebang-regex",
+				"to": "node_modules/shebang-regex"
+			},
+			{
+				"from": "node_modules/signal-exit",
+				"to": "node_modules/signal-exit"
+			},
+			{
+				"from": "node_modules/simple-concat",
+				"to": "node_modules/simple-concat"
+			},
+			{
+				"from": "node_modules/simple-get",
+				"to": "node_modules/simple-get"
+			},
+			{
+				"from": "node_modules/sort-keys",
+				"to": "node_modules/sort-keys"
+			},
+			{
+				"from": "node_modules/sort-keys-length",
+				"to": "node_modules/sort-keys-length"
+			},
+			{
+				"from": "node_modules/spdx-correct",
+				"to": "node_modules/spdx-correct"
+			},
+			{
+				"from": "node_modules/spdx-exceptions",
+				"to": "node_modules/spdx-exceptions"
+			},
+			{
+				"from": "node_modules/spdx-expression-parse",
+				"to": "node_modules/spdx-expression-parse"
+			},
+			{
+				"from": "node_modules/spdx-license-ids",
+				"to": "node_modules/spdx-license-ids"
+			},
+			{
+				"from": "node_modules/stream-slicer",
+				"to": "node_modules/stream-slicer"
+			},
+			{
+				"from": "node_modules/string-width",
+				"to": "node_modules/string-width"
+			},
+			{
+				"from": "node_modules/string-width-cjs",
+				"to": "node_modules/string-width-cjs"
+			},
+			{
+				"from": "node_modules/string_decoder",
+				"to": "node_modules/string_decoder"
+			},
+			{
+				"from": "node_modules/strip-ansi",
+				"to": "node_modules/strip-ansi"
+			},
+			{
+				"from": "node_modules/strip-ansi-cjs",
+				"to": "node_modules/strip-ansi-cjs"
+			},
+			{
+				"from": "node_modules/strip-bom",
+				"to": "node_modules/strip-bom"
+			},
+			{
+				"from": "node_modules/strip-eof",
+				"to": "node_modules/strip-eof"
+			},
+			{
+				"from": "node_modules/strip-final-newline",
+				"to": "node_modules/strip-final-newline"
+			},
+			{
+				"from": "node_modules/strip-indent",
+				"to": "node_modules/strip-indent"
+			},
+			{
+				"from": "node_modules/strip-json-comments",
+				"to": "node_modules/strip-json-comments"
+			},
+			{
+				"from": "node_modules/strtok3",
+				"to": "node_modules/strtok3"
+			},
+			{
+				"from": "node_modules/supports-color",
+				"to": "node_modules/supports-color"
+			},
+			{
+				"from": "node_modules/supports-preserve-symlinks-flag",
+				"to": "node_modules/supports-preserve-symlinks-flag"
+			},
+			{
+				"from": "node_modules/tar-fs",
+				"to": "node_modules/tar-fs"
+			},
+			{
+				"from": "node_modules/tar-stream",
+				"to": "node_modules/tar-stream"
+			},
+			{
+				"from": "node_modules/through2",
+				"to": "node_modules/through2"
+			},
+			{
+				"from": "node_modules/tiny-typed-emitter",
+				"to": "node_modules/tiny-typed-emitter"
+			},
+			{
+				"from": "node_modules/token-types",
+				"to": "node_modules/token-types"
+			},
+			{
+				"from": "node_modules/trim-newlines",
+				"to": "node_modules/trim-newlines"
+			},
+			{
+				"from": "node_modules/truncate-utf8-bytes",
+				"to": "node_modules/truncate-utf8-bytes"
+			},
+			{
+				"from": "node_modules/tunnel-agent",
+				"to": "node_modules/tunnel-agent"
+			},
+			{
+				"from": "node_modules/uint8array-extras",
+				"to": "node_modules/uint8array-extras"
+			},
+			{
+				"from": "node_modules/universalify",
+				"to": "node_modules/universalify"
+			},
+			{
+				"from": "node_modules/unused-filename",
+				"to": "node_modules/unused-filename"
+			},
+			{
+				"from": "node_modules/utf8-byte-length",
+				"to": "node_modules/utf8-byte-length"
+			},
+			{
+				"from": "node_modules/util-deprecate",
+				"to": "node_modules/util-deprecate"
+			},
+			{
+				"from": "node_modules/validate-npm-package-license",
+				"to": "node_modules/validate-npm-package-license"
+			},
+			{
+				"from": "node_modules/which",
+				"to": "node_modules/which"
+			},
+			{
+				"from": "node_modules/wrap-ansi",
+				"to": "node_modules/wrap-ansi"
+			},
+			{
+				"from": "node_modules/wrap-ansi-cjs",
+				"to": "node_modules/wrap-ansi-cjs"
+			},
+			{
+				"from": "node_modules/wrappy",
+				"to": "node_modules/wrappy"
+			},
+			{
+				"from": "node_modules/write-file-atomic",
+				"to": "node_modules/write-file-atomic"
+			},
+			{
+				"from": "node_modules/xtend",
+				"to": "node_modules/xtend"
+			},
+			{
+				"from": "node_modules/yallist",
+				"to": "node_modules/yallist"
+			},
+			{
+				"from": "node_modules/yocto-queue",
+				"to": "node_modules/yocto-queue"
+			}
+		],
+		"dmg": {
+			"sign": false
+		},
+		"mac": {
+			"icon": "electron/img/icon.icns",
+			"type": "distribution",
+			"hardenedRuntime": true,
+			"gatekeeperAssess": false,
+			"entitlements": "electron/entitlements.mac.plist",
+			"entitlementsInherit": "electron/entitlements.mac.plist",
+			"target": {
+				"target": "default",
+				"arch": [
+					"x64",
+					"arm64"
+				]
+			},
+			"identity": "J3NXTX3T5S",
+			"category": "public.app-category.productivity",
+			"artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+			"publish": [
+				{
+					"provider": "generic",
+					"url": "https://anytype-release.fra1.digitaloceanspaces.com"
+				}
+			],
+			"signIgnore": [
+				".*\\.pak$",
+				".*\\.png$",
+				".*\\.jpg$",
+				".*\\.gif$",
+				".*\\.mp4$",
+				".*\\.icns$"
+			]
+		},
+		"win": {
+			"signtoolOptions": {
+				"sign": "./electron/hook/sign.js"
+			},
+			"target": "nsis",
+			"icon": "electron/img/icons/256x256.ico",
+			"publish": [
+				{
+					"provider": "generic",
+					"url": "https://anytype-release.fra1.digitaloceanspaces.com"
+				}
+			]
+		},
+		"linux": {
+			"icon": "electron/img/icons",
+			"category": "Utility",
+			"executableName": "anytype",
+			"executableArgs": [
+				"--ozone-platform-hint=auto"
+			],
+			"target": [
+				"AppImage",
+				"deb",
+				"rpm",
+				"tar.gz"
+			],
+			"description": "Anytype",
+			"publish": [
+				{
+					"provider": "generic",
+					"url": "https://anytype-release.fra1.digitaloceanspaces.com"
+				}
+			],
+			"desktop": {
+				"entry": {
+					"Categories": "Utility;Office;Calendar;ProjectManagement;",
+					"Keywords": "project management;",
+					"StartupWMClass": "anytype",
+					"MimeType": "x-scheme-handler/anytype;"
+				}
+			},
+			"extraFiles": [
+				{
+					"from": "anytype-xwayland.desktop",
+					"to": "anytype-xwayland.desktop"
+				}
+			]
+		},
+		"rpm": {
+			"fpm": [
+				"--rpm-rpmbuild-define",
+				"_build_id_links none"
+			]
+		},
+		"snap": {
+			"publish": {
+				"provider": "generic",
+				"url": "https://anydummyurl.com"
+			}
+		}
+	},
+	"lint-staged": {
+		"src/**/*.{ts,tsx}": "bunx biome lint --no-errors-on-unmatched",
+		"{src,electron}/**/*.{js,ts,tsx}": "eslint"
+	},
+	"husky": {
+		"hooks": {
+			"pre-commit": "bun run precommit && git add licenses.json"
+		}
+	},
+	"trustedDependencies": [
+		"@sentry/cli",
+		"@swc/core",
+		"electron"
+	]
+}

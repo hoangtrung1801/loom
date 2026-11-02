@@ -1,0 +1,371 @@
+import { observable, action, computed, set, makeObservable } from 'mobx';
+import * as I from 'Interface';
+import * as M from 'Model';
+import Storage from 'Lib/storage';
+import { chatStatus } from 'Lib/chatStatus';
+import { membership } from 'Lib/membership';
+import { powerState } from 'Lib/powerState';
+
+interface NetworkConfig {
+	mode: I.NetworkMode;
+	path: string;
+	preferYamux: boolean;
+};
+
+interface LocalApiConfig {
+	enabled: boolean;
+	port: number;
+};
+
+// The JSON API only ever listens on loopback, so the user picks just the port
+const LOCAL_API_HOST = '127.0.0.1';
+const localApiDefaultPort = (): number => Number(String(J.Url.api).split(':')[1]) || 31009;
+
+class AuthStore {
+	
+	public accountItem: I.Account = null;
+	public accountList: I.Account[] = [];
+	public token = '';
+	public appToken = '';
+	public appKey = '';
+	public startingId: Map<string, string> = new Map();
+	public syncStatusMap: Map<string, I.SyncStatus> = new Map();
+	public jsonApiStatusItem: I.JsonApiStatus = null;
+	
+	constructor () {
+		makeObservable(this, {
+			accountItem: observable,
+			jsonApiStatusItem: observable,
+			jsonApiStatus: computed,
+			jsonApiStatusSet: action,
+			accountList: observable,
+			accounts: computed,
+			account: computed,
+			accountAdd: action,
+			accountSet: action,
+			clearAll: action,
+			logout: action,
+		});
+	};
+
+	get accounts (): I.Account[] {
+		return this.accountList;
+	};
+
+	get account (): I.Account {
+		return this.accountItem;
+	};
+
+	get accountSpaceId (): string {
+		return String(this.accountItem?.info?.accountSpaceId || '');
+	};
+
+	get networkConfig (): NetworkConfig {
+		const obj = Storage.get('networkConfig') || {};
+
+		return {
+			mode: Number(obj.mode) || I.NetworkMode.Default,
+			path: String(obj.path || ''),
+			preferYamux: Boolean(obj.preferYamux),
+		};
+	};
+
+	get jsonApiStatus (): I.JsonApiStatus {
+		return this.jsonApiStatusItem;
+	};
+
+	get localApiConfig (): LocalApiConfig {
+		const obj = Storage.get('localApi') || {};
+		const port = Number(obj.port);
+
+		return {
+			enabled: obj.enabled !== false,
+			port: this.isValidLocalApiPort(port) ? port : localApiDefaultPort(),
+		};
+	};
+
+	/**
+	 * Address passed to the middleware on account open, empty when the local API is disabled.
+	 */
+	get localApiAddr (): string {
+		const { enabled, port } = this.localApiConfig;
+		return enabled ? this.localApiAddrByPort(port) : '';
+	};
+
+	get localApiHost (): string {
+		return LOCAL_API_HOST;
+	};
+
+	localApiAddrByPort (port: number): string {
+		return `${LOCAL_API_HOST}:${port}`;
+	};
+
+	isValidLocalApiPort (port: number): boolean {
+		return Number.isInteger(port) && (port > 0) && (port <= 65535);
+	};
+
+	/**
+	 * Persists the local API settings, read again on the next account open.
+	 * @param {Partial<LocalApiConfig>} obj - The fields to update.
+	 */
+	localApiConfigSet (obj: Partial<LocalApiConfig>) {
+		Storage.set('localApi', { ...this.localApiConfig, ...obj });
+	};
+
+	/**
+	 * Sets the last known bind outcome of the local JSON API server.
+	 * @param {I.JsonApiStatus} status - The status, null when disabled or unknown.
+	 */
+	jsonApiStatusSet (status: I.JsonApiStatus) {
+		this.jsonApiStatusItem = status;
+	};
+
+	/**
+	 * Sets the authentication token.
+	 * @param {string} v - The token value.
+	 */
+	tokenSet (v: string) {
+		this.token = String(v || '');
+		Renderer.send('updateTab', U.Common.getElectron().tabId(), { token: this.token });
+	};
+
+	/**
+	 * Sets the app token.
+	 * @param {string} v - The app token value.
+	 */
+	appTokenSet (v: string) {
+		this.appToken = String(v || '');
+	};
+
+	/**
+	 * Sets the network configuration.
+	 * @param {NetworkConfig} obj - The network configuration object.
+	 */
+	networkConfigSet (obj: NetworkConfig) {
+		Storage.set('networkConfig', obj);
+	};
+
+	/**
+	 * Sets the app key.
+	 * @param {string} v - The app key value.
+	 */
+	appKeySet (v: string) {
+		this.appKey = String(v || '');
+	};
+
+	/**
+	 * Updates the sync status for a space.
+	 * @param {I.SyncStatus} v - The sync status object.
+	 */
+	syncStatusUpdate (v: I.SyncStatus) {
+		let obj = this.syncStatusMap.get(v.id);
+
+		if (!obj) {
+			obj = Object.assign(this.getDefaultSyncStatus(), v);
+
+			makeObservable(obj, {
+				error: observable,
+				network: observable,
+				status: observable,
+				p2p: observable,
+				syncingCounter: observable,
+				devicesCounter: observable,
+				notSyncedCounter: observable,
+			});
+		} else {
+			set(obj, v);
+		};
+
+		this.syncStatusMap.set(v.id, obj);
+	};
+
+	/**
+	 * Adds an account to the account list.
+	 * @param {any} account - The account object.
+	 */
+	accountAdd (account: any) {
+		account.info = account.info || {};
+		account.status = account.status || {};
+		account.config = account.config || {};
+
+		this.accountList.push(new M.Account(account));
+	};
+
+	/**
+	 * Clears the account list.
+	 * @private
+	 */
+	accountListClear () {
+		this.accountList = [];
+	};
+
+	/**
+	 * Sets the current account.
+	 * @param {any} account - The account object.
+	 */
+	accountSet (account: any) {
+		account = account || {};
+		account.info = account.info || {};
+		account.status = account.status || {};
+		account.config = account.config || {};
+
+		if (!this.accountItem) {
+			this.accountItem = new M.Account(account);
+		} else {
+			set(this.accountItem, account);
+		};
+
+		if (account.id) {
+			Storage.set('accountId', account.id);
+		};
+	};
+
+	/**
+	 * Sets the status of the current account.
+	 * @param {I.AccountStatus} status - The account status.
+	 */
+	accountSetStatus (status: I.AccountStatus) {
+		if (this.accountItem) {
+			set(this.accountItem.status, status);
+		};
+	};
+
+	/**
+	 * Checks if the current account is deleted.
+	 * @returns {boolean} True if deleted, false otherwise.
+	 */
+	accountIsDeleted (): boolean {
+		return this.accountItem && this.accountItem.status && [ 
+			I.AccountStatusType.StartedDeletion,
+			I.AccountStatusType.Deleted,
+		].includes(this.accountItem.status.type);
+	};
+
+	/**
+	 * Checks if the current account is pending deletion.
+	 * @returns {boolean} True if pending, false otherwise.
+	 */
+	accountIsPending (): boolean {
+		return this.accountItem && this.accountItem.status && [ 
+			I.AccountStatusType.PendingDeletion,
+		].includes(this.accountItem.status.type);
+	};
+
+	/**
+	 * Gets the default sync status object.
+	 * @private
+	 * @returns {I.SyncStatus} The default sync status.
+	 */
+	getDefaultSyncStatus (): I.SyncStatus {
+		return {
+			id: '',
+			error: I.SyncStatusError.None,
+			network: I.SyncStatusNetwork.Anytype,
+			status: I.SyncStatusSpace.Offline,
+			p2p: I.P2PStatus.NotConnected,
+			syncingCounter: 0,
+			devicesCounter: 0,
+			notSyncedCounter: 0,
+		};
+	};
+
+	/**
+	 * Gets the sync status for a space.
+	 * @param {string} [spaceId] - The space ID.
+	 * @returns {I.SyncStatus} The sync status.
+	 */
+	getSyncStatus (spaceId?: string): I.SyncStatus {
+		return this.syncStatusMap.get(spaceId || S.Common.space) || this.getDefaultSyncStatus();
+	};
+
+	/**
+	 * Gets the number of not synced files across all spaces the user owns.
+	 * @returns {I.NotSyncedFiles}
+	 */
+	getNotSynced (): I.NotSyncedFiles {
+		const files = [];
+
+		let total = 0;
+		for (const [ id, space ] of this.syncStatusMap) {
+			const { id, notSyncedCounter } = space;
+
+			if (U.Space.isMyOwner(id) && notSyncedCounter) {
+				total += notSyncedCounter || 0;
+				files.push({ spaceId: id, counter: notSyncedCounter });
+			};
+		};
+
+		return { total, files };
+	};
+
+	/**
+	 * Clears all authentication and account data.
+	 */
+	clearAll () {
+		this.accountItem = null;
+		this.jsonApiStatusItem = null;
+
+		this.accountListClear();
+		this.syncStatusMap.clear();
+
+		S.Recovery.clear();
+		U.Space.openErrorClear();
+	};
+
+	/**
+	 * Logs out the current account.
+	 * @param {boolean} mainWindow - Whether this is the main window.
+	 * @param {boolean} removeData - Whether to remove data.
+	 */
+	logout (mainWindow: boolean, removeData: boolean) {
+		// Before AccountStop: a power event sent from here on would be acked by a stopping account
+		powerState.onLogout();
+		chatStatus.clear(this.account?.id);
+		Storage.clearOldKeys();
+
+		U.Subscription.destroyAll(() => {
+			if (mainWindow) {
+				if (S.Auth.token) {
+					C.AccountStop(removeData, () => U.Data.closeSession());
+				};
+				Renderer.send('logout');
+			} else {
+				U.Data.closeSession();
+			};
+
+			analytics.profile('', '');
+			analytics.removeContext();
+
+			// The pin only locks the signed-in session on this device, so it goes with the session.
+			// Otherwise the keychain entry outlives the logout and locks the account out on re-login.
+			// Secondary tabs log out through the same path, so only the initiator touches the keychain
+			if (mainWindow && S.Common.pin) {
+				S.Common.pinClear();
+			};
+
+			keyboard.setPinChecked(false);
+
+			S.Common.spaceSet('');
+
+			U.Subscription.clear();
+			S.Block.clearAll();
+			S.Detail.clearAll();
+			S.Record.clearAll();
+			S.Menu.closeAllForced();
+			S.Notification.clear();
+			S.Chat.clearAll();
+			S.Membership.clearAll();
+			membership.reset();
+
+			// Storage first: the account-scoped keys it drops need the account still set
+			Storage.logout();
+			this.clearAll();
+
+			Renderer.send('setBadge', '');
+			Renderer.send('closeOtherTabs', S.Common.tabId, true);
+		});
+	};
+
+};
+
+export const Auth: AuthStore = new AuthStore();

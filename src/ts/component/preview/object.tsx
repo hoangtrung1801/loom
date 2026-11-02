@@ -1,0 +1,471 @@
+import React, { forwardRef, useState, useRef, useEffect } from 'react';
+import { IconObject, Cover, Icon, ObjectName } from 'Component';
+import * as I from 'Interface';
+
+interface Props {
+	id?: string;
+	rootId: string;
+	size: I.PreviewSize;
+	className?: string;
+	onMore? (e: any): void;
+	onClick? (e: any): void;
+	onContextMenu? (e: any): void;
+	onMouseEnter? (e: any): void;
+	onMouseLeave? (e: any): void;
+	position?: () => void;
+	setObject?: (object: any) => void;
+};
+
+const Colors = [ 'yellow', 'red', 'ice', 'lime' ];
+const TRACE_ID = 'preview';
+
+const PreviewObject = forwardRef<{}, Props>(({
+	id = '',
+	rootId = '',
+	size = I.PreviewSize.Small,
+	className = '',
+	onClick,
+	onContextMenu,
+	onMore,
+	onMouseEnter,
+	onMouseLeave,
+	position,
+	setObject,
+}, ref: any) => {
+
+	const nodeRef = useRef(null);
+	const idRef = useRef('');
+	const [ dummy, setDummy ] = useState(0);
+	const contextId = [ rootId, TRACE_ID ].join('-');
+
+	let n = 0;
+	let c = 0;
+	let iconSize = 48;
+	let cnPreviewSize = '';
+
+	const Block = (item: any) => {
+		const { content, fields } = item;
+		const { text, style, checked, targetObjectId } = content;
+		const childBlocks = S.Block.getChildren(contextId, item.id);
+		const length = childBlocks.length;
+		const cn = [ 'element', U.Data.blockClass(item), item.className ];
+
+		let bullet = null;
+		let inner = null;
+		let isRow = false;
+		let line = <div className="line" />;
+
+		switch (item.type) {
+			case I.BlockType.Text: {
+				if (!text) {
+					line = null;
+				};
+
+				if ([ I.TextStyle.Checkbox, I.TextStyle.Bulleted, I.TextStyle.Numbered, I.TextStyle.Quote ].indexOf(style) >= 0) {
+					cn.push('withBullet');
+				};
+
+				switch (style) {
+					default: {
+						inner = line;
+						break;
+					};
+
+					case I.TextStyle.Header1:
+					case I.TextStyle.Header2:
+					case I.TextStyle.Header3: {
+						inner = text;
+						break;
+					};
+
+					case I.TextStyle.Checkbox: {
+						inner = (
+							<>
+								<Icon name={checked ? 'preview/check1' : 'preview/check0'} className={[ 'check', (checked ? 'active' : '') ].join(' ')} />
+								{line}
+							</>
+						);
+						break;
+					};
+
+					case I.TextStyle.Quote: {
+						inner = (
+							<>
+								<Icon name="preview/hl" className="hl" />
+								{line}
+							</>
+						);
+						break;
+					};
+
+					case I.TextStyle.Bulleted: {
+						inner = (
+							<>
+								<Icon name="preview/bullet" className="bullet" />
+								{line}
+							</>
+						);
+						break;
+					};
+
+					case I.TextStyle.Toggle: {
+						inner = (
+							<>
+								<Icon name="preview/toggle" className="toggle" />
+								{line}
+							</>
+						);
+						break;
+					};
+
+					case I.TextStyle.Numbered: {
+						inner = (
+							<>
+								<div id={`marker-${item.id}`} className="number" />
+								{line}
+							</>
+						);
+						break;
+					};
+				};
+				break;
+			};
+
+			case I.BlockType.Layout: {
+				if (style == I.LayoutStyle.Row) {
+					isRow = true;
+				};
+				break;
+			};
+
+			case I.BlockType.Relation: {
+				inner = (
+					<>
+						{line}
+						{line}
+					</>
+				);
+				break;
+			};
+
+			case I.BlockType.File: {
+				if ([ I.FileState.Empty, I.FileState.Error ].indexOf(content.state) >= 0) {
+					break;
+				};
+
+				switch (content.type) {
+					default:
+					case I.FileType.File: {
+						bullet = <div className={[ 'bullet', 'bgColor', `bgColor-${Colors[c]}` ].join(' ')} />;
+						inner = (
+							<>
+								<Icon className="color" inner={bullet} />
+								{line}
+							</>
+						);
+
+						c++;
+						if (c > Colors.length - 1) {
+							c = 0;
+						};
+						break;
+					};
+
+					case I.FileType.Image: {
+						const css: any = {};
+
+						if (fields.width) {
+							css.width = (fields.width * 100) + '%';
+						};
+
+						inner = <img className="media" src={S.Common.imageUrl(targetObjectId, I.ImageSize.Large)} style={css} />;
+						break;
+					};
+
+					case I.FileType.Video: {
+						break;
+					};
+
+				};
+				break;
+			};
+
+			case I.BlockType.Link: {
+				bullet = <div className={[ 'bullet', 'bgColor', `bgColor-${Colors[c]}` ].join(' ')} />;
+				inner = (
+					<>
+						<Icon className="color" inner={bullet} />
+						{line}
+					</>
+				);
+
+				c++;
+				if (c > Colors.length - 1) {
+					c = 0;
+				};
+				break;
+			};
+
+			case I.BlockType.Bookmark: {
+				if (!content.url) {
+					break;
+				};
+
+				bullet = <div className={[ 'bullet', 'bgColor', 'bgColor-grey' ].join(' ')} />;
+				inner = (
+					<div className="bookmark">
+						<div className="side left">
+							<div className="name">
+								<div className="line odd" />
+							</div>
+
+							<div className="descr">
+								<div className="line even" />
+								<div className="line odd" />
+							</div>
+
+							<div className="url">
+								<Icon className="color" inner={bullet} />
+								<div className="line even" />
+							</div>
+						</div>
+						<div className="side right" style={{ backgroundImage: `url("${S.Common.imageUrl(content.imageHash, I.ImageSize.Medium)}")` }} />
+					</div>
+				);
+				break;
+			};
+		};
+
+		return (
+			<div className={cn.join(' ')} style={item.css}>
+				{inner ? (
+					<div className="inner">
+						{inner}
+					</div>
+				) : ''}
+
+				{length ? (
+					<div className="children">
+						{childBlocks.map((child: any, i: number) => {
+							const css: any = {};
+							const cn = [ n % 2 == 0 ? 'even' : 'odd' ];
+
+							if (i == 0) {
+								cn.push('first');
+							};
+
+							if (i == childBlocks.length - 1) {
+								cn.push('last');
+							};
+
+							if (isRow) {
+								css.width = (child.fields.width || 1 / length ) * 100 + '%';
+							};
+
+							n++;
+							n = checkNumber(child, n);
+							return <Block key={child.id} {...child} className={cn.join(' ')} css={css} />;
+						})}
+					</div>
+				) : ''}
+			</div>
+		);
+	};
+
+	const updateHandler = useRef<() => void>(null);
+
+	const rebind = () => {
+		unbind();
+		updateHandler.current = () => update();
+		U.Dom.addEvent(window, `updatePreviewObject.${rootId}`, updateHandler.current);
+	};
+
+	const unbind = () => {
+		if (updateHandler.current) {
+			U.Dom.removeEvent(window, `updatePreviewObject.${rootId}`, updateHandler.current);
+			updateHandler.current = null;
+		};
+	};
+
+	const onMouseEnterHandler = (e: any) => {
+		onMouseEnter?.(e);
+		U.Dom.addClass(nodeRef.current, 'hover');
+	};
+
+	const onMouseLeaveHandler = (e: any) => {
+		onMouseLeave?.(e);
+		U.Dom.removeClass(nodeRef.current, 'hover');
+	};
+
+	const load = () => {
+		idRef.current = rootId;
+
+		C.ObjectShow(rootId, TRACE_ID, S.Common.space, () => {
+			if (setObject) {
+				setObject(S.Detail.get(contextId, rootId, []));
+			};
+
+			setDummy(dummy + 1);
+		});
+	};
+
+	const checkNumber = (block: I.Block, n: number) => {
+		const isText = block.type == I.BlockType.Text;
+		if ([ I.BlockType.Layout ].includes(block.type)) {
+			n = 0;
+		};
+		if (isText && [ I.TextStyle.Header1, I.TextStyle.Header2, I.TextStyle.Header3 ].includes(block.content.style)) {
+			n = 0;
+		};
+		return n;
+	};
+
+	const update = () => {
+		idRef.current = '';
+		load();
+	};
+
+	const check = U.Data.checkDetails(contextId, rootId);
+	const object = S.Detail.get(contextId, rootId);
+	const { name, description, coverType, coverId, coverX, coverY, coverScale, iconImage } = object;
+	const childBlocks = S.Block.getChildren(contextId, rootId, it => !it.isLayoutHeader()).slice(0, 10);
+	const isTask = U.Object.isTaskLayout(check.layout);
+	const isBookmark = U.Object.isBookmarkLayout(check.layou);
+	const cn = [ 'previewObject' , check.className, className ];
+	const withName = !U.Object.isNoteLayout(check.layout);
+	const withIcon = check.withIcon || isTask || isBookmark;
+
+	switch (size) {
+		case I.PreviewSize.Large: {
+			iconSize = 48;
+			cnPreviewSize = 'large';
+			break;
+		};
+
+		case I.PreviewSize.Medium: {
+			iconSize = 40;
+			cnPreviewSize = 'medium';
+			break;
+		};
+
+		default:
+		case I.PreviewSize.Small: {
+			iconSize = 32;
+			cnPreviewSize = 'small';
+			break;
+		};
+	};
+
+	cn.push(cnPreviewSize);
+
+	if (isTask || isBookmark) {
+		iconSize = 16;
+
+		if (size == I.PreviewSize.Small) {
+			iconSize = 14;
+		};
+	};
+
+	let content = null;
+	let heading = (
+		<>
+			{withIcon ? <IconObject size={iconSize} object={object} /> : ''}
+			{withName ? <ObjectName object={object} /> : ''}
+		</>
+	);
+
+	if (isTask || isBookmark) {
+		heading = <div className="flex">{heading}</div>;
+	};
+
+	if (!object._empty_) {
+		content = (
+			<>
+				{object.templateIsBundled ? <Icon className="logo" tooltipParam={{ text: translate('previewObjectTemplateIsBundled') }} /> : ''}
+
+				{(coverType != I.CoverType.None) && coverId ? (
+					<Cover 
+						type={coverType} 
+						id={coverId} 
+						image={coverId} 
+						className={coverId} 
+						x={coverX} 
+						y={coverY} 
+						scale={coverScale} 
+						withScale={true} 
+					/>
+				) : ''}
+
+				<div className="heading">
+					{heading}
+					<div className="featured" />
+				</div>
+
+				<div className="blocks">
+					{childBlocks.map((child: any, i: number) => {
+						const cn = [ n % 2 == 0 ? 'even' : 'odd' ];
+
+						if (i == 0) {
+							cn.push('first');
+						};
+
+						if (i == childBlocks.length - 1) {
+							cn.push('last');
+						};
+
+						n++;
+						n = checkNumber(child, n);
+						return <Block key={child.id} className={cn.join(' ')} {...child} />;
+					})}
+				</div>
+			</>
+		);
+	};
+
+	useEffect(() => {
+		load();
+		rebind();
+
+		const root = S.Block.wrapTree(contextId, rootId);
+
+		if (root) {
+			S.Block.updateNumbersTree([ root ]);
+		};
+
+		position?.();
+
+		return () => {
+			unbind();
+			Action.pageClose(false, contextId, false);
+		};
+	}, []);
+
+	useEffect(() => {
+		load();
+	}, [ rootId ]);
+
+	return (
+		<div
+			id={id}
+			ref={nodeRef}
+			className={cn.join(' ')}
+			onMouseEnter={onMouseEnterHandler}
+			onMouseLeave={onMouseLeaveHandler}
+		>
+			{onMore ? (
+				<div id={`item-more-${rootId}`} className="moreWrapper" onClick={onMore}>
+					<Icon name="common/more" />
+				</div>
+			) : ''}
+
+			<div onClick={onClick} onContextMenu={onContextMenu}>
+				<div className="scroller">
+					{content}
+				</div>
+				<div className="border" />
+			</div>
+		</div>
+	);
+});
+
+export default PreviewObject;

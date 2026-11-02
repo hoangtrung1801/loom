@@ -1,0 +1,848 @@
+import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import * as d3 from 'd3';
+import { PreviewDefault } from 'Component';
+import * as I from 'Interface';
+import Storage from 'Lib/storage';
+
+interface Props {
+	id?: string;
+	isPopup?: boolean;
+	rootId: string;
+	data: any;
+	storageKey: string;
+	load?: () => void;
+};
+
+interface GraphRefProps {
+	init: () => void;
+	resize: () => void;
+	addNewNode: (id: string, sourceId?: string, param?: any, callBack?: (object: any) => void) => void;
+	forceUpdate: () => void;
+	timelineStart: (speed: number) => void;
+	timelinePause: () => void;
+	timelineSeek: (position: number) => void;
+	timelineReset: () => void;
+};
+
+const Graph = forwardRef<GraphRefProps, Props>(({
+	id = '',
+	isPopup = false,
+	rootId = '',
+	data = {},
+	storageKey = '',
+	load = () => {},
+}, ref) => {
+
+	const nodeRef = useRef(null);
+	const worker = useRef(null);
+	const theme = S.Common.getThemeClass();
+	const elementId = [ 'graph', id ].join('-') + U.Dom.getEventNamespace(isPopup);
+	const previewId = useRef('');
+	const canvas = useRef(null);
+	const edges = useRef([]);
+	const nodes = useRef([]);
+	const images = useRef({});
+	const subject = useRef(null);
+	const isDragging = useRef(false);
+	const wasDragging = useRef(false);
+	const isPreviewDisabled = useRef(false);
+	const ids = useRef([]);
+	const zoom = useRef(null);
+	const isDraggingToSelect = useRef(false);
+	const nodesSelectedByDragToSelect = useRef([]);
+	const lastClickEvent = useRef<any>(null);
+	const [ dummy, setDummy ] = useState(0);
+
+	const send = (id: string, param: any, transfer?: any[]) => {
+		try {
+			if (worker.current) {
+				worker.current.postMessage({ id, ...param }, transfer);
+			};
+		} catch (e) { /**/ };
+	};
+
+	const windowHandlers = useRef<{ [key: string]: (e: any) => void }>({});
+
+	const rebind = () => {
+		unbind();
+
+		windowHandlers.current = {
+			updateGraphSettings: () => updateSettings(),
+			updateGraphRoot: (e: any) => {
+				const d = e.detail;
+				setRootId(d?.id);
+			},
+			updateGraphData: () => load(),
+			archiveObject: (e: any) => {
+				const d = e.detail;
+				send('onRemoveNode', { ids: U.Common.objectCopy(d?.ids) });
+			},
+			keydown: (e: any) => onKeyDown(e),
+		};
+
+		U.Dom.addEvents(window, Object.entries(windowHandlers.current));
+	};
+
+	const unbind = () => {
+		U.Dom.removeEvents(window, Object.entries(windowHandlers.current));
+		windowHandlers.current = {};
+
+		if (canvas.current) {
+			U.Dom.removeEvent(canvas.current, 'touchstart', (canvas.current as any)._touchStartHandler);
+			U.Dom.removeEvent(canvas.current, 'touchmove', (canvas.current as any)._touchMoveHandler);
+			delete (canvas.current as any)._touchStartHandler;
+			delete (canvas.current as any)._touchMoveHandler;
+		};
+	};
+
+	const getTouchDistance = (touches: TouchList): number => {
+		const dx = touches[0].clientX - touches[1].clientX;
+		const dy = touches[0].clientY - touches[1].clientY;
+
+		return Math.sqrt(dx * dx + dy * dy);
+	};
+
+	const init = () => {
+		const node = nodeRef.current;
+		if (!node) {
+			return;
+		};
+
+		const density = window.devicePixelRatio;
+		const width = U.Dom.contentWidth(node);
+		const height = U.Dom.contentHeight(node);
+		const settings = S.Common.getGraph(storageKey);
+		const graphData = Storage.getGraphData();
+
+		images.current = {};
+		zoom.current = d3.zoom().scaleExtent([ 0.05, 10 ])
+			.on('start', e => onZoomStart(e))
+			.on('zoom', e => onZoom(e))
+			.on('end', e => onZoomEnd(e));
+		edges.current = (data.edges || []).map(edgeMapper);
+		nodes.current = (data.nodes || []).map(nodeMapper);
+
+		// Start loading images in batches after initial setup
+		loadNodeImages(nodes.current);
+
+		const existingCanvas = U.Dom.selectAll('canvas', node);
+		existingCanvas.forEach(c => c.remove());
+
+		let touchStartDist = null;
+		let touchStartZoom = null;
+
+		const cnv = canvas.current;
+		if (cnv) {
+			U.Dom.removeEvent(cnv, 'touchstart', (cnv as any)._touchStartHandler);
+			U.Dom.removeEvent(cnv, 'touchmove', (cnv as any)._touchMoveHandler);
+		};
+
+		const touchStartHandler = (e: TouchEvent) => {
+			const t = e.touches;
+
+			if (t.length != 2) {
+				return;
+			};
+
+			e.preventDefault();
+			touchStartDist = getTouchDistance(t);
+			touchStartZoom = d3.zoomTransform(canvas.current).k;
+		};
+
+		const touchMoveHandler = (e: TouchEvent) => {
+			e.preventDefault();
+
+			const t = e.touches;
+
+			if (!touchStartDist || (t.length != 2)) {
+				return;
+			};
+
+			const newDist = getTouchDistance(t);
+			const scaleChange = newDist / touchStartDist;
+			const newZoom = touchStartZoom * scaleChange;
+
+			d3.select(canvas.current).call(zoom.current.scaleTo, newZoom);
+		};
+
+		canvas.current = d3.select(`#${elementId}`).append('canvas')
+		.attr('width', (width * density) + 'px')
+		.attr('height', (height * density) + 'px')
+		.node();
+
+		if (canvas.current) {
+			U.Dom.addEvents(canvas.current, [
+				['touchstart', touchStartHandler],
+				['touchmove', touchMoveHandler],
+			]);
+			(canvas.current as any)._touchStartHandler = touchStartHandler;
+			(canvas.current as any)._touchMoveHandler = touchMoveHandler;
+		};
+
+		const transfer = canvas.current.transferControlToOffscreen();
+
+		worker.current = new Worker('workers/graph.js');
+		worker.current.onerror = (e: any) => console.log(e);
+		U.Dom.addEvent(worker.current, 'message', onMessage);
+
+		send('init', {
+			canvas: transfer,
+			width,
+			height,
+			density,
+			theme,
+			settings,
+			rootId,
+			nodes: nodes.current,
+			edges: edges.current,
+			zoom: graphData.zoom,
+			colors: {
+				...J.Theme[theme].graph || {},
+				icon: J.Theme.icon,
+			},
+		}, [ transfer ]);
+
+		d3.select(canvas.current)
+		.call(d3.drag().
+			subject(() => subject.current).
+			on('start', (e: any, d: any) => onDragStart(e)).
+			on('drag', (e: any, d: any) => onDragMove(e)).
+			on('end', (e: any, d: any) => onDragEnd(e))
+		)
+		.call(zoom.current)
+		.call(zoom.current.transform, d3.zoomIdentity.translate(graphData.zoom.x, graphData.zoom.y).scale(graphData.zoom.k))
+		.on('click', (e: any) => {
+			if (wasDragging.current) {
+				wasDragging.current = false;
+				return;
+			};
+
+			const { local } = S.Common.getGraph(storageKey);
+			const [ x, y ] = d3.pointer(e);
+
+			let event = '';
+			if (local) {
+				event = 'onSetRootId';
+			} else
+			if (e.shiftKey && !(e.metaKey || e.ctrlKey)) {
+				event = 'onSelect';
+			} else {
+				event = 'onClick';
+				lastClickEvent.current = e;
+			};
+
+			send(event, { x, y });
+		})
+		.on('dblclick', (e: any) => {
+			if (e.shiftKey && !(e.metaKey || e.ctrlKey)) {
+				const [ x, y ] = d3.pointer(e);
+				send('onSelect', { x, y, selectRelated: true });
+			};
+		})
+		.on('contextmenu', (e: any) => {
+			e.stopPropagation();
+
+			const [ x, y ] = d3.pointer(e);
+			send('onContextMenu', { x, y });
+		})
+		.on('mousemove', (e: any) => {
+			const [ x, y ] = d3.pointer(e);
+			send('onMouseMove', { x, y });
+		});
+	};
+
+	const nodeMapper = (d: any) => {
+		d = d || {};
+
+		const type = S.Record.getTypeById(d.type);
+
+		d.layout = Number(d.layout) || 0;
+		d.radius = 4;
+		d.src = U.Graph.imageSrc(d);
+		d.name = U.Smile.strip(U.Object.name(d, true));
+		d.shortName = U.String.shorten(d.name, 24);
+
+		if (type) {
+			d.typeKey = type.uniqueKey || d.type;
+
+			if (d.iconOption === undefined) {
+				d.iconOption = type.iconOption;
+			};
+		};
+
+		// Clear icon props to fix image size
+		if (U.Object.isTaskLayout(d.layout)) {
+			d.iconImage = '';
+			d.iconEmoji = '';
+		};
+
+		if (U.Object.isChatLayout(d.layout)) {
+			const spaceview = U.Space.getSpaceview();
+			const chatMode = U.Object.getChatNotificationMode(spaceview, d.id);
+
+			d.isMuted = chatMode == I.NotificationMode.Nothing;
+		};
+
+		return d;
+	};
+
+	const loadNodeImages = (mappedNodes: any[]) => {
+		// Collect unique image sources that haven't been loaded yet
+		const sourcesToLoad = new Map<string, any[]>();
+
+		for (const d of mappedNodes) {
+			if (d.src && !images.current[d.src]) {
+				if (!sourcesToLoad.has(d.src)) {
+					sourcesToLoad.set(d.src, []);
+				};
+				sourcesToLoad.get(d.src).push(d);
+			};
+		};
+
+		// Load images in batches to avoid overwhelming the browser
+		const BATCH_SIZE = 10;
+		const sources = Array.from(sourcesToLoad.keys());
+		let batchIndex = 0;
+
+		const loadBatch = () => {
+			const batch = sources.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE);
+			if (batch.length === 0) {
+				return;
+			};
+
+			batch.forEach(src => {
+				if (images.current[src]) {
+					return;
+				};
+
+				const img = new Image();
+				img.onload = () => {
+					if (images.current[src]) {
+						return;
+					};
+
+					const w = I.ImageSize.Small;
+					const ratio = img.naturalHeight / img.naturalWidth || 1;
+					const h = Math.round(w * ratio);
+
+					try {
+						if (src.startsWith('data:')) {
+							const canvas = new OffscreenCanvas(w, h);
+							const ctx = canvas.getContext('2d');
+							ctx.drawImage(img, 0, 0, w, h);
+							createImageBitmap(canvas).then((res: any) => {
+								if (images.current[src]) {
+									return;
+								};
+
+								images.current[src] = true;
+								send('image', { src, bitmap: res });
+							}).catch(() => { /**/ });
+						} else {
+							createImageBitmap(img, {
+								resizeWidth: w,
+								resizeHeight: h,
+								resizeQuality: 'high',
+							}).then((res: any) => {
+								if (images.current[src]) {
+									return;
+								};
+
+								images.current[src] = true;
+								send('image', { src, bitmap: res });
+							}).catch(() => { /**/ });
+						};
+					} catch (e) { /**/ };
+				};
+				img.crossOrigin = 'anonymous';
+				img.src = src;
+			});
+
+			batchIndex++;
+			if (batchIndex * BATCH_SIZE < sources.length) {
+				// Schedule next batch with a small delay to not block rendering
+				setTimeout(loadBatch, 16);
+			};
+		};
+
+		// Start loading after a microtask to let the graph render first
+		queueMicrotask(loadBatch);
+	};
+
+	const edgeMapper = (d: any) => {
+		d.type = Number(d.type) || 0;
+		d.typeName = translate(`edgeType${d.type}`);
+		return d;
+	};
+
+	const updateSettings = () => {
+		send('updateSettings', S.Common.getGraph(storageKey));
+	};
+
+	const onDragStart = (e: any) => {
+		isDragging.current = true;
+		send('onDragStart', { active: e.active, subjectId: subject.current?.id });
+	};
+
+	const onDragMove = (e: any) => {
+		const p = d3.pointer(e, d3.select(canvas.current));
+		const node = nodeRef.current;
+
+		if (!node) {
+			return;
+		};
+
+		const nodeRect = node.getBoundingClientRect();
+		const left = nodeRect.left + window.scrollX;
+		const top = nodeRect.top + window.scrollY;
+
+		send('onDragMove', { 
+			subjectId: subject.current?.id, 
+			active: e.active, 
+			x: p[0] - left, 
+			y: p[1] - top,
+		});
+	};
+
+	const onDragEnd = (e: any) => {
+		isDragging.current = false;
+		wasDragging.current = true;
+		send('onDragEnd', { active: e.active, subjectId: subject.current?.id });
+		subject.current = null;
+	};
+
+	const onZoomStart = ({ sourceEvent }) => {
+		if (sourceEvent && (sourceEvent.type == 'mousedown') && sourceEvent.shiftKey) {
+			const p = d3.pointer(sourceEvent, d3.select(canvas.current));
+			const node = nodeRef.current;
+			const nodeRect = node.getBoundingClientRect();
+			const left = nodeRect.left + window.scrollX;
+			const top = nodeRect.top + window.scrollY;
+
+			isDraggingToSelect.current = true;
+			send('onDragToSelectStart', { x: p[0] - left, y: p[1] - top });
+		};
+	};
+
+	const onZoom = ({ transform, sourceEvent }) => {
+		if (!sourceEvent) {
+			return;
+		};
+
+		if (isDraggingToSelect.current) {
+			const p = d3.pointer(sourceEvent, d3.select(canvas.current));
+			const node = nodeRef.current;
+			const nodeRect = node.getBoundingClientRect();
+			const left = nodeRect.left + window.scrollX;
+			const top = nodeRect.top + window.scrollY;
+
+			send('onDragToSelectMove', { x: p[0] - left, y: p[1] - top });
+		} else {
+			send('onZoom', { transform });
+			Storage.setGraphData({ zoom: transform });
+		};
+	};
+
+	const onZoomEnd = (e: any) => {
+		if (isDraggingToSelect.current){
+			send('onDragToSelectEnd', {});
+			nodesSelectedByDragToSelect.current = [];
+		};
+
+		isDraggingToSelect.current = false;
+	};
+
+	const onPreviewShow = (data: any) => {
+		if (isPreviewDisabled.current || !subject.current) {
+			return;
+		};
+
+		const el = U.Dom.get('graphPreview') as any;
+		if (!el) {
+			return;
+		};
+
+		// Reuse existing React root if present, otherwise create & store it
+		let root = el._reactRoot;
+		if (!root) {
+			root = createRoot(el);
+			el._reactRoot = root;
+		};
+
+		const item = U.Dom.get('graphPreviewItem');
+		const isSameSubject = previewId.current == subject.current.id;
+
+		if (!item || !isSameSubject) {
+			previewId.current = subject.current.id;
+
+			root.render(
+				<PreviewDefault
+					key={subject.current.id}
+					id="graphPreviewItem"
+					object={subject.current}
+					noLoad={true}
+				/>
+			);
+
+			analytics.event('SelectGraphNode', {
+				objectType: subject.current.type,
+				layout: subject.current.layout,
+			});
+		} else {
+			U.Dom.css(item, { display: 'block' });
+		};
+
+		previewPosition(data);
+	};
+
+	const previewPosition = (data: any) => {
+		const item = U.Dom.get('graphPreviewItem');
+		if (!item) {
+			return;
+		};
+
+		const node = nodeRef.current;
+		if (!node) {
+			return;
+		};
+
+		const nodeRect = node.getBoundingClientRect();
+		const left = nodeRect.left + window.scrollX;
+		const top = nodeRect.top + window.scrollY;
+		const st = window.scrollY;
+
+		U.Dom.css(item, {
+			left: `${data.x + left - item.offsetWidth / 2}px`,
+			top: `${data.y + top + 20 - st}px`,
+		});
+	};
+
+	const onPreviewHide = () => {
+		const item = U.Dom.get('graphPreviewItem');
+		if (item) {
+			U.Dom.css(item, { display: 'none' });
+		};
+
+		previewId.current = null;
+	};
+
+	const onMessage = (e) => {
+		const settings = S.Common.getGraph(storageKey);
+		const { id: msgId, data } = e.data;
+		const node = nodeRef.current;
+
+		if (!node) {
+			return;
+		};
+
+		const nodeRect = node.getBoundingClientRect();
+		const left = nodeRect.left + window.scrollX;
+		const top = nodeRect.top + window.scrollY;
+		const menuParam = {
+			classNameWrap: 'fromGraph',
+			onOpen: () => isPreviewDisabled.current = true,
+			onClose: () => isPreviewDisabled.current = false,
+			recalcRect: () => ({
+				width: 0,
+				height: 0,
+				x: data.x + 10 + left,
+				y: data.y + 10 + top,
+			}),
+		};
+
+		switch (msgId) {
+			case 'onClick': {
+				if (data.node){
+					onClickObject(data.node);
+				} else {
+					setSelected([]);
+				};
+				break;
+			};
+
+			case 'onSelect': {
+				onSelect(data.node, data.related);
+				break;
+			};
+
+			case 'onMouseMove': {
+				if (isDragging.current) {
+					break;
+				};
+
+				subject.current = getNode(data.node);
+
+				if (settings.preview) {
+					subject.current ? onPreviewShow(data) : onPreviewHide();
+				};
+				break;
+			};
+
+			case 'onDragMove': {
+				onPreviewHide();
+				break;
+			};
+
+			case 'onContextMenu': {
+				if (!data.node) {
+					break;
+				};
+
+				onPreviewHide();
+				onContextMenu(data.node.id, menuParam);
+				break;
+			};
+
+			case 'onContextSpaceClick': {
+				onPreviewHide();
+				onContextSpaceClick(menuParam, data);
+				break;
+			};
+
+			case 'onTransform': {
+				d3.select(canvas.current)
+				.call(zoom.current)
+				.call(zoom.current.transform, d3.zoomIdentity.translate(data.x, data.y).scale(data.k));
+				break;
+			};
+
+			case 'setRootId': {
+				U.Dom.eventDispatch(window, 'updateGraphRoot', { id: data.node });
+				break;
+			};
+
+			case 'onSelectByDragToSelect': {
+				const currentSelected = data.selected;
+
+				setSelected(ids.current.filter((id: string) => {
+					if (!nodesSelectedByDragToSelect.current.includes(id)){
+						return true;
+					};
+					return currentSelected.includes(id);
+				}));
+
+				nodesSelectedByDragToSelect.current = nodesSelectedByDragToSelect.current.filter(id => currentSelected.includes(id));
+
+				currentSelected.forEach((id: string) => {
+					if (ids.current.includes(id)){
+						return;
+					};
+
+					setSelected(ids.current.concat([id]));
+					nodesSelectedByDragToSelect.current = nodesSelectedByDragToSelect.current.concat([id]);
+				});
+				break;
+			};
+
+			case 'onTimelineUpdate': {
+				U.Dom.eventDispatch(window, `timelineUpdate.${id}`, {
+					position: data.position,
+					cutoffDate: data.cutoffDate,
+					isPlaying: data.isPlaying,
+				});
+				break;
+			};
+
+			case 'onTimelineComplete': {
+				U.Dom.eventDispatch(window, `timelineComplete.${id}`);
+				break;
+			};
+		};
+	};
+
+	const onKeyDown = (e: any) => {
+		keyboard.shortcut('searchText', e, () => U.Dom.get('button-header-search')?.click());
+
+		if (!ids.current.length) {
+			return;
+		};
+
+		keyboard.shortcut('escape', e, () => setSelected([]));
+
+		keyboard.shortcut('backspace, delete', e, () => {
+			Action.archive(ids.current, analytics.route.graph, () => {
+				nodes.current = nodes.current.filter(d => !ids.current.includes(d.id));
+				send('onRemoveNode', { ids: ids.current });
+			});
+		});
+	};
+
+	const onContextMenu = (id: string, param: any) => {
+		const selected = ids.current.length ? ids.current : [ id ];
+
+		S.Menu.open('objectContext', {
+			...param,
+			data: {
+				route: analytics.route.graph,
+				objectIds: selected,
+				getObject: id => getNode(id),
+				allowedLinkTo: true,
+				allowedOpen: true,
+				allowedNewTab: true,
+				allowedCollection: true,
+				allowedExport: true,
+				allowedType: true,
+				onLinkTo: (sourceId: string, targetId: string) => {
+					const target = getNode(targetId);
+					if (target) {
+						edges.current.push(edgeMapper({ type: I.EdgeType.Link, source: sourceId, target: targetId }));
+						send('onSetEdges', { edges: edges.current });
+					} else {
+						addNewNode(targetId, sourceId, null);
+					};
+				},
+				onSelect: (itemId: string) => {
+					switch (itemId) {
+						case 'archive': {
+							nodes.current = nodes.current.filter(d => !selected.includes(d.id));
+							send('onRemoveNode', { ids: selected });
+							break;
+						};
+					};
+
+					setSelected(ids.current);
+				},
+			}
+		});
+	};
+
+	const onContextSpaceClick = (param: any, data: any) => {
+		if (!U.Space.canMyParticipantWrite()) {
+			return;
+		};
+
+		S.Menu.open('select', {
+			...param,
+			data: {
+				options: [
+					{ id: 'newObject', name: translate('commonNewObject') },
+				],
+				onSelect: (e: any, item: any) => {
+					switch (item.id) {
+						case 'newObject': {
+							U.Object.create('', '', {}, I.BlockPosition.Bottom, '', [ I.ObjectFlag.SelectTemplate ], analytics.route.graph, (message: any) => {
+								U.Object.openConfig(null, message.details, { onClose: () => addNewNode(message.targetId, '', data) });
+							});
+							break;
+						};
+					};
+				},
+			}
+		});
+	};
+
+	const onSelect = (id: string, related?: string[]) => {
+		const isSelected = ids.current.includes(id);
+
+		let ret = [ id ];
+
+		if (related && related.length) {
+			if (!isSelected) {
+				ret = [];
+			};
+
+			ret = ret.concat(related);
+		};
+
+		ret.forEach(id => {
+			if (isSelected) {
+				ids.current = ids.current.filter(it => it != id);
+				return;
+			};
+
+			ids.current = ids.current.includes(id) ? ids.current.filter(it => it != id) : ids.current.concat([ id ]);
+		});
+
+		setSelected(ids.current);
+	};
+
+	const onClickObject = (id: string) => {
+		setSelected([]);
+		onPreviewHide();
+		U.Object.openConfig(lastClickEvent.current, getNode(id));
+		lastClickEvent.current = null;
+	};
+
+	const addNewNode = (id: string, sourceId?: string, param?: any, callBack?: (object: any) => void) => {
+		U.Object.getById(id, {}, (object: any) => {
+			object = nodeMapper(object);
+
+			if (param) {
+				object = Object.assign(object, param);
+			};
+
+			nodes.current.push(object);
+			send('onAddNode', { target: object, sourceId });
+
+			callBack?.(object);
+		});
+	};
+
+	const getNode = (id: string) => {
+		return nodes.current.find(d => d.id == id);
+	};
+
+	const setRootId = (id: string) => {
+		send('setRootId', { rootId: id });
+	};
+
+	const setSelected = (selected: string[]) => {
+		ids.current = selected;
+		send('onSetSelected', { ids: ids.current });
+	};
+
+	const resize = () => {
+		const node = nodeRef.current;
+		if (!node) {
+			return;
+		};
+
+		send('resize', {
+			width: U.Dom.contentWidth(node),
+			height: U.Dom.contentHeight(node),
+			density: window.devicePixelRatio,
+		});
+	};
+
+	useEffect(() => {
+		rebind();
+
+		return () => {
+			unbind();
+			onPreviewHide();
+
+			if (worker.current) {
+				U.Dom.removeEvent(worker.current, 'message', onMessage);
+				worker.current.terminate();
+			};
+		};
+	}, []);
+
+	useEffect(() => {
+		send('updateTheme', { theme, colors: J.Theme[theme].graph || {} });
+	}, [ theme ]);
+
+	useImperativeHandle(ref, () => ({
+		init,
+		resize,
+		addNewNode,
+		forceUpdate: () => setDummy(dummy + 1),
+		timelineStart: (speed: number) => send('timelineStart', { speed }),
+		timelinePause: () => send('timelinePause', {}),
+		timelineSeek: (position: number) => send('timelineSeek', { position }),
+		timelineReset: () => send('timelineReset', {}),
+	}));
+
+	return (
+		<div 
+			ref={nodeRef} 
+			className="graphWrapper"
+		>
+			<div id={elementId} />
+			<div id="graphPreview" />
+		</div>
+	);
+});
+
+export default Graph;

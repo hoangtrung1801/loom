@@ -1,0 +1,110 @@
+import React, { forwardRef, useState } from 'react';
+import { Title, Label, Button, Icon } from 'Component';
+import * as I from 'Interface';
+
+interface Props extends I.PageSettingsComponent {
+	isUpdating?: boolean;
+};
+
+const PageMainSettingsMembershipPurchased = forwardRef<I.PageRef, Props>((props, ref) => {
+
+	const { isUpdating } = props;
+	const [ dummy, setDummy ] = useState(0);
+	const { data } = S.Membership;
+	const { account} = S.Auth;
+	const { dateFormat } = S.Common;
+	const { nextInvoice } = data;
+
+	// A purchased product missing from the catalog and without an embedded product gets a fallback
+	const purchased = data.getTopPurchasedProduct() || data.getUnresolvedProducts()[0] || null;
+	const product = data.getTopProduct();
+	const info = purchased?.info || { isAutoRenew: false, dateEnds: 0, period: I.MembershipPeriod.Unlimited };
+	const { isAutoRenew, dateEnds, period } = info;
+	const name = product?.name || translate('popupSettingsMembershipUnknownPlan');
+	const colorStr = product?.colorStr;
+	const iconName = product?.iconName || 'tier/purple';
+	const isElapsed = !!purchased?.isElapsed;
+	const currentCn = [ 'item', 'current', colorStr ? colorStr : 'default' ];
+	const participant = U.Space.getParticipant();
+	const globalName = participant?.globalName;
+	const nameCn = [ 'item', 'anyName' ];
+
+	if (globalName) {
+		nameCn.push('withName');
+	};
+
+	let membershipText = '';
+	let date = '';
+	let button = null;
+
+	if (purchased?.isPending) {
+		membershipText = translate('popupSettingsMembershipPending');
+	} else
+	if (isElapsed) {
+		// An elapsed end date is never shown as active: renewal is confirmed only by a newer status
+		date = U.Date.dateWithFormat(dateFormat, dateEnds);
+		membershipText = U.String.sprintf(translate(isUpdating ? 'popupSettingsMembershipEndedChecking' : 'popupSettingsMembershipEnded'), date);
+	} else
+	if (isAutoRenew && nextInvoice.date) {
+		const price = U.Common.getMembershipPriceString(nextInvoice.total);
+
+		date = U.Date.dateWithFormat(dateFormat, nextInvoice.date);
+		membershipText = U.String.sprintf(translate('popupSettingsMembershipNextPayment'), price, date);
+	} else 
+	if (dateEnds) {
+		date = U.Date.dateWithFormat(dateFormat, dateEnds);
+		membershipText = U.String.sprintf(translate('popupSettingsMembershipValidUntil'), date);
+	};
+
+	const onManage = () => {
+		C.MembershipV2GetPortalLink((message) => {
+			if (message.url) {
+				Action.openUrl(message.url);
+			};
+		});
+
+		analytics.event('ClickMembershipManagePlan', { type: 'Manage' });
+	};
+
+	const onNameSelect = () => {
+		if (product) {
+			Action.finalizeMembership(product, analytics.route.settingsMembership, () => setDummy(dummy + 1));
+		};
+	};
+
+	if (data.teamOwnerId && (data.teamOwnerId != account.id)) {
+		button = <Label text={translate('popupSettingsMembershipTeamMessage')} />;
+	} else 
+	if ([ I.PaymentProvider.AppStore, I.PaymentProvider.GooglePlay ].includes(data.paymentProvider)) {
+		button = <Label text={U.String.sprintf(translate('popupSettingsMembershipMarketMessage'), translate(`paymentProvider${data.paymentProvider}`))} />;
+	} else {
+		button = <Button onClick={onManage} text={translate('popupSettingsMembershipManage')} color="blank" />;
+	};
+
+	return (
+		<div className="membershipPurchased">
+			<div className="section">
+				<div className={currentCn.join(' ')}>
+					<div className="top">
+						<Icon name={iconName} size={64} />
+						<Title text={U.String.sprintf(translate('popupSettingsMembershipCurrentTier'), name, translate(`membershipPeriod${period}`))} />
+						<Label text={membershipText} />
+					</div>
+					{button}
+				</div>
+
+				<div className={nameCn.join(' ')}>
+					<div className="top">
+						<Icon name="popup/header/anyId" width={60} height={48} />
+						<Title text={globalName ? globalName : translate('popupSettingsMembershipSelectAnyNameTitle')} />
+						<Label text={translate('popupSettingsMembershipSelectAnyNameText')} />
+					</div>
+					{globalName || !product ? '' : <Button onClick={onNameSelect} text={translate('commonSelect')} color="accent" />}
+				</div>
+			</div>
+		</div>
+	);
+
+});
+
+export default PageMainSettingsMembershipPurchased;

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Anytype
+Comment=Project management and knowledge workspace
+Exec=anytype --ozone-platform-hint=auto %u
+Terminal=false
+Type=Application
+Icon=anytype
+Categories=Utility;Office;Calendar;ProjectManagement;
+StartupWMClass=anytype
+Keywords=project management;
+MimeType=x-scheme-handler/anytype;

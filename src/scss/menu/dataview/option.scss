@@ -1,0 +1,51 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuDataviewOptionList { width: var(--menu-width-value); }
+	.menu.menuDataviewOptionList {
+		.content { padding: 0px; }
+
+		&.withFilter {
+			.content { padding-top: 12px; }
+			.titleWrapper + .content { padding-top: 4px; }
+		}
+	}
+
+	.menu.menuDataviewOptionEdit {
+		.content { padding-top: 12px; overflow: visible; max-height: unset; }
+		.filter { margin-bottom: 8px; }
+
+		.item:not(.disabled):hover::before { background: var(--color-shape-highlight-medium); }
+		.item.active::before { z-index: 1; }
+
+		.section.colorPicker { padding: 8px 14px 0px 14px; }
+		.section.colorPicker {
+			.items { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); justify-items: center; grid-gap: 4px 12px; align-items: center; }
+			.items {
+				.item.color { width: 28px; height: 28px; border-radius: 50%; position: relative; padding: 0px; }
+				.item.color::before { display: none; }
+				.item:not(.selected).hover::after,
+				.item:not(.selected):hover::after { transform: scale3d(1.17, 1.17, 1); }
+				.item.color.selected { box-shadow: 0px 0px 0px 1px var(--color-shape-primary); }
+
+				.item.color::after {
+					content: ''; position: absolute; left: 50%; top: 50%; margin: -8px 0px 0px -8px; width: 16px; height: 16px;
+					transition: transform $transitionCommon; border-radius: 50%;
+				}
+
+				.item.color-grey::after { background: var(--color-control-active); }
+				.item.color-yellow::after { background: var(--color-yellow); }
+				.item.color-orange::after { background: var(--color-orange); }
+				.item.color-red::after { background: var(--color-red); }
+				.item.color-pink::after { background: var(--color-pink); }
+				.item.color-purple::after { background: var(--color-purple); }
+				.item.color-blue::after { background: var(--color-blue); }
+				.item.color-ice::after { background: var(--color-ice); }
+				.item.color-teal::after { background: var(--color-teal); }
+				.item.color-lime::after { background: var(--color-lime); }
+			}
+		}
+		.section.colorPicker:after { margin: 16px 0px 0px 0px; }
+	}
+
+}

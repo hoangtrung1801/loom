@@ -1,0 +1,70 @@
+import React, { forwardRef, useRef } from 'react';
+import { Header, Footer, EditorPage } from 'Component';
+import * as I from 'Interface';
+
+const PageMainEdit = forwardRef<I.PageRef, I.PageComponent>((props, ref) => {
+
+	const { isPopup } = props;
+	const headerRef = useRef(null);
+	const rootId = keyboard.getRootId(isPopup);
+	const ns = U.Dom.getEventNamespace(isPopup);
+
+	const onOpen = () => {
+		const home = U.Space.getDashboard();
+		const object = S.Detail.get(rootId, rootId, [ 'type' ], true);
+		const revealRef = String(keyboard.getMatch(isPopup).params.revealRef || '');
+
+		headerRef.current?.forceUpdate();
+
+		// Deep link from "Created in": reveal the block or relation the object was created in
+		if (revealRef) {
+			U.Object.revealCreatedInContextRef(rootId, revealRef, isPopup);
+		};
+
+		if (home && (rootId != home.id)) {
+			let key = '';
+			if (U.Object.isTemplateType(object.type)) {
+				key = 'template';
+			} else
+			if (Onboarding.isCompletedCommon()) {
+				key = 'editor';
+			};
+			if (key) {
+				Onboarding.start(key, isPopup);
+			};
+		};
+
+		analytics.event('ScreenObject', { objectType: object.type });
+	};
+
+	return (
+		<>
+			<Header
+				component="mainObject"
+				ref={headerRef}
+				{...props}
+				rootId={rootId}
+			/>
+
+			<div
+				key={rootId}
+				id="bodyWrapper"
+				className="wrapper"
+			>
+				<EditorPage
+					key="editorPage"
+					ref={ref => S.Common.refSet(`editor${ns}`, ref)}
+					{...props}
+					isPopup={isPopup}
+					rootId={rootId}
+					onOpen={onOpen}
+				/>
+			</div>
+
+			<Footer component="mainObject" {...props} />
+		</>
+	);
+
+});
+
+export default PageMainEdit;

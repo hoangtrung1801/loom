@@ -1,0 +1,16 @@
+@import "~scss/_mixins";
+
+.popups {
+	.popup.popupHelp * { user-select: text !important; }
+	.popup.popupHelp {
+		.innerWrap { width: 1096px; height: calc(100% - 164px); }
+
+		@media (max-width: 1128px) {
+			.innerWrap { width: calc(100% - 32px); left: 16px; margin-left: 0px !important; }
+		}
+
+		.content { padding: 56px 150px 40px 150px; }
+		.highlight { background: var(--color-shape-tertiary); white-space: nowrap; border-radius: 4px; padding: 0px 4px; }
+		.buttons { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 0px 16px; }
+	}
+}

@@ -1,0 +1,143 @@
+@import "~scss/_mixins";
+
+.menus {
+
+    /* Common */
+
+    .menu { box-shadow: 0px 4px 16px rgb(0,0,0,0.2), 0px 0px 0px 1px var(--color-shape-secondary) inset; }
+
+    .menu {
+
+        .icon.color {
+			.inner {
+				&.bgColor-default { background: transparent; }
+				&.bgColor-grey { background: #414141 !important; }
+				&.bgColor-yellow { background: #6c630f !important; }
+				&.bgColor-orange { background: #7b3306 !important; }
+				&.bgColor-red { background: #82181a !important; }
+				&.bgColor-pink { background: #861043 !important; }
+				&.bgColor-purple { background: #59168b !important; }
+				&.bgColor-blue { background: #22307e !important; }
+				&.bgColor-ice { background: #024a70 !important; }
+				&.bgColor-teal { background: #0b4f4a !important; }
+				&.bgColor-lime { background: #35530e !important; }
+			}
+        }
+
+		.colorMark {
+			&.bgColor-default { background: transparent; }
+			&.bgColor-grey { background: #414141 !important; }
+			&.bgColor-yellow { background: #6c630f !important; }
+			&.bgColor-orange { background: #7b3306 !important; }
+			&.bgColor-red { background: #82181a !important; }
+			&.bgColor-pink { background: #861043 !important; }
+			&.bgColor-purple { background: #59168b !important; }
+			&.bgColor-blue { background: #22307e !important; }
+			&.bgColor-ice { background: #024a70 !important; }
+			&.bgColor-teal { background: #0b4f4a !important; }
+			&.bgColor-lime { background: #35530e !important; }
+		}
+    }
+
+    /* Vertical */
+
+    .menu.vertical {
+        .item { background: none; }
+		.item::before { background: rgba(238, 238, 238, 0); }
+
+        .loaderWrapper { background: var(--color-bg-secondary); }
+    }
+
+	/* BlockRelationEdit */
+
+	.menu.menuBlockRelationEdit {
+		.item:hover { background: var(--color-shape-highlight-medium); }
+	}
+
+	/* DataviewRelationEdit */
+
+	.menu.menuDataviewRelationEdit {
+		.item:hover { background: var(--color-shape-highlight-medium); }
+	}
+
+	/* DataviewFileValues */
+
+	.menu.menuDataviewFileValues {
+		.item:hover::before { background: var(--color-shape-highlight-medium); }
+    }
+
+    /* Calendar */
+
+    .menu.menuCalendar {
+        .select:hover { background-color: var(--color-shape-highlight-medium); }
+    }
+
+    /* Onboarding */
+
+	.menu.menuOnboarding {
+		a { color: var(--color-bg-primary); }
+		.highlight { color: var(--color-system-accent-100); }
+
+	}
+
+	/* DataviewCreateBookmark */
+
+	.menu.menuDataviewCreateBookmark {
+		.loaderWrapper { background: rgba(39, 39, 35, 0.9); }
+	}
+
+    /* DataviewViewLayout */
+
+    .menu.menuDataviewViewLayout {
+        .layouts {
+
+            .layout:not(.isReadonly):hover { background-color: rgba(238, 238, 238, 0.06); }
+        }
+    }
+
+    /* DataviewTemplateList */
+
+    .menu.menuDataviewTemplateList {
+		.items {
+			.item {
+				.icon.more:hover { background-color: unset; }
+			}
+		}
+    }
+    .menu.menuDataviewTemplateList.objectCreate {
+		.items {
+			.item {
+				.previewObject { box-shadow: 0px 2px 16px 0px rgba(0, 0, 0, 0.07); }
+			}
+		}
+    }
+
+    /* SyncStatus */
+
+    .menu.menuSyncStatus {
+        .icons {
+            .iconWrapper.c-red .iconBg, .iconWrapper.c-darkRed .iconBg { background: #581f0c; }
+        }
+    }
+
+	/* GraphSettings */
+
+	.menu.menuGraphSettings {
+		.input-drag-horizontal {
+			.icon { background-color: var(--color-bg-secondary); }
+		}
+	}
+
+	/* Publish */
+
+	.menu.menuPublish {
+		.input.isReadonly { background: rgba(255, 255, 255, 0.03); }
+
+		.incentiveBanner { background-color: rgba(55, 122, 255, 0.15); }
+		.incentiveBanner {
+			.button { color: var(--color-text-primary); }
+		}
+
+	}
+
+}

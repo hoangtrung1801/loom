@@ -1,0 +1,54 @@
+# electron/ - Electron Main Process
+
+Electron main process files for desktop app integration. TypeScript source in `ts/` is bundled into `electron.js` at the project root via `scripts/build-electron.js`.
+
+## TypeScript Source (`ts/`)
+
+- `main.ts` - Main entry point: app lifecycle, window creation, IPC handlers, signal handling, publishes `global.serverAddress` and `global.localApiSecret` for renderers
+- `api.ts` - IPC API handlers for renderer-to-main communication
+- `config.ts` - App configuration management
+- `menu.ts` - Native application menu (File, Edit, View, etc.)
+- `server.ts` - Local gRPC server management (anytypeHelper): spawn, stdin parent lifeline (`secret <base64url>` first, then `shutdown`), graceful stop
+- `update.ts` - Auto-update logic
+- `util.ts` - Utility functions (paths, platform detection, logging)
+- `window.ts` - Window management (create, close, focus, tabs, local-link approval window)
+- `download.ts` - Gateway file downloads: queues transfers one at a time (electron-dl reports concurrent ones over each other), broadcasts per-file progress and one terminal event, cancels a running or queued transfer by id, and reuses a copy already on disk instead of transferring again. A `temporary` request — a file being opened rather than saved — is given a folder of its own under `openedRoot()` (`<temp>/anytype/open/<objectId>`) and overwritten there, so its path is the same on every open; `prune()` sweeps folders untouched for a week and runs on app ready
+- `checksum.ts` - Reproduces the middleware's file checksum (`sha256` + an encrypted/plain marker byte, base32 hex-alphabet, unpadded) so a local file can be proven to be an object's own content
+- `downloadLedger.ts` - Remembers where each object was last downloaded (`electron-json-storage`, bounded to 500 entries), so recognising an untouched copy costs a `stat` rather than a hash
+- `linkApproval.ts` - Local-link pairing prompts: deduplicates requests, queues prompts, validates user-chosen space grants, updates the space catalog, and keeps BAD_INPUT responses open for correction
+- `safeStorage.ts` - Electron safe storage wrapper
+- `types.ts` - TypeScript type definitions
+
+### Libraries (`ts/lib/`)
+- `installNativeMessagingHost.ts` - Installs native messaging host manifest for the Chrome/Firefox Web Clipper extension. Registers `com.anytype.desktop` on macOS, Linux, and Windows.
+
+## JavaScript (`js/`)
+- `preload.cjs` - Preload script for renderer process security
+
+## JSON Configuration (`json/`)
+- `constant.json` - Enabled languages list (26 locales)
+- `cors.json` - CORS whitelist for allowed domains
+
+## Images (`img/`)
+- `icon.icns` - macOS app icon bundle
+- `icons/` - App icons at multiple resolutions (16x16 through 1024x1024 PNG, 256x256 ICO)
+- `iconTrayBlack.png` - Black tray icon
+- `iconTrayWhite.png` - White tray icon
+- `iconTrayTemplate.png` - macOS template tray icon (1x)
+- `iconTrayTemplate@2x.png` - macOS template tray icon (2x)
+
+## Build Hooks (`hook/`)
+- `afterpack.js` - Post-packaging hook
+- `aftersign.js` - Post-signing hook
+- `beforebuild.js` - Pre-build hook
+- `locale.js` - Locale generation
+- `sign.js` - Code signing
+- `switch-manifest.js` - Switch extension manifest between Firefox and Chromium
+- `util.js` - Shared hook utilities
+
+## macOS
+- `entitlements.mac.plist` - macOS code signing entitlements (JIT, unsigned memory, dyld, library validation)
+
+## Important: `__dirname` in Bundled Code
+
+Since all `ts/` files are bundled into `electron.js` at the project root, `__dirname` resolves to the project root at runtime -- not to the original source file location. All path references must account for this (e.g., `path.join(__dirname, 'dist', ...)` not `path.join(__dirname, '..', '..', 'dist', ...)`).

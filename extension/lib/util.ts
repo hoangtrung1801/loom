@@ -1,0 +1,81 @@
+
+const INDEX_POPUP = '/popup/index.html';
+const INDEX_IFRAME = '/iframe/index.html';
+const INDEX_AUTH = '/auth/index.html';
+
+class Util {
+
+	isExtension () {
+		return [ 'chrome-extension:', 'moz-extension:' ].includes(location.protocol);
+	};
+
+	isPopup () {
+		return this.isExtension() && (location.pathname == INDEX_POPUP);
+	};
+
+	isIframe () {
+		return this.isExtension() && (location.pathname == INDEX_IFRAME);
+	};
+
+	isAuth () {
+		return this.isExtension() && (location.pathname == INDEX_AUTH);
+	};
+
+	fromPopup (url: string) {
+		return url.match(INDEX_POPUP);
+	};
+
+	fromIframe (url: string) {
+		return url.match(INDEX_IFRAME);
+	};
+
+	sendMessage (msg: any, callBack: (response) => void) {
+		/* @ts-ignore */
+		chrome.runtime.sendMessage(msg, callBack);
+	};
+
+	getCurrentTab (callBack: (tab) => void) {
+		/* @ts-ignore */
+		chrome.tabs.query({ active: true, lastFocusedWindow: true }, tabs => callBack(tabs[0]));
+	};
+
+	init (serverPort: string, gatewayPort: string) {
+		S.Extension.serverPort = serverPort;
+		S.Extension.gatewayPort = gatewayPort;
+
+		dispatcher.init(`http://127.0.0.1:${serverPort}`);
+		S.Common.gatewaySet(`http://127.0.0.1:${gatewayPort}`);
+	};
+
+	authorize (appKey: string, onSuccess?: () => void, onError?: (error) => void) {
+		appKey = String(appKey || '');
+
+		S.Auth.appKeySet(appKey);
+		U.Data.createSession('', appKey, '', (message: any) => {
+			if (message.error.code) {
+				onError?.(message.error);
+				return;
+			};
+
+			C.AccountSelect(message.accountId, '', 0, '', (message: any) => {
+				if (message.error.code) {
+					onError?.(message.error);
+					return;
+				};
+
+				S.Auth.accountSet(message.account);
+				S.Common.configSet(message.account.config, false);
+
+				U.Data.onInfo(message.account.info);
+				onSuccess?.();
+			});
+		});
+	};
+
+	optionMapper (it: any) {
+		return it._empty_ ? null : { ...it, object: it };
+	};
+	
+};
+
+export default new Util();

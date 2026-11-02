@@ -1,0 +1,516 @@
+name: Nightly Builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: electron.builder channel (beta uses a different s3 bucket)
+        required: true
+        default: latest
+        type: choice
+        options:
+          - latest
+          - alpha
+          - beta
+      run-diff-check:
+        description: 'Run diff-check?'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  # schedule is no longer needed
+  # the workflow is triggered from https://github.com/anyproto/anytype-heart/blob/develop/.github/workflows/nightly.yml
+
+
+permissions:
+  contents: 'write'
+
+jobs:
+  diff-check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff_check.outputs.changed }}
+      last_tag: ${{ steps.diff_check.outputs.last_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: git fetch --tags --force --prune
+      - id: diff_check
+        run: |
+          LAST_TAG=$(git describe --tags --match 'v*-nightly' --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            echo "last_tag=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ "${{ github.event.inputs.run-diff-check || 'true' }}" == "true" ]]; then
+            if [ -z "$LAST_TAG" ]; then
+              # no nightly tag found in history
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            elif git diff --quiet "${LAST_TAG}..HEAD"; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # when disabled explicitly: always set changed=true
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: debug
+        run: |
+          echo "changed: ${{ steps.diff_check.outputs.changed }}"
+          echo "last_tag: ${{ steps.diff_check.outputs.last_tag }}"
+
+
+  nightly-settings:
+    needs:
+      - diff-check
+    if: needs.diff-check.outputs.changed == 'true' # run only if there is a diff
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.nightly_info.outputs.channel }}
+      tag: ${{ steps.nightly_info.outputs.tag }}
+      app_version: ${{ steps.nightly_info.outputs.app_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - run: git fetch --tags --force --prune
+
+      - name: Compute nightly version and settings
+        id: nightly_info
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required for gh CLI to authenticate
+        run: |
+          set -euo pipefail
+
+          # choice channel name
+          if [[ -z "${{ github.event.inputs.channel }}" ]]; then
+            # default value
+            CHANNEL=latest
+          else
+            CHANNEL="${{ github.event.inputs.channel }}"
+          fi
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
+
+          # version suffix
+          if [[ "$CHANNEL" == "latest" ]]; then
+            VERSION_SUFFIX=""
+          else
+            VERSION_SUFFIX="-${CHANNEL}"
+          fi
+
+          DATE=$(date -u +'%Y%m%d')
+          BASE_VERSION=$( jq -r '.version | split(".")[:2] | join(".")' package.json )
+
+          # Get the number of existing tags for today
+          COUNT=$(gh api "repos/${{ github.repository }}/git/matching-refs/tags/v${BASE_VERSION}.${DATE}" --jq 'length')
+          N=$((COUNT + 1))
+
+          APP_VERSION="${BASE_VERSION}.${DATE}${N}${VERSION_SUFFIX}"
+
+          # Build the final version string
+          echo "tag=v${APP_VERSION}-nightly" >> "$GITHUB_OUTPUT"
+
+          # application version
+          echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Debug
+        shell: bash
+        run: |
+          echo "nightly channel: ${{ steps.nightly_info.outputs.channel }}"
+          echo "nightly tag: ${{ steps.nightly_info.outputs.tag }}"
+          echo "nightly app_version: ${{ steps.nightly_info.outputs.app_version }}"
+
+      - name: Create nightly tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.nightly_info.outputs.tag }} ${{ github.sha }}
+          git push --tags
+
+  changelog:
+    needs:
+      - diff-check
+      - nightly-settings
+    runs-on: ubuntu-latest
+    outputs:
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog via GitHub
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST="${{ needs.diff-check.outputs.last_tag }}"
+          TO="${{ needs.nightly-settings.outputs.tag }}"
+          if [[ -z "$LAST" || "$LAST" == "false" ]]; then
+            BODY="none"
+          else
+            BODY=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+                    -f tag_name="$TO" \
+                    -f previous_tag_name="$LAST" \
+                    --jq '.body')
+          fi
+          {
+            echo 'body<<EOF'
+            printf '%s\n' "$BODY"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Debug
+        run: |
+          echo "${{ steps.notes.outputs.body }}"
+
+
+  build:
+    needs:
+      - nightly-settings
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - macos-15
+          - ubuntu-22.04
+          - windows-2025
+    steps:
+      - name: Setup
+        run: |
+          git config --global url."https://${{secrets.USER}}:${{secrets.TOKEN}}@github.com/".insteadOf "https://github.com/"
+          git config --global url."https://${{secrets.USER}}:${{secrets.TOKEN}}@api.github.com/".insteadOf "https://api.github.com/"
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.22'
+          check-latest: true
+
+      - name: Setup GO
+        run: |
+          go version
+          echo GOPATH=$(go env GOPATH) >> $GITHUB_ENV
+          echo GOBIN=$(go env GOPATH)/bin >> $GITHUB_ENV
+          echo $(go env GOPATH)/bin >> $GITHUB_PATH
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: 3.11
+
+      - name: Install LibSecret
+        if: matrix.os == 'ubuntu-latest' # only for ubuntu 24 or latest
+        run:
+          sudo apt-get install libsecret-1-dev
+
+      - name: Setup .NET 9
+        if: ${{ startsWith(matrix.os, 'windows-') }}
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install AzureSignTool
+        if: ${{ startsWith(matrix.os, 'windows-') }}
+        run: dotnet tool install --global AzureSignTool --version 7.0.1
+
+      - name: Check out Git repository
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 25.2.1
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Update locale
+        run: bun run update:locale
+        env:
+          GITHUB_TOKEN: ${{secrets.TOKEN}}
+
+      #- name: Update Deps
+      #  run: bun run build:deps
+
+      - name: Get anytype-heart nightly release info
+        uses: actions/github-script@v9
+        id: anytype-heart-nightly-info
+        with:
+          script: |
+            const owner = 'anyproto';
+            const repo = 'anytype-heart';
+
+            const releases = await github.paginate(
+              github.rest.repos.listReleases,
+              { owner, repo, per_page: 100 }
+            );
+
+            const nightly = releases.find(r =>
+              /nightly/i.test(r.tag_name || '') || /nightly/i.test(r.name || '')
+            );
+
+            if (!nightly) {
+              core.setFailed('Nightly release not found');
+              return;
+            }
+
+            core.setOutput('release_name', nightly.name);
+
+      - name: Nightly mode env settings
+        shell: bash
+        run: |
+          # choice s3 bucket for publishing
+          if [[ "${{ needs.nightly-settings.outputs.channel }}" == "beta" ]]; then
+            S3_BUCKET="${{secrets.NIGHTLY_AWS_S3_BUCKET_BETA}}"
+          else
+            S3_BUCKET="${{secrets.NIGHTLY_AWS_S3_BUCKET}}"
+          fi
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+
+          echo "MIDDLEWARE_VERSION=${{ steps.anytype-heart-nightly-info.outputs.release_name }}" >> $GITHUB_ENV
+
+      #- name: Print all environment variables
+      #  run: printenv
+
+      - name: Nightly mode edit package.json
+        shell: bash
+        run: |
+          jq \
+            --tab \
+            '
+            .name = "anytype-dev" |
+            .version = "${{ needs.nightly-settings.outputs.app_version }}" |
+            .description = "Anytype Nightly" |
+            .build.appId = "com.anytype.anytype-dev" |
+            .build.productName = "Anytype Nightly" |
+            .build.protocols[0].name = "Anytype Nightly" |
+            .build.mac.publish |= map(del(.url)) |
+            .build.mac.publish[0].provider = "s3" |
+            .build.mac.publish[0].bucket = "${{ env.S3_BUCKET }}" |
+            .build.mac.publish[0].region = "${{ secrets.NIGHTLY_AWS_REGION }}" |
+            .build.win.publish |= map(del(.url)) |
+            .build.win.publish[0].provider = "s3" |
+            .build.win.publish[0].bucket = "${{ env.S3_BUCKET }}" |
+            .build.win.publish[0].region = "${{ secrets.NIGHTLY_AWS_REGION }}" |
+            .build.linux.description = "Anytype Nightly" |
+            .build.linux.desktop.entry.Name = "Anytype Nightly" |
+            .build.linux.publish |= map(del(.url)) |
+            .build.linux.publish[0].provider = "s3" |
+            .build.linux.publish[0].bucket = "${{ env.S3_BUCKET }}" |
+            .build.linux.publish[0].region = "${{ secrets.NIGHTLY_AWS_REGION }}"
+          ' package.json > tmp.json && mv tmp.json package.json
+
+      - name: debug cat package.json
+        shell: bash
+        run: cat package.json
+
+      - name: Install rsync on windows
+        if: ${{ startsWith(matrix.os, 'windows-') }}
+        shell: pwsh
+        run: |
+          choco install -y rsync
+
+      - name: Patches for the Nightly app
+        shell: bash
+        run: |
+          patch go/nativeMessagingHost.go < nightly/patches/nativeMessagingHost.go.patch
+          patch electron/ts/lib/installNativeMessagingHost.ts < nightly/patches/installNativeMessagingHost.ts.patch
+          rsync -a nightly/electron/ electron/
+
+      - name: Update Addon only AMD
+        if: ${{ startsWith(matrix.os, 'windows-') }}
+        shell: bash
+        run: |
+          ./update-ci.sh --user="${{secrets.USER}}" --token="${{secrets.TOKEN}}" --os="${{matrix.os}}" --middleware-version="${{env.MIDDLEWARE_VERSION}}"
+
+      - name: Update Addon AMD and ARM
+        if: ${{ !startsWith(matrix.os, 'windows-') }}
+        shell: bash
+        run: |
+          ./update-ci.sh --user="${{secrets.USER}}" --token="${{secrets.TOKEN}}" --os="${{matrix.os}}" --middleware-version="${{env.MIDDLEWARE_VERSION}}" --arch="arm"
+          ./update-ci.sh --user="${{secrets.USER}}" --token="${{secrets.TOKEN}}" --os="${{matrix.os}}" --middleware-version="${{env.MIDDLEWARE_VERSION}}" --arch="amd"
+
+      - name: Install Protoc
+        shell: bash
+        env:
+          PROTOC_VERSION: "23.4"
+        run: |
+          set -euo pipefail
+          case "${{ runner.os }}" in
+            Linux)   ZIP="protoc-${PROTOC_VERSION}-linux-x86_64.zip" ;;
+            macOS)   ZIP="protoc-${PROTOC_VERSION}-osx-universal_binary.zip" ;;
+            Windows) ZIP="protoc-${PROTOC_VERSION}-win64.zip" ;;
+            *)       echo "Unsupported OS: ${{ runner.os }}"; exit 1 ;;
+          esac
+          DEST="$HOME/protoc"
+          mkdir -p "$DEST"
+          curl -fsSL -o "$DEST/protoc.zip" "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${ZIP}"
+          unzip -o "$DEST/protoc.zip" -d "$DEST"
+          rm "$DEST/protoc.zip"
+          echo "$DEST/bin" >> "$GITHUB_PATH"
+          "$DEST/bin/protoc" --version
+
+      - name: Generate protobuf TypeScript bindings
+        run: bash scripts/generate-protos.sh --from-dist
+
+      - name: Build Native Messaging Host Windows
+        if: ${{ startsWith(matrix.os, 'windows-') }}
+        run: bun run build:nmh-win
+        env:
+          CGO_ENABLED: 0
+
+      - name: Build Native Messaging Host
+        if: ${{ !startsWith(matrix.os, 'windows-') }}
+        run: bun run build:nmh
+        env:
+          CGO_ENABLED: 0
+
+      - name: Build frontend
+        run: bun run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN_NIGHTLY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN_NIGHTLY }}
+
+      - name: Import macOS certificates
+        if: ${{ startsWith(matrix.os, 'macos-') }}
+        run: |
+          echo "$MAC_CERT_TEXT" | base64 --decode > certificate.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import certificate.p12 -k build.keychain -P "$MAC_CERT_PASS" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
+        env:
+          MAC_CERT_TEXT: ${{ secrets.MAC_CERT_TEXT }}
+          MAC_CERT_PASS: ${{ secrets.MAC_CERT_PASS }}
+
+      - name: Package and publish Mac OS
+        if: ${{ startsWith(matrix.os, 'macos-') }}
+        run: bunx electron-builder --macos --arm64 --x64 --publish always --config.publish.provider=s3 --config.publish.bucket=${{ env.S3_BUCKET }} --config.publish.region=${{ secrets.NIGHTLY_AWS_REGION }}
+        env:
+          DEBUG: electron-builder
+          APPLEID: ${{ secrets.APPLEID }}
+          APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
+          APPLETEAM: ${{ secrets.APPLETEAM }}
+          USE_HARD_LINKS: false
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN_NIGHTLY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN_NIGHTLY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIGHTLY_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIGHTLY_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Package and publish Other
+        if: ${{ !startsWith(matrix.os, 'macos-') }}
+        run: bunx electron-builder ${{ startsWith(matrix.os, 'windows-') && '--windows' || '--linux' }} --publish always --config.publish.provider=s3 --config.publish.bucket=${{ env.S3_BUCKET }} --config.publish.region=${{ secrets.NIGHTLY_AWS_REGION }}
+        env:
+          DEBUG: electron-builder
+          USE_HARD_LINKS: false
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN_NIGHTLY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN_NIGHTLY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIGHTLY_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIGHTLY_AWS_SECRET_ACCESS_KEY }}
+
+
+  clean-nightly-tags:
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - run: git fetch --tags --force --prune
+
+      - name: Clean old nightly tags DEBUG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required for gh CLI to authenticate
+        run: |
+          # list -> filter -> delete via API
+          gh api repos/${GITHUB_REPOSITORY}/git/matching-refs/tags \
+          | jq -r '.[].ref' | sed 's#^refs/tags/##' \
+          | grep -E '^v.*-nightly.*$' \
+          | while read -r t; do echo "$(git log -1 --format=%ct "refs/tags/$t") $t"; done \
+          | sort -n | head -n -10 | cut -d' ' -f2- \
+          | xargs -r -I{} echo gh api -X DELETE repos/${GITHUB_REPOSITORY}/git/refs/tags/{}
+
+      - name: Clean old nightly tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required for gh CLI to authenticate
+        run: |
+          # list -> filter -> delete via API
+          gh api repos/${GITHUB_REPOSITORY}/git/matching-refs/tags \
+          | jq -r '.[].ref' | sed 's#^refs/tags/##' \
+          | grep -E '^v.*-nightly.*$' \
+          | while read -r t; do echo "$(git log -1 --format=%ct "refs/tags/$t") $t"; done \
+          | sort -n | head -n -10 | cut -d' ' -f2- \
+          | xargs -r -I{} gh api -X DELETE repos/${GITHUB_REPOSITORY}/git/refs/tags/{}
+
+
+  notify:
+    needs:
+      - nightly-settings
+      - changelog
+      - build
+      - clean-nightly-tags
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Nightly mode env settings
+        shell: bash
+        run: |
+          # choice s3 bucket for publishing
+          if [[ "${{ needs.nightly-settings.outputs.channel }}" == "beta" ]]; then
+            S3_BUCKET="${{secrets.NIGHTLY_AWS_S3_BUCKET_BETA}}"
+          else
+            S3_BUCKET="${{secrets.NIGHTLY_AWS_S3_BUCKET}}"
+          fi
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+
+      - name: Collect download URLs
+        id: urls
+        run: |
+          python .github/scripts/parse_all_latest_urls.py \
+            --base-url "https://${{ env.S3_BUCKET }}.s3.${{ secrets.NIGHTLY_AWS_REGION }}.amazonaws.com" \
+            --channel "${{ needs.nightly-settings.outputs.channel }}"
+
+      - name: Notify Telegram (workflow result)
+        uses: appleboy/telegram-action@v1.1.1
+        with:
+          to: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && secrets.TELEGRAM_CHAT_ID_ALERTS || secrets.TELEGRAM_CHAT_ID_RELEASE_TRAIN }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: markdown
+          message: |
+            ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && '❌' || '✅' }} *Nightly Builds anytype\-ts*
+
+            *Tag:* `${{ needs.nightly-settings.outputs.tag || 'none' }}`
+            *Description:*
+            ${{ needs.changelog.outputs.body || 'no changes, build skipped' }}
+            *Download URL:*
+            ${{ steps.urls.outputs.message }}

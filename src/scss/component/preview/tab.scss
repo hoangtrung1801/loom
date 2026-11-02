@@ -1,0 +1,26 @@
+
+.previewTab {
+    padding: 16px 32px 16px 16px; display: flex; flex-direction: column; gap: 14px;
+    min-width: 288px; max-width: 360px;
+}
+.previewTab {
+    .previewHeader,
+    .previewObject { display: flex; align-items: center; height: auto; flex-wrap: nowrap; }
+    .previewHeader,
+    .previewObject {
+    }
+
+    .previewHeader { gap: 0px 6px; }
+    .previewHeader {
+        .iconObject { border-radius: 3px; }
+        .name { @include text-small; font-weight: 500; }
+    }
+
+    .previewObject { gap: 0px 12px;  }
+    .previewObject {
+        .side.right { @include text-overflow-nw; }
+        .iconObject { border-radius: 8px !important; background-color: var(--color-shape-highlight-medium) !important; }
+        .name { font-weight: 500; @include text-overflow-nw; }
+        .type { @include text-small; color: var(--color-text-secondary); }
+    }
+}

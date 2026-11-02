@@ -1,0 +1,193 @@
+@import "~scss/_mixins";
+
+.menus {
+	.menu.menuDataviewFilterList {
+		.content { padding: 0px; overflow: visible; }
+		.wrap { height: 100%; display: flex; flex-direction: column; }
+		.items { flex-grow: 1; }
+
+		.filterItem { position: relative; display: flex; flex-direction: row; height: 28px; align-items: center; padding: 0px 16px; color: var(--color-text-secondary); }
+		.filterItem {
+			&::before {display: none; }
+
+			.filterInner {
+				display: flex; flex-direction: row; align-items: center;  gap: 0px 6px; border-radius: 16px;
+				@include text-common; padding: 0px 8px; height: 28px; max-width: calc(100% - 32px);
+
+				.icon { margin-right: 0px; }
+			}
+
+			.icon.filterIcon { width: 20px; height: 20px; margin-right: 0px; }
+
+			.icon.relation { width: 20px; height: 20px; }
+
+			.filterContent { display: flex; gap: 6px; align-items: center; @include text-overflow-nw; }
+			.value { @include text-overflow-nw; }
+
+			.label.condition { text-transform: lowercase; }
+
+			.icon.more { display: none; width: 20px; height: 20px; right: 16px; }
+
+			&:hover,
+			&.hover {
+				.filterInner { background-color: var(--color-shape-highlight-medium); }
+				.icon.more { display: flex; }
+			}
+
+			&.isActive {
+				.filterInner { color: var(--color-system-accent-100); background-color: var(--color-system-highlight); }
+				.relationName { font-weight: 500; }
+				.icon.hasSvg { color: var(--color-system-accent-100); }
+				.icon.relation { background-color: var(--color-system-accent-100); }
+
+				&:hover,
+				&.hover {
+					.filterInner { background-color: var(--color-system-selection); }
+				}
+			}
+		}
+	}
+
+	.menu.menuDataviewFilterAdvanced { width: unset; min-width: var(--menu-width-large); }
+	.menu.menuDataviewFilterAdvanced {
+		.content { padding-top: 0px; }
+		.wrap { height: 100%; display: flex; flex-direction: column; }
+		.items { flex-grow: 1; }
+
+		.item { padding: 4px 10px; position: relative; white-space: nowrap; display: flex; align-items: center; }
+		.item {
+			.grey { color: var(--color-control-active); }
+			.iconObject.mainIcon { margin-right: 10px; background-color: var(--color-shape-highlight-medium); }
+
+			.buttons { line-height: 44px; display: none; gap: 0px 8px; margin: 0px 0px 0px 8px; }
+			.buttons {
+				.icon { vertical-align: middle; opacity: 1; }
+			}
+
+			.select { overflow: hidden; border: 0px; padding: 0px; display: block; }
+			.select:hover, .select.isFocused { background: none; }
+			.select {
+				.icon.relation { display: none; }
+				.icon.arrow { display: none; }
+			}
+
+			.tagItem { margin: 1px 4px 0px 0px; vertical-align: top; }
+
+			.element { display: inline-block; vertical-align: top; margin-right: 4px; line-height: 22px; }
+			.element {
+				.iconObject { margin-right: 2px; }
+			}
+
+			.txt { line-height: 20px; height: 40px; display: flex; flex-direction: column; align-items: flex-start; flex-grow: 1; overflow: hidden; }
+			.txt {
+				> .name { @include text-overflow-nw; max-width: 100%; }
+				> .flex { line-height: 20px; max-width: 100%; }
+				> .name, > .flex { display: flex; align-items: center; }
+
+				.condition { color: var(--color-text-secondary); margin-right: 4px; }
+				.value { color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; }
+			}
+		}
+		.item.empty { margin: 8px 0px; padding: 14px 16px; }
+
+		.item:not(.isReadonly) {
+			.txt {
+				> .name::after, > .flex::after { content: ''; width: 20px; height: 20px; flex-shrink: 0; }
+			}
+		}
+
+		.item:not(.isReadonly):hover, 
+		.item:not(.isReadonly).hover 
+		{
+			.buttons { display: flex; }
+		}
+
+		.item.add { display: block; }
+		.item.add {
+			.icon.commonDnd { margin-top: 0px; }
+		}
+
+		.bottom {  padding: 0px; flex-shrink: 0; margin: 0px 8px; }
+		.bottom {
+			.item { padding: 4px 8px; }
+			.item::before { width: 100%; left: 0px; }
+		}
+	}
+
+	.menu.menuDataviewFilterValues { width: var(--menu-width-value); }
+	.menu.menuDataviewFilterValues {
+		.content { padding: 8px 0px 0px 0px; overflow: hidden; max-height: unset; }
+
+		&.compact {
+			.content { padding-bottom: 0px; }
+		}
+
+		.inner { padding-bottom: 0px; }
+		.inner.c-shortText,
+		.inner.c-longText,
+		.inner.c-number,
+		.inner.c-email,
+		.inner.c-phone,
+		.inner.c-url,
+		.inner.c-checkbox,
+		.inner.c-date { padding-bottom: 8px; }
+
+		.inner {
+			> .head { display: flex; align-items: center; justify-content: space-between; gap: 0px 4px; padding: 0px 10px; }
+			> .head {
+				.conditionSelect { padding: 4px 0px 4px 6px; border-radius: 6px; display: flex; align-items: center; gap: 4px; }
+				.conditionSelect {
+					.select {
+						.currentSelected { text-transform: lowercase; }
+						.icon.arrow { background-position: 50% 50%; background-size: 8px 8px; }
+					}
+				}
+				.conditionSelect:hover,
+				.conditionSelect.hover { background-color: var(--color-shape-highlight-medium); }
+				.conditionSelect:hover,
+				.conditionSelect.hover {
+					.select { background: none; }
+				}
+
+				.label { @include text-common; color: var(--color-text-primary); font-weight: 500; padding: 0px; margin: 0px; }
+				.select {
+					display: flex; border: 0px; padding: 0px; flex-shrink: 0;
+					background: none; color: var(--color-text-secondary);
+				}
+				.select {
+					.icon.arrow { position: static !important; margin: 0px !important; }
+				}
+			}
+			> .section {
+				&.noBorder::after { display: none; }
+
+				.tabSwitch { margin: 0px 16px; background: var(--color-shape-secondary); height: 28px; font-weight: 500; border-radius: 14px; }
+				.tabSwitch {
+					.highlight { box-shadow: inset 0px 0px 0px 2px var(--color-shape-secondary); }
+				}
+
+				.item {
+					.select { border: 0px; padding: 0px; display: block; width: 100%; }
+					.select:hover, .select.isFocused { background: none; }
+					.select.checkboxValue {
+						.item { @include text-common; }
+						.icon.arrow { right: -8px !important; }
+					}
+				}
+
+				.calendarSelect {
+					.head, .body { padding: 0px 16px; }
+					.day.weekend:not(.active) { background: none; }
+				}
+
+				.textInputWrapper { position: relative; margin: 0px 16px 4px 16px; }
+				.textInputWrapper {
+					.input { padding: 6px 28px 8px 12px; }
+					.input.isFocused { border-color: var(--color-shape-primary); background-color: var(--color-shape-highlight-medium); }
+
+					.icon.commonClose { position: absolute; top: 8px; right: 8px; }
+				}
+			}
+		}
+	}
+}

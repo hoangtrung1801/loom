@@ -1,0 +1,254 @@
+import React, { forwardRef, useEffect, useRef } from 'react';
+import raf from 'raf';
+import { Dimmer } from 'Component';
+import DimmerWithGraph from './dimmerWithGraph';
+
+import PopupSettingsOnboarding from './settings/onboarding';
+import PopupSearch from './search';
+import PopupHelp from './help';
+import PopupPreview from './preview';
+import PopupConfirm from './confirm';
+import PopupShortcut from './shortcut';
+import PopupPage from './page';
+import PopupExport from './export';
+import PopupExportResult from './exportResult';
+import PopupPin from './pin';
+import PopupPhrase from './phrase';
+import PopupObjectManager from './objectManager';
+import PopupCleanup from './cleanup';
+import PopupUsecase from './usecase';
+import PopupAbout from './about';
+import PopupRelation from './relation';
+import PopupInviteRequest from './invite/request';
+import PopupInviteConfirm from './invite/confirm';
+import PopupInviteQr from './invite/qr';
+import PopupInviteManage from './invite/manage';
+import PopupInviteAdd from './invite/add';
+import PopupMembershipActivation from './membership/activation';
+import PopupMembershipFinalization from './membership/finalization';
+import PopupShare from './share';
+import PopupSpaceCreate from './space/create';
+import PopupSpaceHome from './space/home';
+import PopupLogout from './logout';
+import PopupOnboarding from './onboarding';
+import PopupApiCreate from './api/create';
+import PopupAIOnboarding from './aiOnboarding';
+import PopupIntroduceChats from './introduceChats';
+import PopupUpload from './upload';
+import PopupSubmitReport from './submitReport';
+import * as I from 'Interface';
+import Storage from 'Lib/storage';
+
+const Popup = forwardRef<{}, I.Popup>((props, ref) => {
+
+	const { id, param } = props;
+	const { onOpen } = param;
+	const nodeRef = useRef(null);
+	const childRef = useRef(null);
+	const isAnimatingRef = useRef(false);
+
+	const getId = (): string => {
+		return U.String.toCamelCase(`popup-${id}`);
+	};
+
+	const storageGet = () => {
+		return Storage.get(getId()) || {};
+	};
+
+	const storageSet = (data: any) => {
+		const current = storageGet();
+		Storage.set(getId(), Object.assign(current, data));
+	};
+
+	const close = (callBack?: () => void) => {
+		const { preventMenuClose } = param;
+
+		Preview.previewHide(true);
+		Preview.tooltipHide(true);
+
+		if (!preventMenuClose) {
+			S.Menu.closeAll();
+		};
+
+		S.Popup.close(id, callBack);
+	};
+
+	const onDimmer = () => {
+		if (!param.preventCloseByClick) {
+			close();
+		};
+	};
+
+	const resizeHandler = useRef<() => void>(null);
+
+	const rebind = () => {
+		unbind();
+
+		if (!param.preventResize) {
+			resizeHandler.current = () => position();
+			U.Dom.addEvent(window, 'resize', resizeHandler.current);
+		};
+	};
+
+	const unbind = () => {
+		if (resizeHandler.current) {
+			U.Dom.removeEvent(window, 'resize', resizeHandler.current);
+			resizeHandler.current = null;
+		};
+	};
+
+	const animate = () => {
+		raf(() => {
+			if (isAnimatingRef.current) {
+				return;
+			};
+
+			isAnimatingRef.current = true;
+
+			U.Dom.addClass(nodeRef.current, 'show');
+			window.setTimeout(() => { isAnimatingRef.current = false; }, S.Popup.getTimeout());
+		});
+	};
+
+	const position = () => {
+		childRef.current?.beforePosition?.();
+
+		raf(() => {
+			const node = nodeRef.current;
+			if (!node) {
+				return;
+			};
+
+			const inner = U.Dom.select('.innerWrap', node);
+			if (!inner) {
+				return;
+			};
+
+			const { ww } = U.Dom.getWindowDimensions();
+			const width = inner.offsetWidth;
+			const height = inner.offsetHeight;
+
+			let sw = 0;
+			if (S.Popup.noDimmerIds().includes(id)) {
+				sw = sidebar.getDummyWidth();
+			};
+
+			let x = (ww - sw) / 2 - width / 2 + sw;
+			if (width >= ww - sw) {
+				x -= sw / 2;
+			};
+
+			U.Dom.css(inner, { left: `${x}px`, marginTop: `${-height / 2}px` });
+		});
+	};
+
+	const getContext = () => ({
+		getChildRef: () => childRef.current,
+		close,
+		getId,
+		props,
+	});
+
+	useEffect(() => {
+		if (!param.preventResize) {
+			position();
+		};
+
+		rebind();
+		animate();
+		onOpen?.(getContext());
+
+		analytics.event('popup', { params: { id } });
+
+		return () => {
+			unbind();
+		};
+	}, []);
+
+	const { className } = param;
+
+	const Components: any = {
+		settingsOnboarding:		 PopupSettingsOnboarding,
+		search:					 PopupSearch,
+		confirm:				 PopupConfirm,
+		help:					 PopupHelp,
+		preview:				 PopupPreview,
+		shortcut:				 PopupShortcut,
+		page:					 PopupPage,
+		export:					 PopupExport,
+		exportResult:			 PopupExportResult,
+		pin:					 PopupPin,
+		phrase:					 PopupPhrase,
+		objectManager:			 PopupObjectManager,
+		cleanup:				 PopupCleanup,
+		usecase:				 PopupUsecase,
+		about:					 PopupAbout,
+		relation:				 PopupRelation,
+		inviteRequest:			 PopupInviteRequest,
+		inviteConfirm:			 PopupInviteConfirm,
+		inviteQr:				 PopupInviteQr,
+		inviteManage:			 PopupInviteManage,
+		inviteAdd:				 PopupInviteAdd,
+		membershipActivation: 	 PopupMembershipActivation,
+		membershipFinalization:  PopupMembershipFinalization,
+		share:					 PopupShare,
+		spaceCreate:			 PopupSpaceCreate,
+		spaceHome:				 PopupSpaceHome,
+		logout: 				 PopupLogout,
+		onboarding:				 PopupOnboarding,
+		apiCreate:				 PopupApiCreate,
+		aiOnboarding:			 PopupAIOnboarding,
+		introduceChats:			 PopupIntroduceChats,
+		upload:					 PopupUpload,
+		submitReport:			 PopupSubmitReport,
+	};
+	
+	const popupId = getId();
+	const Component = Components[id];
+	const cn = [ 'popup', popupId ];
+
+	if (className) {
+		cn.push(className);
+	};
+
+	if (!S.Popup.noDimmerIds().includes(id)) {
+		cn.push('showDimmer');
+	};
+	
+	if (!Component) {
+		return <div>{U.String.sprintf(translate('popupIndexComponentNotFound'), id)}</div>;
+	};
+
+	let dimmer = null;
+	if (id == 'aiOnboarding') {
+		dimmer = <DimmerWithGraph onClick={onDimmer} />;
+	} else {
+		dimmer = <Dimmer onMouseDown={onDimmer} />;
+	};
+
+	return (
+		<div 
+			ref={nodeRef}
+			id={popupId} 
+			className={cn.join(' ')}
+		>
+			<div id={`${popupId}-innerWrap`} className="innerWrap">
+				<div className="content">
+					<Component 
+						{...props}
+						ref={childRef}
+						position={position} 
+						close={close}
+						storageGet={storageGet}
+						storageSet={storageSet}
+						getId={getId} 
+					/>
+				</div>
+			</div>
+			{dimmer}
+		</div>
+	);
+	
+});
+
+export default Popup;

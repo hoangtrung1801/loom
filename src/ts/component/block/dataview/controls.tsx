@@ -1,0 +1,772 @@
+import React, { forwardRef, useEffect, useRef, useImperativeHandle, useState } from 'react';
+import { observable } from 'mobx';
+import { DndContext, closestCenter, useSensors, useSensor, PointerSensor, KeyboardSensor } from '@dnd-kit/core';
+import { SortableContext, horizontalListSortingStrategy, sortableKeyboardCoordinates, arrayMove, useSortable } from '@dnd-kit/sortable';
+import { restrictToHorizontalAxis, restrictToFirstScrollableAncestor } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
+import { Icon, Button, Filter, DropTarget } from 'Component';
+import Head from './head';
+import * as I from 'Interface';
+import * as M from 'Model';
+import Storage from 'Lib/storage';
+
+interface Props extends I.ViewComponent {
+	onFilterChange?: (v: string) => void; 
+};
+
+interface ControlsRefProps {
+	onViewSettings: () => void;
+	toggleHoverArea: (v: boolean) => void,
+	resize: () => void,
+	getHeadRef: () => any,
+	getNode: () => any,
+};
+
+const Controls = forwardRef<ControlsRefProps, Props>((props, ref) => {
+
+	const { 
+		className, rootId, block, isInline, isPopup, isCollection, readonly, getSources, onFilterChange, getTarget, getTypeId, getView, onRecordAdd, onTemplateMenu,
+		loadData, getVisibleRelations, getTemplateId, isAllowedDefaultType, onTemplateAdd, onSortAdd, onFilterAdd, onFilterAddClick, toggleFilters, closeFilters,
+	} = props;
+	const target = getTarget();
+	const views = S.Record.getViews(rootId, block.id);
+	const view = getView();
+	const sortCnt = Dataview.getFilteredSorts(view.sorts).length;
+	const allowedView = !readonly && S.Block.checkFlags(rootId, block.id, [ I.RestrictionDataview.View ]);
+	const cn = [ 'dataviewControls' ];
+	const buttonWrapCn = [ 'buttonWrap' ];
+	const isAllowedObject = props.isAllowedObject();
+	const tooltip = Dataview.getCreateTooltip(rootId, block.id, target.id, view.id);
+	const isAllowedTemplate = U.Object.isAllowedTemplate(getTypeId()) || isCollection;
+
+	const sensors = useSensors(
+		useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
+		useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+	);
+
+	const nodeRef = useRef(null);
+	const filterRef = useRef(null);
+	const headRef = useRef(null);
+	const head = isInline ? <Head ref={headRef} {...props} /> : null;
+	const collapsedKey = `controls-collapsed-${block.id}`;
+	const [ isCollapsed, setIsCollapsed ] = useState(() => isInline ? Storage.checkToggle(rootId, collapsedKey) : false);
+
+	if (isInline) {
+		cn.push('isInline');
+	};
+
+	if (isAllowedTemplate) {
+		buttonWrapCn.push('withSelect');
+	};
+
+	if (className) {
+		cn.push(className);
+	};
+
+	const collapsibleRef = useRef(null);
+	const collapseEndRef = useRef<(() => void) | null>(null);
+
+	const getCollapsibleWidth = (el: HTMLElement): number => {
+		const children = Array.from(el.children) as HTMLElement[];
+		const gap = 4;
+		let width = 0;
+
+		children.forEach((child, i) => {
+			width += child.offsetWidth;
+			if (i < children.length - 1) {
+				width += gap;
+			};
+		});
+
+		return width;
+	};
+
+	const onToggleCollapse = () => {
+		const el = collapsibleRef.current as HTMLElement;
+
+		if (!el) {
+			return;
+		};
+
+		if (collapseEndRef.current) {
+			el.removeEventListener('transitionend', collapseEndRef.current);
+			el.style.width = '';
+			collapseEndRef.current = null;
+		};
+
+		const onEnd = () => {
+			el.style.width = '';
+			el.removeEventListener('transitionend', onEnd);
+			collapseEndRef.current = null;
+		};
+
+		if (isCollapsed) {
+			U.Dom.removeClass(el, 'isCollapsed');
+			void el.offsetWidth;
+			const width = getCollapsibleWidth(el);
+
+			setIsCollapsed(false);
+			Storage.setToggle(rootId, collapsedKey, false);
+
+			el.style.width = '0px';
+			void el.offsetWidth;
+			el.style.width = `${width}px`;
+		} else {
+			el.style.width = `${el.offsetWidth}px`;
+			void el.offsetWidth;
+			el.style.width = '0px';
+
+			setIsCollapsed(true);
+			Storage.setToggle(rootId, collapsedKey, true);
+			U.Dom.addClass(el, 'isCollapsed');
+
+			collapseEndRef.current = onEnd;
+			el.addEventListener('transitionend', onEnd);
+		};
+	};
+
+	const onViewSwitch = (view: any) => {
+		onViewSet(view);
+
+		window.setTimeout(() => {
+			const btn = U.Dom.get(`button-${block.id}-settings`);
+			btn?.click();
+		}, 50);
+	};
+
+	const onViewCopy = (view) => {
+		const object = getTarget();
+		const sources = getSources();
+
+		Dataview.duplicateView(rootId, block.id, { ...view, name: view.name }, sources, (message: any) => {
+			onViewSwitch({ id: message.viewId, type: view.type });
+
+			analytics.event('DuplicateView', {
+				type: view.type,
+				objectType: object.type,
+				embedType: analytics.embedType(isInline)
+			});
+		});
+	};
+
+	const onViewRemove = (view) => {
+		const views = S.Record.getViews(rootId, block.id);
+		const object = getTarget();
+		const idx = views.findIndex(it => it.id == view.id);
+		const filtered = views.filter(it => it.id != view.id);
+		const current = getView();
+
+		let next = idx >= 0 ? filtered[idx] : filtered[0];
+		if (!next) {
+			next = filtered[filtered.length - 1];
+		};
+
+		if (next) {
+			C.BlockDataviewViewDelete(rootId, block.id, view.id, () => {
+				if (view.id == current.id) {
+					onViewSet(next);
+				};
+
+				analytics.event('RemoveView', {
+					objectType: object.type,
+					embedType: analytics.embedType(isInline)
+				});
+			});
+		};
+	};
+
+	const onButton = (element: string, component: string) => {
+		if (!component) {
+			return;
+		};
+
+		const view = getView();
+		const toggleParam = {
+			onOpen: () => toggleHoverArea(true),
+			onClose: () => toggleHoverArea(false),
+		};
+		const isFilter = component == 'dataviewFilterList';
+		const isSort = component == 'dataviewSort';
+
+		if (!readonly && isFilter) {
+			const items = Dataview.getFilteredFilters(view.filters);
+
+			if (items.length) {
+				toggleFilters();
+			} else {
+				onFilterAddClick({
+					classNameWrap: 'fromBlock',
+					element,
+					horizontal: I.MenuDirection.Center,
+					offsetY: 10,
+					noFlipY: true,
+				});
+			};
+			return;
+		};
+
+		if (!readonly && isSort) {
+			if (Dataview.getFilteredSorts(view.sorts).length) {
+				toggleFilters();
+			} else {
+				sortOrFilterRelationSelect(component, { ...toggleParam, element }, () => {
+					const filtersId = U.String.toCamelCase(`view-${view.id}-filters`);
+					if (!Storage.checkToggle(rootId, filtersId)) {
+						toggleFilters();
+					};
+				});
+			};
+			return;
+		};
+
+		const param: any = {
+			...toggleParam,
+			classNameWrap: 'fromBlock',
+			element,
+			horizontal: I.MenuDirection.Center,
+			offsetY: 10,
+			noFlipY: true,
+			onBack: (id: string) => {
+				const menu = S.Menu.get(id);
+
+				if (menu) {
+					const view = U.Common.objectCopy(menu.param.data.view.get());
+					param.data.view = observable.box(new M.View(view));
+				};
+
+				S.Menu.replace(id, component, { ...param, noAnimation: true });
+				window.setTimeout(() => S.Menu.update(component, { noAnimation: false }), J.Constant.delay.menu);
+			},
+			data: {
+				readonly,
+				rootId,
+				blockId: block.id,
+				view: observable.box(view),
+				isInline,
+				isCollection,
+				loadData,
+				getView,
+				getSources,
+				getVisibleRelations,
+				getTarget,
+				getTypeId,
+				getTemplateId,
+				isAllowedDefaultType,
+				onTemplateAdd,
+				onSortAdd,
+				onFilterAdd,
+				closeFilters,
+				onViewSwitch,
+				onViewCopy,
+				onViewRemove,
+			},
+		};
+
+		if (component == 'dataviewViewSettings') {
+			param.title = translate('menuDataviewViewSettings');
+		};
+
+		if (S.Menu.isOpen('select')) {
+			S.Menu.close('select');
+		};
+		S.Menu.open(component, param);
+	};
+
+	const sortOrFilterRelationSelect = (component: string, menuParam: Partial<I.MenuParam>, callBack?: () => void) => {
+		menuParam.classNameWrap = String(menuParam.classNameWrap || '');
+		menuParam.classNameWrap = [ menuParam.classNameWrap, 'fromBlock' ].join(' ');
+
+		U.Menu.sortOrFilterRelationSelect(menuParam, {
+			rootId,
+			blockId: block.id,
+			getView,
+			onSelect: item => onSortOrFilterAdd(item, component, callBack),
+		});
+	};
+
+	const onSortOrFilterAdd = (item: any, component: string, callBack: () => void) => {
+		let newItem: any = {
+			relationKey: item.relationKey ? item.relationKey : item.id
+		};
+
+		switch (component) {
+			case 'dataviewSort': {
+				newItem = Object.assign(newItem, {
+					type: I.SortType.Asc,
+					empty: I.EmptyType.End,
+				});
+
+				onSortAdd(newItem, callBack);
+				break;
+			};
+
+			case 'dataviewFilterList': {
+				newItem = Object.assign(newItem, Dataview.getDefaultFilterValues(item));
+
+				onFilterAdd(newItem, callBack);
+				break;
+			};
+		};
+	};
+
+	const onViewAdd = (e: any) => {
+		e.persist();
+
+		const sources = getSources();
+		const object = getTarget();
+		const view = getView();
+		const type = S.Record.getTypeById(object.type);
+		
+		let viewType = I.ViewType.Grid;
+		if (type && (undefined !== type.defaultViewType)) {
+			viewType = type.defaultViewType;
+		};
+
+		const newView = {
+			...view,
+			id: '',
+			name: translate(`viewName${viewType}`),
+			type: viewType,
+			groupRelationKey: Relation.getGroupOption(rootId, block.id, viewType, '')?.id,
+			endRelationKey: Relation.getGroupOption(rootId, block.id, viewType, '')?.id,
+			cardSize: view.cardSize || I.CardSize.Medium,
+			filters: [],
+			sorts: [],
+		};
+
+		C.BlockDataviewViewCreate(rootId, block.id, newView, sources, (message: any) => {
+			if (message.error.code) {
+				return;
+			};
+
+			const view = S.Record.getView(rootId, block.id, message.viewId);
+			if (!view) {
+				return;
+			};
+
+			resize();
+			onViewSwitch(view);
+
+			analytics.event('AddView', {
+				type: view.type,
+				objectType: object.type,
+				embedType: analytics.embedType(isInline)
+			});
+		});
+	};
+
+	const onViewSet = (view: any) => {
+		const subId = S.Record.getSubId(rootId, block.id);
+		const object = getTarget();
+
+		S.Record.metaSet(subId, '', { viewId: view.id });
+		C.BlockDataviewViewSetActive(rootId, block.id, view.id);
+
+		analytics.event('SwitchView', {
+			type: view.type,
+			objectType: object.type,
+			embedType: analytics.embedType(isInline)
+		});
+	};
+
+	const onViewContext = (e: any, element: string, view: any) => {
+		e.stopPropagation();
+
+		if (readonly) {
+			return;
+		};
+
+		onViewSet(view);
+		U.Menu.viewContextMenu({
+			rootId,
+			blockId: block.id,
+			view,
+			onCopy: onViewCopy,
+			onRemove: onViewRemove,
+			menuParam: {
+				classNameWrap: 'fromBlock',
+				element,
+				offsetY: 4,
+				horizontal: I.MenuDirection.Center,
+				noFlipY: true,
+			}
+		});
+	};
+
+	const onViewSettings = () => {
+		onButton(`#button-${U.Common.esc(block.id)}-settings`, 'dataviewViewSettings');
+	};
+
+	const onSortStart = () => {
+		keyboard.disableSelection(true);
+	};
+
+	const onSortEnd = (result: any) => {
+		const { active, over } = result;
+
+		if (!active || !over) {
+			return;
+		};
+
+		const object = getTarget();
+		const views = S.Record.getViews(rootId, block.id);
+		const ids = views.map(it => it.id);
+		const oldIndex = ids.indexOf(active.id);
+		const newIndex = ids.indexOf(over.id);
+		const view = views[oldIndex];
+
+		S.Record.viewsSort(rootId, block.id, arrayMove(views.map(it => it.id), oldIndex, newIndex));
+
+		C.BlockDataviewViewSetPosition(rootId, block.id, view.id, newIndex, () => {
+			analytics.event('RepositionView', {
+				objectType: object.type,
+				embedType: analytics.embedType(isInline)
+			});
+		});
+
+		keyboard.disableSelection(false);
+	};
+
+	const filterMouseDownHandler = useRef<((e: any) => void) | null>(null);
+
+	const filterKeydownHandler = useRef<((e: any) => void) | null>(null);
+
+	const onFilterShow = () => {
+		if (!filterRef.current) {
+			return;
+		};
+
+		const container = U.Dom.getPageFlexContainer(isPopup);
+
+		filterRef.current.setActive(true);
+		toggleHoverArea(true);
+
+		if (!isInline) {
+			filterRef.current?.focus();
+		};
+
+		if (filterMouseDownHandler.current && container) {
+			U.Dom.removeEvent(container, 'mousedown', filterMouseDownHandler.current);
+		};
+
+		filterMouseDownHandler.current = (e: any) => {
+			const value = filterRef.current.getValue();
+
+			if (!value && !(e.target as HTMLElement)?.closest('.filter')) {
+				onFilterHide();
+				if (container) {
+					U.Dom.removeEvent(container, 'mousedown', filterMouseDownHandler.current);
+				};
+			};
+		};
+
+		if (container) {
+			U.Dom.addEvent(container, 'mousedown', filterMouseDownHandler.current);
+		};
+
+		if (filterKeydownHandler.current) {
+			U.Dom.removeEvent(window, 'keydown', filterKeydownHandler.current);
+		};
+		filterKeydownHandler.current = (e: any) => {
+			e.stopPropagation();
+
+			if (!isPopup && !keyboard.isPopup()) {
+				keyboard.shortcut('escape', e, () => {
+					onFilterHide();
+					U.Dom.removeEvent(window, 'keydown', filterKeydownHandler.current);
+				});
+			};
+		};
+		U.Dom.addEvent(window, 'keydown', filterKeydownHandler.current);
+	};
+
+	const onFilterHide = () => {
+		if (!filterRef.current) {
+			return;
+		};
+
+		filterRef.current.setActive(false);
+		filterRef.current.setValue('');
+		filterRef.current.blur();
+
+		toggleHoverArea(false);
+		onFilterChange('');
+	};
+
+	const toggleHoverArea = (v: boolean) => {
+		const blockEl = U.Dom.get(`block-${block.id}`);
+		const hoverArea = U.Dom.select('.hoverArea', blockEl);
+		U.Dom.toggleClass(hoverArea, 'active', v);
+	};
+
+	const resize = () => {
+		const node = nodeRef.current as HTMLElement;
+		if (!node) {
+			return;
+		};
+
+		const sideLeft = U.Dom.select('#dataviewControlsSideLeft', node);
+		const sideRight = U.Dom.select('#dataviewControlsSideRight', node);
+		const nw = node.offsetWidth;
+
+		U.Dom.removeClass(node, 'small');
+
+		// Temporarily disable flex-grow on sideLeft to measure natural content width
+		// With flex-grow: 1, sideLeft expands to fill all space, making the measurement
+		// equal to container width regardless of actual content, which breaks at non-standard zoom levels
+		if (sideLeft) {
+			U.Dom.css(sideLeft, { flexGrow: '0' });
+		};
+
+		// Force synchronous reflow before measuring widths
+		void node.offsetWidth;
+
+		let rightWidth = sideRight?.offsetWidth ?? 0;
+
+		if (isInline && sideRight) {
+			const collapsible = U.Dom.select('.collapsible', sideRight);
+			rightWidth -= collapsible?.offsetWidth ?? 0;
+		};
+
+		const width = Math.ceil((sideLeft?.offsetWidth ?? 0) + rightWidth);
+
+		if (sideLeft) {
+			U.Dom.css(sideLeft, { flexGrow: '' });
+		};
+
+		if (width + 16 > nw) {
+			U.Dom.addClass(node, 'small');
+		} else
+		if (S.Menu.isOpen('dataviewViewList')) {
+			S.Menu.closeAll([ 'dataviewViewList' ]);
+		};
+	};
+
+	const collapsibleButtons = [
+		{ id: 'filter', name: 'control/dataview/filter', text: translate('blockDataviewControlsFilters'), menu: 'dataviewFilterList', on: Dataview.getActiveFilters(view).length },
+		{ id: 'sort', name: 'common/sort', text: translate('blockDataviewControlsSorts'), menu: 'dataviewSort', on: sortCnt > 0 },
+	];
+	const persistentButtons = [
+		{ id: 'settings', name: 'common/options', text: translate('blockDataviewControlsSettings'), menu: 'dataviewViewSettings' },
+	];
+
+	const ButtonItem = (item: any) => {
+		const elementId = `button-${block.id}-${item.id}`;
+		const cn = [ `btn-${item.id}` ];
+
+		if (item.on) {
+			cn.push('on');
+		};
+
+		return (
+			<Icon
+				id={elementId}
+				name={item.name}
+				className={cn.join(' ')} withBackground={true}
+				tooltipParam={{ text: item.text }}
+				onClick={() => onButton(`#${elementId}`, item.menu)}
+			/>
+		);
+	};
+
+	const ViewItem = (item: any) => {
+		const { attributes, listeners, transform, transition, setNodeRef } = useSortable({ id: item.id, disabled: item.disabled });
+		const elementId = `view-item-${block.id}-${item.id}`;
+		const cn = [ 'viewItem' ];
+
+		if (transform) {
+			transform.scaleX = 1;
+			transform.scaleY = 1;
+		};
+
+		const style = {
+			transform: CSS.Transform.toString(transform),
+			transition,
+		};
+
+		if (item.id == view.id) {
+			cn.push('active');
+		};
+
+		return (
+			<DropTarget {...props} rootId={rootId} id={item.id} dropType={I.DropType.View} canDropMiddle={true}>
+				<div 
+					id={elementId} 
+					className={cn.join(' ')} 
+					onClick={() => onViewSet(item)} 
+					onContextMenu={e => onViewContext(e, `#views #${elementId}`, item)}
+					ref={setNodeRef}
+					{...attributes}
+					{...listeners}
+					style={style}
+				>
+					{item.name || translate('defaultNamePage')}
+				</div>
+			</DropTarget>
+		);
+	};
+
+	useEffect(() => {
+
+		return () => {
+			const container = U.Dom.getPageFlexContainer(isPopup);
+
+			if (filterMouseDownHandler.current && container) {
+				U.Dom.removeEvent(container, 'mousedown', filterMouseDownHandler.current);
+			};
+			if (filterKeydownHandler.current) {
+				U.Dom.removeEvent(window, 'keydown', filterKeydownHandler.current);
+			};
+		};
+
+	}, []);
+
+	useEffect(() => {
+		const el = collapsibleRef.current as HTMLElement;
+
+		if (!el) {
+			return;
+		};
+
+		if (isCollapsed) {
+			U.Dom.addClass(el, 'isCollapsed');
+		} else {
+			el.style.width = `${getCollapsibleWidth(el)}px`;
+		};
+	}, []);
+
+	useEffect(() => resize());
+
+	useImperativeHandle(ref, () => ({
+		onViewSettings,
+		toggleHoverArea,
+		resize,
+		getHeadRef: () => headRef.current,
+		getNode: () => nodeRef.current,
+	}));
+
+	return (
+		<div
+			ref={nodeRef}
+			id="dataviewControls"
+			className={cn.join(' ')}
+		>
+			{head}
+			<div className="sides">
+				<div id="dataviewControlsSideLeft" className="side left">
+					<div 
+						id="view-selector"
+						className="viewSelect viewItem select"
+						onClick={() => onButton(`#block-${U.Common.esc(block.id)} #view-selector`, 'dataviewViewList')}
+						onContextMenu={(e: any) => onViewContext(e, `#block-${U.Common.esc(block.id)} #view-selector`, view)}
+					>
+						<div className="name">{view.name}</div>
+						<Icon name="arrow/select" className="arrow dark" />
+					</div>
+
+					<DndContext
+						sensors={sensors}
+						collisionDetection={closestCenter}
+						onDragStart={onSortStart}
+						onDragEnd={onSortEnd}
+						modifiers={[ restrictToHorizontalAxis, restrictToFirstScrollableAncestor ]}
+					>
+						<SortableContext
+							items={views.map(it => it.id)}
+							strategy={horizontalListSortingStrategy}
+						>
+							<div id="views" className="views">
+								{views.map((item: I.View, i: number) => (
+									<ViewItem key={i} {...item} index={i} disabled={readonly} />
+								))}
+
+								{allowedView ? (
+									<Icon
+										id={`button-${block.id}-view-add`}
+										name="plus/menu" className="plus" withBackground={true}
+										tooltipParam={{ text: translate('blockDataviewControlsViewAdd') }}
+										onClick={onViewAdd} /> 
+								) : ''}
+							</div>
+						</SortableContext>
+					</DndContext>
+				</div>
+
+				<div id="dataviewControlsSideRight" className="side right">
+					{isInline ? (
+						<>
+							<Icon
+								className={[ 'expandControls', (isCollapsed ? 'isCollapsed' : '') ].join(' ')}
+								name="arrow/doubleChevron"
+								size={28}
+								withBackground={true}
+								onClick={onToggleCollapse}
+							/>
+							<div ref={collapsibleRef} className="collapsible">
+								<Filter
+									ref={filterRef}
+									placeholder={translate('blockDataviewSearch')}
+									iconParam={{ name: 'common/search' }}
+									tooltipParam={{ text: translate('commonSearch'), caption: keyboard.getCaption('searchText') }}
+									onChange={onFilterChange}
+									onIconClick={onFilterShow}
+								/>
+
+								{collapsibleButtons.map((item: any, i: number) => (
+									<ButtonItem key={item.id} {...item} />
+								))}
+							</div>
+						</>
+					) : (
+						<>
+							<Filter
+								ref={filterRef}
+								placeholder={translate('blockDataviewSearch')}
+								iconParam={{ name: 'common/search' }}
+								tooltipParam={{ text: translate('commonSearch'), caption: keyboard.getCaption('searchText') }}
+								onChange={onFilterChange}
+								onIconClick={onFilterShow}
+							/>
+
+							{collapsibleButtons.map((item: any, i: number) => (
+								<ButtonItem key={item.id} {...item} />
+							))}
+						</>
+					)}
+
+					{persistentButtons.map((item: any, i: number) => (
+						<ButtonItem key={item.id} {...item} />
+					))}
+
+					{isAllowedObject ? (
+						<div className={buttonWrapCn.join(' ')}>
+							<Button
+								id={`button-${block.id}-add-record`}
+								color="accent"
+								className="addRecord"
+								size={28}
+								tooltipParam={{ text: tooltip }}
+								text={translate('commonNew')}
+								onClick={e => onRecordAdd(e, -1)}
+							/>
+							{isAllowedTemplate ? (
+								<Button
+									id={`button-${block.id}-add-record-select`}
+									color="accent"
+									iconParam={{ name: 'arrow/button', color: 'white', size: 8 }}
+									className="isArrow"
+									size={28}
+									tooltipParam={{ text: translate('blockDataviewShowTemplates') }}
+									onClick={e => onTemplateMenu(e, -1)}
+								/>
+							) : ''}
+						</div>
+					) : ''}
+				</div>
+			</div>
+		</div>
+	);
+
+});
+
+export default Controls;

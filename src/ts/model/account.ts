@@ -1,0 +1,103 @@
+import { observable, makeObservable } from 'mobx';
+import * as I from 'Interface';
+
+class AccountInfo implements I.AccountInfo {
+	
+	profileObjectId = '';
+	gatewayUrl = '';
+	deviceId = '';
+	accountSpaceId = '';
+	techSpaceId = '';
+	spaceViewId = '';
+	widgetsId = '';
+	analyticsId = '';
+	networkId = '';
+	workspaceObjectId = '';
+	ethereumAddress = '';
+	metadataKey = '';
+	
+	constructor (props: I.AccountInfo) {
+		this.profileObjectId = String(props.profileObjectId || '');
+		this.gatewayUrl = String(props.gatewayUrl || '');
+		this.deviceId = String(props.deviceId || '');
+		this.accountSpaceId = String(props.accountSpaceId || '');
+		this.techSpaceId = String(props.techSpaceId || '');
+		this.spaceViewId = String(props.spaceViewId || '');
+		this.widgetsId = String(props.widgetsId || '');
+		this.analyticsId = String(props.analyticsId || '');
+		this.networkId = String(props.networkId || '');
+		this.workspaceObjectId = String(props.workspaceObjectId || '');
+		this.ethereumAddress = String(props.ethereumAddress || '');
+		this.metadataKey = String(props.metadataKey || '');
+
+		makeObservable(this, {
+			profileObjectId: observable,
+			gatewayUrl: observable,
+			deviceId: observable,
+			accountSpaceId: observable,
+			techSpaceId: observable,
+			spaceViewId: observable,
+			widgetsId: observable,
+			analyticsId: observable,
+			networkId: observable,
+			workspaceObjectId: observable,
+			ethereumAddress: observable,
+			metadataKey: observable,
+		});
+
+		return this;
+	};
+
+};
+
+class AccountConfig implements I.AccountConfig {
+	
+	constructor (props: I.AccountConfig) {
+		return this;
+	};
+
+};
+
+class AccountStatus implements I.AccountStatus {
+	
+	type: I.AccountStatusType = I.AccountStatusType.Active;
+	date = 0;
+	
+	constructor (props: I.AccountStatus) {
+		this.type = Number(props.type) || I.AccountStatusType.Active;
+		this.date = Number(props.date) || 0;
+
+		makeObservable(this, {
+			type: observable,
+			date: observable,
+		});
+
+		return this;
+	};
+
+};
+
+class Account implements I.Account {
+	
+	id = '';
+	info: I.AccountInfo = null;
+	config: I.AccountConfig = null;
+	status: I.AccountStatus = null;
+	
+	constructor (props: I.Account) {
+		this.id = String(props.id || '');
+		this.info = new AccountInfo(props.info);
+		this.config = new AccountConfig(props.config);
+		this.status = new AccountStatus(props.status);
+
+		makeObservable(this, {
+			id: observable,
+			status: observable,
+		});
+
+		return this;
+	};
+
+};
+
+export default Account;

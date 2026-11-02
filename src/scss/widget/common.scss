@@ -1,0 +1,153 @@
+@import "~scss/_mixins";
+
+.widget { background: var(--color-shape-highlight-light); border-radius: 12px; transform: translate(0px, 0px); position: relative; }
+.widget:last-child { margin: 0px; }
+.widget {
+	.head { padding: 8px; }
+	.head {
+		.sides { width: 100%; position: relative; display: flex; flex-direction: row; align-items: center; gap: 0px 8px; padding: 0px 4px 0px 8px; }
+		.side.left { flex-grow: 1; display: flex; flex-direction: row; align-items: center; gap: 0px 4px; overflow: hidden; height: 28px; }
+		.side.right { flex-shrink: 0; }	
+
+		.sides::after { 
+			opacity: 0; content: ''; width: 100%; height: 100%; left: 0px; top: 0px; border-radius: 6px; z-index: 1;
+			pointer-events: none; position: absolute; transition: opacity $transitionCommon; background: var(--color-shape-highlight-medium);
+		}
+		.sides:hover::after { opacity: 1; }
+
+		.clickable { font-weight: 600; display: flex; flex-direction: row; align-items: center; gap: 0px 6px; position: relative; overflow: hidden; }
+		.clickable {
+			.icon { width: 20px; height: 20px; }
+			.name { @include text-overflow-nw; }
+			.count { color: var(--color-text-secondary); }
+		}
+		.clickable:hover {
+			.iconWrap.collapse { opacity: 1; }
+			.headerIcon { opacity: 0; }
+		}
+
+		.iconWrap { width: 28px; height: 28px; border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+		.iconWrap.collapse { opacity: 0; width: 20px; height: 20px; z-index: 2; }
+
+		.iconAnimationWrapper { position: relative; width: 20px; height: 20px; flex-shrink: 0; }
+		.iconWrap.collapse, .headerIcon { 
+			transition: opacity 0.1s $easeInQuint; position: absolute; left: 50%; top: 50%; transform: translate3d(-50%, -50%, 0px);
+		}
+
+		.icon { width: 20px; height: 20px; }
+		.icon.collapse.isClosed { transform: rotateZ(-90deg); }
+
+		.buttons { flex-shrink: 0; flex-direction: row; align-items: center; display: none; position: relative; z-index: 2; }
+		.buttons.active { display: flex; }
+
+		.buttons {
+			.iconWrap:hover .icon.hasSvg { color: var(--color-text-primary); }
+		}
+	}
+
+	&.active, &:hover {
+		.head { padding-right: 8px; }
+	}
+
+	&.withButtons {
+		&.active, &:hover {
+			.head {
+				.counters, .chatCounter { display: none; }
+				.buttons { display: flex; }
+			}
+		}
+	}
+
+	#button-show-all { 
+		padding: 0px 8px; display: none; align-items: center; justify-content: flex-start; border: 0; @include text-small; font-weight: 500; 
+		border-radius: 6px; margin: 0px 8px;
+	}
+	#button-show-all {
+		.arrow {
+			width: 8px; height: 8px;
+			mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 8 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.68614 1.05746C1.43795 0.815431 1.43795 0.423555 1.68614 0.181524C1.93433 -0.0605078 2.33618 -0.0605078 2.58437 0.181524L6.5 4L2.58437 7.81848C2.33618 8.06051 1.93433 8.06051 1.68614 7.81848C1.43795 7.57645 1.43795 7.18457 1.68614 6.94254L4.70355 4L1.68614 1.05746Z' fill='black'/%3E%3C/svg%3E");
+			mask-size: contain; mask-repeat: no-repeat; background-color: currentColor;
+		}
+	}
+
+	.contentWrapper { transition: height 0.4s $easeInQuint; }
+	.innerWrap { transition: opacity 0.4s $easeInQuint; flex-direction: column; }
+
+	.emptyWrap { padding: 0px 16px; height: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; flex-grow: 1; }
+	.emptyWrap {
+		.label { text-align: left; @include text-small; @include clamp2; width: 100%; color: var(--color-text-secondary); }
+		.icon.more { width: 20px; height: 20px; }
+	}
+
+	.icon.remove { position: absolute; top: -15px; right: -5px; height: 40px; width: 40px; display: none; z-index: 2; cursor: default !important; }
+	.icon.remove {
+		.inner {
+			height: 20px; width: 20px; border-radius: 50%; background-color: var(--color-shape-primary);
+			position: absolute; left: 50%; top: 50%; margin: -10px 0px 0px -10px;
+		}
+	}
+	.icon.remove:hover .inner { background-color: var(--color-text-tertiary); }
+
+	> .dropTarget:not(.targetHead) { position: absolute; left: 0px; width: 100%; height: 20px; }
+	> .dropTarget:not(.targetHead).isOver { box-shadow: 0px 0px !important; }
+	> .dropTarget:not(.targetHead).targetTop { top: -7px; }
+	> .dropTarget:not(.targetHead).targetBot { bottom: -7px; }
+	> .dropTarget:not(.targetHead).isOver::before { 
+		content: ""; position: absolute; background: var(--color-control-accent); width: calc(100% - 24px); height: 2px; border-radius: 2px; left: 12px;
+	}
+	> .dropTarget:not(.targetHead).targetTop.isOver::before { top: 0px; }
+	> .dropTarget:not(.targetHead).targetBot.isOver::before { bottom: 0px; }
+
+	> .dropTarget.targetHead.isOver.middle { background: none !important; }
+	> .dropTarget.targetHead.isOver { 
+		.sides::after { background: var(--color-system-drop-zone); opacity: 1; }
+	}
+
+	.item.isSection { padding-top: 12px; }
+	.item.isSection:first-child { padding-top: 0px; }
+	.item.isSection {
+		.inner { display: flex; align-items: center; }
+		.label { @include text-small; font-weight: 500; color: var(--color-text-secondary); @include text-overflow-nw; }
+	}
+	.item.isSection::before,
+	.item.isSection .inner::before { display: none !important; }
+}
+
+.widget.isPreview { display: flex; flex-direction: column; flex-grow: 1; background: none; }
+.widget.isPreview {
+	.head { padding: 0px 16px; }
+	.body { overflow: visible; }
+	.contentWrapper, .innerWrap { height: 100%; }
+
+	.emptyWrap { padding: 16px; justify-content: flex-start; }
+	.innerWrap { padding: 0px !important; }
+
+	.filterWrapper { display: flex; align-items: center; gap: 0px 8px; }
+	.filterWrapper {
+		.side.left { flex-grow: 1; }
+		.side.right { flex-shrink: 0; }
+		.filter { padding: 0px; width: 100%; }
+	}
+}
+
+.widget.isClosed {
+	.contentWrapper { height: 0px; overflow: hidden; }
+	> .dropTarget.targetHead { border-radius: 12px; }
+}
+
+.widget.widgetLink {
+	.headerIcon { opacity: 1 !important; }
+	.iconWrap.collapse { opacity: 0 !important; pointer-events: none; }
+}
+
+@import "./space";
+@import "./object";
+@import "./tree";
+@import "./view/common";
+
+body.isDragging {
+	.widget::after {
+		content: ''; display: block; position: absolute; left: 0px; top: 0px; background: transparent; width: 100%; height: 100%;
+		z-index: 10; border-radius: inherit;
+	}
+}

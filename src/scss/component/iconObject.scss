@@ -1,0 +1,79 @@
+@import "~scss/_mixins";
+
+.iconObject {
+	display: inline-block; vertical-align: top; position: relative; width: 20px; height: 20px; flex-shrink: 0;
+
+	img { pointer-events: none; }
+
+	.iconEmoji, .iconImage, .iconFile, .iconCheckbox { width: inherit; height: inherit; transition: none; vertical-align: top; }
+	.iconImage, .iconCheckbox { background-size: cover; object-fit: cover; }
+	.iconImage { border-radius: inherit; }
+
+	.iconCommon.hasSvg, .iconRelation.hasSvg { display: flex; align-items: center; justify-content: center; }
+
+	.iconCommon, .iconRelation, .smileImage, .iconImage, .iconFile, .iconCheckbox, .iconError {
+		@each $s in 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48, 56, 64, 80 {
+			&.c#{$s} { @include pos-abs-mid; width: #{$s}px; height: #{$s}px; margin: calc(#{$s}px / -2) 0px 0px calc(#{$s}px / -2); }
+		}
+	}
+
+	.iconEmoji { display: inline-block; vertical-align: top; text-align: center; position: relative; border-radius: inherit; }
+
+	/* Size classes */
+	@each $s in 14, 16, 18, 22, 24, 26, 28, 30, 32, 36, 40, 42, 44, 48, 56, 64, 80, 96, 128, 160 {
+		&.c#{$s} { width: #{$s}px; height: #{$s}px; }
+	}
+
+	/* Border-radius */
+	&.c14, &.c16, &.c18 { border-radius: 2px; }
+	&.c20, &.c22, &.c26, &.c28, &.c36 { border-radius: 4px; }
+	&.c24, &.c25 { border-radius: 3px; }
+	&.c30, &.c44 { border-radius: 6px; }
+	&.c32, &.c56 { border-radius: 8px; }
+	&.c40, &.c48 { border-radius: 10px; }
+	&.c42 { border-radius: 5px; }
+	&.c64, &.c80 { border-radius: 16px; }
+	&.c96 { border-radius: 20px; }
+	&.c128 { border-radius: 24px; }
+	&.c160 { border-radius: 12px; }
+
+	/* Large sizes: background + overflow */
+	&.c48, &.c56, &.c64, &.c80, &.c96, &.c128, &.c160 {
+		display: block; overflow: hidden; background-color: var(--color-shape-tertiary);
+	}
+
+	/* Full-bleed iconImage for medium+ sizes */
+	&.c32, &.c36, &.c40, &.c48, &.c56, &.c64, &.c80, &.c96, &.c128, &.c160 {
+		.iconImage { width: 100%; height: 100%; left: 0px; top: 0px; margin: 0px; }
+
+		&.isChat { border-radius: 100% !important; background-color: var(--color-shape-tertiary); }
+	}
+
+	&.isTask {
+		background-color: unset;
+
+		.icon.hasSvg { color: var(--color-text-tertiary); }
+
+		&.isDone {
+			.icon.hasSvg { color: var(--color-icons-lime); }
+		}
+	}
+
+	&.isFile, 
+	&.isImage,
+	&.isVideo,
+	&.isAudio,
+	&.isPdf { background-color: unset; }
+
+	&.withImage { background-color: unset !important; }
+
+	&.isHuman, &.isParticipant, &.isSpaceView.spaceOneToOne {
+		border-radius: 100% !important; background-color: var(--color-shape-tertiary);
+	}
+
+	&.withImageError {
+		img:not(.iconError) { display: none; }
+
+		.iconError { color: var(--color-shape-highlight-medium); }
+	}
+}

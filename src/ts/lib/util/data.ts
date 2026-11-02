@@ -1,0 +1,1762 @@
+import * as Sentry from '@sentry/browser';
+import { reaction, IReactionDisposer } from 'mobx';
+import object from './object';
+import aiProvider from './aiProvider';
+import * as I from 'Interface';
+import * as M from 'Model';
+import Storage from 'Lib/storage';
+import { focus } from 'Lib/focus';
+import { virtualBlock } from 'Lib/virtualBlock';
+import { membership } from 'Lib/membership';
+import { powerState } from 'Lib/powerState';
+
+const TYPE_KEYS = {
+	default: [
+		J.Constant.typeKey.page,
+		J.Constant.typeKey.note,
+		J.Constant.typeKey.task,
+		J.Constant.typeKey.chatDerived,
+		J.Constant.typeKey.collection,
+		J.Constant.typeKey.set,
+		J.Constant.typeKey.bookmark,
+		J.Constant.typeKey.project,
+		J.Constant.typeKey.image,
+		J.Constant.typeKey.file,
+		J.Constant.typeKey.video,
+		J.Constant.typeKey.audio,
+	],
+	chat: [
+		J.Constant.typeKey.image,
+		J.Constant.typeKey.bookmark,
+		J.Constant.typeKey.file,
+		J.Constant.typeKey.page,
+		J.Constant.typeKey.note,
+		J.Constant.typeKey.task,
+		J.Constant.typeKey.collection,
+		J.Constant.typeKey.set,
+		J.Constant.typeKey.project,
+		J.Constant.typeKey.video,
+		J.Constant.typeKey.audio,
+	]
+};
+
+export interface TreeNode {
+	id: string;
+	children: TreeNode[];
+}
+
+/**
+ * Utility class for data manipulation, formatting, and application-level helpers.
+ * Provides methods for block styling, authentication, sorting, and more.
+ */
+class UtilData {
+
+	private spacesPreloaded = false;
+	private cleanupSuggestionsTimeout = 0;
+	private treeProbeSubId = '';
+	private treeProbeDisposer: IReactionDisposer = null;
+
+	/**
+	 * Probes the space once for cleanup suggestions so the Bin widget can surface even
+	 * when nothing is archived. Deferred to keep it off the space-open critical path;
+	 * afterwards the flag is maintained by CleanupSuggestion events and the Bin itself.
+	 */
+	checkCleanupSuggestions () {
+		const { space } = S.Common;
+
+		window.clearTimeout(this.cleanupSuggestionsTimeout);
+		S.Common.hasCleanupSuggestionsSet(false);
+
+		this.cleanupSuggestionsTimeout = window.setTimeout(() => {
+			// A space switch during the delay reschedules its own probe; drop this one.
+			if (space != S.Common.space) {
+				return;
+			};
+
+			// Only the count matters here, so ask for the cheapest projection.
+			C.ObjectCleanupSuggestions(space, [ 'id' ], (message: any) => {
+				if (!message.error.code && (space == S.Common.space)) {
+					S.Common.hasCleanupSuggestionsSet(!!(message.items || []).length);
+				};
+			});
+		}, J.Constant.delay.cleanupSuggestions);
+	};
+
+	/**
+	 * Shows the Tree section once the space has an object created inside another one. On space open a
+	 * one-record subscription answers that; in a space without such objects it stays to catch the
+	 * first one and is dropped as soon as it does. Once shown, the section stays for the session.
+	 */
+	checkTreeSection () {
+		const { space } = S.Common;
+		const subId = U.Subscription.spaceSubId(J.Constant.subId.treeProbe);
+		const prevSubId = this.treeProbeSubId;
+
+		const stop = () => {
+			this.treeProbeDisposer?.();
+			this.treeProbeDisposer = null;
+			this.treeProbeSubId = '';
+		};
+
+		const onFound = () => {
+			stop();
+			S.Common.hasTreeSectionSet(true);
+			U.Subscription.destroyList([ subId ], true);
+		};
+
+		stop();
+		S.Common.hasTreeSectionSet(false);
+
+		// The previous space may still be waiting for its first object
+		U.Subscription.destroyList(U.Common.arrayUnique([ prevSubId, subId ].filter(it => it)), true, () => {
+			// The Tree section is experimental, without the flag there is nothing to probe for
+			if ((space != S.Common.space) || !S.Common.config.experimental) {
+				return;
+			};
+
+			this.treeProbeSubId = subId;
+
+			U.Subscription.subscribe({
+				subId,
+				filters: U.Subscription.createdTreeFilters(S.Common.treeShowBookmarks).concat([
+					{ relationKey: 'createdInContext', condition: I.FilterCondition.NotEmpty, value: null },
+				]),
+				keys: [ 'id' ],
+				limit: 1,
+				noDeps: true,
+			}, () => {
+				if ((space != S.Common.space) || (this.treeProbeSubId != subId)) {
+					return;
+				};
+
+				if (S.Record.getRecordIds(subId, '').length) {
+					onFound();
+					return;
+				};
+
+				this.treeProbeDisposer = reaction(() => S.Record.getRecordIds(subId, '').length, length => {
+					if (length) {
+						onFound();
+					};
+				});
+			});
+		});
+	};
+
+	/**
+	 * Returns the CSS class for a text block style.
+	 * @param {I.TextStyle} v - The text style.
+	 * @returns {string} The CSS class.
+	 */
+	blockTextIcon (v: I.TextStyle): string {
+		const map: Record<number, string> = {
+			[I.TextStyle.Paragraph]: 'paragraph',
+			[I.TextStyle.Header1]: 'header',
+			[I.TextStyle.Header2]: 'header',
+			[I.TextStyle.Header3]: 'header',
+			[I.TextStyle.Quote]: 'quote',
+			[I.TextStyle.Callout]: 'callout',
+			[I.TextStyle.Checkbox]: 'checkbox',
+			[I.TextStyle.Bulleted]: 'bulleted',
+			[I.TextStyle.Numbered]: 'numbered',
+			[I.TextStyle.Toggle]: 'toggle',
+			[I.TextStyle.ToggleHeader1]: 'toggleHeader',
+			[I.TextStyle.ToggleHeader2]: 'toggleHeader',
+			[I.TextStyle.ToggleHeader3]: 'toggleHeader',
+		};
+		return `menu/block/text/${map[v] || 'paragraph'}`;
+	};
+
+	blockTextClass(v: I.TextStyle): string {
+		const toggleHeaders = [
+			I.TextStyle.ToggleHeader1, 
+			I.TextStyle.ToggleHeader2, 
+			I.TextStyle.ToggleHeader3,
+		];
+
+		let ret = `text${String(I.TextStyle[v] || 'Paragraph')}`;
+
+		if ([ 
+			I.TextStyle.Header1,
+			I.TextStyle.Header2,
+			I.TextStyle.Header3,
+			...toggleHeaders,
+		].includes(v)) {
+			ret = `textHeader ${ret}`;
+		};
+
+		if (toggleHeaders.includes(v)) {
+			ret = `textToggleHeader ${ret}`;
+		};
+
+		return ret;
+	};
+
+	/**
+	 * Returns the CSS class for a div block style.
+	 * @param {I.DivStyle} v - The div style.
+	 * @returns {string} The CSS class.
+	 */
+	blockDivClass(v: I.DivStyle): string {
+		return `div${String(I.DivStyle[v])}`;
+	};
+
+	/**
+	 * Returns the CSS class for a layout block style.
+	 * @param {I.LayoutStyle} v - The layout style.
+	 * @returns {string} The CSS class.
+	 */
+	blockLayoutClass(v: I.LayoutStyle): string {
+		return `layout${String(I.LayoutStyle[v])}`;
+	};
+
+	/**
+	 * Returns the CSS class for an embed block style.
+	 * @param {I.EmbedProcessor} v - The embed processor.
+	 * @returns {string} The CSS class.
+	 */
+	blockEmbedClass(v: I.EmbedProcessor): string {
+		return `is${String(I.EmbedProcessor[v])}`;
+	};
+
+	/**
+	 * Returns the CSS class for a space UX type.
+	 * @param {I.SpaceType} v - The space UX type.
+	 * @returns {string} The CSS class.
+	 */
+	spaceClass (v: I.SpaceType): string {
+		v = Number(v) || I.SpaceType.None;
+		return v ? `space${String(I.SpaceType[v])}` : '';
+	};
+
+	/**
+	 * Returns the icon class for a given block type and style value.
+	 * @param {I.BlockType} type - The block type.
+	 * @param {number} v - The style value.
+	 * @returns {string} The icon class.
+	 */
+	styleIcon(type: I.BlockType, v: number): string {
+		let icon = '';
+		switch (type) {
+			case I.BlockType.Text:
+				switch (v) {
+					default: icon = this.blockTextIcon(v); break;
+					case I.TextStyle.Code: icon = 'menu/mark/code'; break;
+				};
+				break;
+		};
+		return icon;
+	};
+
+	/**
+	 * Returns the CSS class for a block, based on its content and type.
+	 * @param {any} block - The block object.
+	 * @returns {string} The CSS class string.
+	 */
+	blockClass(block: any) {
+		const { content } = block;
+		const { style, type, processor } = content;
+		const dc = U.String.toCamelCase(`block-${block.type}`);
+		const c = [];
+
+		switch (block.type) {
+			case I.BlockType.File: {
+				if ((style == I.FileStyle.Link) || [I.FileType.File, I.FileType.None].includes(type)) {
+					c.push(dc);
+				} else {
+					c.push(`blockMedia is${I.FileType[type]}`);
+				};
+				break;
+			};
+
+			case I.BlockType.Embed: {
+				c.push(`blockEmbed ${this.blockEmbedClass(processor)}`);
+				break;
+			};
+
+			default: {
+				c.push(dc);
+				switch (block.type) {
+					case I.BlockType.Text: c.push(this.blockTextClass(style)); break;
+					case I.BlockType.Layout: c.push(this.blockLayoutClass(style)); break;
+					case I.BlockType.Div: c.push(this.blockDivClass(style)); break;
+				};
+				break;
+			};
+		};
+		return c.join(' ');
+	};
+
+	/**
+	 * Returns the layout class for an object by id and layout type.
+	 * @param {string} id - The object id.
+	 * @param {I.ObjectLayout} layout - The layout type.
+	 * @returns {string} The layout class.
+	 */
+	layoutClass(id: string, layout: I.ObjectLayout) {
+		let c = '';
+		switch (layout) {
+			default: c = U.String.toCamelCase(`is-${I.ObjectLayout[layout]}`); break;
+			case I.ObjectLayout.Image: c = (id ? 'isImage' : 'isFile'); break;
+		};
+		return c;
+	};
+
+	/**
+	 * Returns the class for a link card style.
+	 * @param {I.LinkCardStyle} v - The link card style.
+	 * @returns {string} The class name.
+	 */
+	linkCardClass(v: I.LinkCardStyle): string {
+		v = v || I.LinkCardStyle.Text;
+		return String(I.LinkCardStyle[v]).toLowerCase();
+	};
+
+	/**
+	 * Returns the class for a card size.
+	 * @param {I.CardSize} v - The card size.
+	 * @returns {string} The class name.
+	 */
+	cardSizeClass(v: I.CardSize) {
+		v = v || I.CardSize.Small;
+		return String(I.CardSize[v]).toLowerCase();
+	};
+
+	/**
+	 * Returns the class for a diff type.
+	 * @param {I.DiffType} v - The diff type.
+	 * @returns {string} The class name.
+	 */
+	diffClass(v: I.DiffType): string {
+		let c = '';
+		switch (v) {
+			case I.DiffType.None: c = 'diffNone'; break;
+			case I.DiffType.Add: c = 'diffAdd'; break;
+			case I.DiffType.Change: c = 'diffChange'; break;
+			case I.DiffType.Remove: c = 'diffRemove'; break;
+		};
+		return c;
+	};
+
+	syncStatusClass (v: I.SyncStatusObject): string {
+		const s = String(I.SyncStatusObject[v] || '').toLowerCase();
+		return s ? `c-${s}` : '';
+	};
+
+	syncStatusIcon (v: I.SyncStatusObject): string {
+		return `menu/syncStatus/${String(I.SyncStatusObject[v]).toLowerCase()}`;
+	};
+
+	/**
+	 * Returns the icon class for horizontal alignment.
+	 * @param {I.BlockHAlign} v - The horizontal alignment.
+	 * @returns {string} The icon class.
+	 */
+	alignHIcon(v: I.BlockHAlign): string {
+		v = v || I.BlockHAlign.Left;
+		return `menu/align/horizontal/${String(I.BlockHAlign[v]).toLowerCase()}`;
+	};
+
+	/**
+	 * Returns the registry icon name for vertical alignment.
+	 * @param {I.BlockVAlign} v - The vertical alignment.
+	 * @returns {string} The registry icon name.
+	 */
+	alignVIcon(v: I.BlockVAlign): string {
+		v = v || I.BlockVAlign.Top;
+		return `menu/align/vertical/${String(I.BlockVAlign[v]).toLowerCase()}`;
+	};
+
+	/**
+	 * Returns the emoji size parameter for a given text style.
+	 * @param {I.TextStyle} t - The text style.
+	 * @returns {number} The emoji size.
+	 */
+	emojiParam(t: I.TextStyle) {
+		let s = 20;
+		switch (t) {
+			case I.TextStyle.Header1: s = 30; break;
+			case I.TextStyle.Header2: s = 26; break;
+			case I.TextStyle.Header3: s = 22; break;
+			case I.TextStyle.ToggleHeader1: s = 30; break;
+			case I.TextStyle.ToggleHeader2: s = 26; break;
+			case I.TextStyle.ToggleHeader3: s = 22; break;
+		};
+		return s;
+	};
+
+	/**
+	 * Sets up application state with account info after login.
+	 * @param {I.AccountInfo} info - The account info object.
+	 */
+	onInfo(info: I.AccountInfo) {
+		S.Block.widgetsSet(info.widgetsId);
+		S.Block.profileSet(info.profileObjectId);
+		S.Block.spaceviewSet(info.spaceViewId);
+		S.Block.workspaceSet(info.workspaceObjectId);
+
+		S.Common.gatewaySet(info.gatewayUrl);
+		S.Common.spaceSet(info.accountSpaceId);
+
+		analytics.profile(info.analyticsId, info.networkId);
+		Sentry.setUser({ id: info.analyticsId });
+	};
+
+	/**
+	 * Handles routing after space switch.
+	 * @param {any} [param] - Optional parameters for authentication.
+	 * @param {() => void} [callBack] - Optional callback after authentication.
+	 */
+	onSpaceSwitch (param?: any, callBack?: () => void) {
+		param = param || {};
+
+		const { widgets } = S.Block;
+		const { redirect, space } = S.Common;
+		const route = param.route || redirect;
+		const routeParam = param.routeParam || {};
+
+		if (!widgets) {
+			console.error('[U.Data].onAuth No widgets defined');
+			U.Space.openDashboard(routeParam);
+			this.preloadRemainingSpaces();
+			callBack?.();
+			return;
+		};
+
+		C.ObjectOpen(U.Object.getPersonalWidgetsId(space), '', space);
+		C.ObjectOpen(widgets, '', space, () => {
+			U.Subscription.createSpace(() => {
+				this.checkCleanupSuggestions();
+				this.checkTreeSection();
+				U.Space.checkInviteSecurity(space);
+
+				this.initPin(() => {
+					if (S.Common.pin && !keyboard.isPinChecked) {
+						U.Router.go('/auth/pin-check', routeParam);
+					} else {
+						const rp = route ? U.Router.getParam(route) : {};
+						const isRestorable = route && !(rp.page == 'auth') && !((rp.page == 'main') && [ 'blank', 'void' ].includes(rp.action));
+
+						if (isRestorable) {
+							U.Router.go(route, routeParam);
+						} else {
+							const last = U.Space.getLastObject();
+							const lastRoute = last ? U.Object.route(last) : '';
+
+							if (lastRoute) {
+								U.Router.go(lastRoute, routeParam);
+							} else {
+								U.Space.openDashboard(routeParam);
+							};
+						};
+					};
+
+					S.Common.redirectSet('');
+					this.preloadRemainingSpaces();
+					callBack?.();
+				});
+			});
+		});
+	};
+
+	/**
+	 * Tells the middleware the priority screen is up, so it can start loading the spaces
+	 * deferred by AccountSelect.preferredSpaceId. Fires once per process; errors are benign —
+	 * the middleware has its own timer fallback.
+	 */
+	preloadRemainingSpaces () {
+		if (this.spacesPreloaded) {
+			return;
+		};
+
+		this.spacesPreloaded = true;
+		window.setTimeout(() => C.AccountPreloadRemainingSpaces(), J.Constant.delay.spacePreload);
+	};
+
+	initPin (callBack?: () => void) {
+		S.Common.pinInit(() => {
+			// Notify main process whether a PIN is set
+			Renderer.send('setHasPinSet', !!S.Common.pin);
+
+			// If no PIN, user is considered checked
+			if (!S.Common.pin) {
+				keyboard.setPinChecked(true);
+			} else {
+				keyboard.initPinCheck();
+			};
+			
+			callBack?.();
+		});
+	};
+
+	/**
+	 * Handles one-time authentication tasks after login.
+	 */
+	onAuthOnce() {
+		C.NotificationList(false, J.Constant.limit.notification, (message: any) => {
+			if (!message.error.code) {
+				S.Notification.set(message.list);
+			};
+		});
+
+		C.FileNodeUsage((message: any) => {
+			if (!message.error.code) {
+				S.Common.spaceStorageSet(message);
+			};
+		});
+
+		C.ChatSubscribeToMessagePreviews(J.Constant.subId.chatSpace, (message: any) => {
+			if (message.error.code || !message.previews.length) {
+				return;
+			};
+
+			for (const item of message.previews) {
+				const { spaceId, chatId, message, state, dependencies } = item;
+				const spaceSubId = S.Chat.getSpaceSubId(spaceId);
+				const chatSubId = S.Chat.getChatSubId(J.Constant.subId.chatPreview, spaceId, chatId);
+
+				if (state) {
+					S.Chat.setState(chatSubId, state);
+				};
+
+				if (message) {
+					message.chatId = chatId;
+					message.dependencies = dependencies;
+
+					S.Chat.add(spaceSubId, 0, new M.ChatMessage(message));
+					S.Chat.add(chatSubId, 0, new M.ChatMessage(message));
+				};
+			};
+		});
+
+		U.Common.applyAutoDownload(S.Common.autoDownload);
+
+		this.getMembershipData('auth');
+		powerState.onAccountReady();
+
+		U.Subscription.createGlobal(() => {
+			if (S.Record.spaceMap.size) {
+				Storage.clearDeletedSpaces(false);
+				Storage.clearDeletedSpaces(true);
+			};
+		});
+	};
+
+	/**
+	 * Handles authentication when no space is available.
+	 * @param {Partial<I.RouteParam>} [param] - Optional route parameters.
+	 */
+	onAuthWithoutSpace(param?: Partial<I.RouteParam>) {
+		U.Subscription.createGlobal(() => U.Space.openFirstSpaceOrVoid(null, param));
+	};
+
+	/**
+	 * Minimal boot for the quick search panel window. No space is opened (the panel
+	 * renders no space UI and the global search RPC is cross-space) and none of the
+	 * heavy side loads run - only the global subscriptions (profile, spaceviews and the
+	 * cross-space chats the Messages scope reads), plus the pin gate.
+	 * @param {string} route - The quick search route to open after boot.
+	 * @param {Partial<I.RouteParam>} [param] - Optional route parameters.
+	 */
+	onAuthQuickSearch(route: string, param?: Partial<I.RouteParam>) {
+		let pending = 2;
+
+		const done = () => {
+			if (--pending) {
+				return;
+			};
+
+			if (S.Common.pin && !keyboard.isPinChecked) {
+				// S.Common.redirect already points at the quick search route - the
+				// pin screen returns here after unlock
+				U.Router.go('/auth/pin-check', param || {});
+			} else {
+				U.Router.go(route, param || {});
+			};
+		};
+
+		// In parallel: the lite subscriptions feed the first row paint (Channel captions,
+		// the Messages chip and its chats), the pin gate decides where to route
+		U.Subscription.createGlobal(done, true);
+		this.initPin(done);
+	};
+
+	/**
+	 * Creates a new session with the given phrase and key.
+	 * @param {string} phrase - The mnemonic phrase.
+	 * @param {string} key - The key.
+	 * @param {(message: any) => void} [callBack] - Optional callback after session creation.
+	 */
+	createSession(phrase: string, key: string, token: string, callBack?: (message: any) => void) {
+		this.closeSession(() => {
+			C.WalletCreateSession(phrase, key, token, (message: any) => {
+				if (!message.error.code) {
+					S.Auth.tokenSet(message.token);
+					S.Auth.appTokenSet(message.appToken);
+
+					dispatcher.startStream();
+				};
+
+				callBack?.(message);
+			});
+		});
+	};
+
+	/**
+	 * Closes the current session.
+	 * @param {() => void} [callBack] - Optional callback after session close.
+	 */
+	closeSession(callBack?: () => void) {
+		const { token } = S.Auth;
+
+		if (!token) {
+			callBack?.();
+			return;
+		};
+
+		C.WalletCloseSession(token, () => {
+			S.Auth.tokenSet('');
+			dispatcher.stopStream();
+			callBack?.();
+		});
+	};
+
+	/**
+	 * Sets the text and marks for a block, optionally updating the store.
+	 * @param {string} rootId - The root object ID.
+	 * @param {string} blockId - The block ID.
+	 * @param {string} text - The text to set.
+	 * @param {I.Mark[]} marks - The marks to set.
+	 * @param {boolean} update - Whether to update the store.
+	 * @param {(message: any) => void} [callBack] - Optional callback after setting text.
+	 */
+	blockSetText(rootId: string, blockId: string, text: string, marks: I.Mark[], update: boolean, callBack?: (message: any) => void) {
+		text = String(text || '');
+		marks = marks || [];
+
+		// The virtual trailing placeholder is not in the store and has no
+		// middleware-side block: the first non-empty write materializes it via a
+		// single BlockCreate carrying the content, later writes are redirected to
+		// the created block
+		if (virtualBlock.isVirtualId(blockId)) {
+			virtualBlock.setText(rootId, text, marks, update, callBack);
+			return;
+		};
+
+		// Stale callbacks may still write to an id whose identity was forked
+		blockId = virtualBlock.resolve(blockId);
+
+		// A fork for this block is in flight — buffer the write, it lands on the
+		// new id when the fork completes
+		if (virtualBlock.isForkPending(blockId)) {
+			virtualBlock.forkSetText(blockId, text, marks, callBack);
+			return;
+		};
+
+		const block = S.Block.getLeaf(rootId, blockId);
+		if (!block) {
+			// Still invoke the callback: callers (e.g. block/text pending-save
+			// accounting, JS-9285) rely on every save eventually completing —
+			// silently dropping it would leak their in-flight counters
+			callBack?.({ error: { code: 1, description: 'Block not found' } });
+			return;
+		};
+
+		// First content into an empty text block forks the block identity: one
+		// BlockReplace carries the content on a fresh id, so two clients filling
+		// the same empty block concurrently end up with two blocks (both texts
+		// survive) instead of one block with one text lost to last-writer-wins
+		if (virtualBlock.shouldFork(rootId, block, text)) {
+			virtualBlock.fork(rootId, block, text, marks, callBack);
+			return;
+		};
+
+		// Skip no-op writes: merely placing or removing the cursor (blur flushes,
+		// shortcut save-keys) must not emit a text write — block text is
+		// whole-value last-writer-wins, so re-sending unchanged content can still
+		// destroy a concurrent peer edit on merge
+		if ((String(block.content.text || '') === text) && U.Common.compareJSON(block.content.marks || [], marks)) {
+			callBack?.({ error: { code: 0 } });
+			return;
+		};
+
+		if (update) {
+			S.Block.updateContent(rootId, blockId, { text, marks });
+		};
+
+		C.BlockTextSetText(rootId, blockId, text, marks, focus.state.range, callBack);
+	};
+
+	/**
+	 * Inserts text into a block at the specified range.
+	 * @param {string} rootId - The root object ID.
+	 * @param {string} blockId - The block ID.
+	 * @param {string} needle - The text to insert.
+	 * @param {number} from - The start index.
+	 * @param {number} to - The end index.
+	 * @param {(message: any) => void} [callBack] - Optional callback after insertion.
+	 */
+	blockInsertText(rootId: string, blockId: string, needle: string, from: number, to: number, callBack?: (message: any) => void) {
+		blockId = virtualBlock.resolve(blockId);
+
+		const block = S.Block.getLeaf(rootId, blockId);
+		if (!block) {
+			return;
+		};
+
+		const diff = needle.length - (to - from);
+		const text = U.String.insert(block.content.text, needle, from, to);
+		const marks = Mark.adjust(block.content.marks, from, diff);
+
+		this.blockSetText(rootId, blockId, text, marks, true, callBack);
+	};
+
+	/**
+	 * Returns a list of object types available for new objects, with optional filters.
+	 * @param {{ withLists?: boolean; withChat?: boolean; limit?: number; }} [param] - Optional parameters for filtering.
+	 * @returns {any[]} The list of object types.
+	 */
+	getObjectTypesForNewObject(param?: { withLists?: boolean; withChat?: boolean; limit?: number; }): any[] {
+		const { withLists, withChat, limit } = param || {};
+		const { space } = S.Common;
+		const layouts = U.Object.getPageLayouts();
+
+		let items: any[] = [];
+
+		if (withLists) {
+			layouts.push(I.ObjectLayout.Set);
+			layouts.push(I.ObjectLayout.Collection);
+		};
+		if (withChat) {
+			layouts.push(I.ObjectLayout.Chat);
+		};
+
+		items = items.concat(S.Record.getTypes().filter(it => {
+			return layouts.includes(it.recommendedLayout) &&
+				(it.spaceId == space) &&
+				(it.uniqueKey != J.Constant.typeKey.template);
+		}));
+
+		items = S.Record.checkHiddenObjects(items);
+
+		if (limit) {
+			items = items.slice(0, limit);
+		};
+
+		items = items.filter(it => it);
+		return S.Record.sortTypes(items);
+	};
+
+	countTemplatesByTypeId(typeId: string, callBack: (message: any) => void) {
+		if (!typeId) {
+			return;
+		};
+
+		const filters: I.Filter[] = [
+			{ relationKey: 'type.uniqueKey', condition: I.FilterCondition.Equal, value: J.Constant.typeKey.template },
+			{ relationKey: 'targetObjectType', condition: I.FilterCondition.In, value: typeId },
+		];
+
+		U.Subscription.search({
+			filters,
+			keys: ['id'],
+			noDeps: true,
+		}, callBack);
+	};
+
+	checkDetails(rootId: string, blockId?: string, keys?: string[]): any {
+		blockId = blockId || rootId;
+		keys = keys || [];
+
+		const object = S.Detail.get(rootId, blockId, [
+			'type', 'layout', 'layoutAlign', 'iconImage', 'iconEmoji', 'iconName', 'iconOption',
+			'templateIsBundled', 'featuredRelations', 'targetObjectType',
+		].concat(J.Relation.cover).concat(keys), true);
+		const type = S.Record.getTypeById(object.targetObjectType || object.type);
+		const featuredRelations = Relation.getArrayValue(object.featuredRelations);
+		const { iconEmoji, iconImage, iconName, coverType, coverId } = object;
+		const ret = {
+			withCover: false,
+			withIcon: false,
+			className: '',
+			layout: object.layout,
+			layoutAlign: type?.layoutAlign || I.BlockHAlign.Left,
+			layoutWidth: this.getLayoutWidth(rootId),
+			headerRelationsLayout: type?.headerRelationsLayout,
+		};
+
+		if (undefined !== object.layoutAlign) {
+			ret.layoutAlign = object.layoutAlign;
+		};
+
+		let className = [];
+		if (!object._empty_) {
+			ret.withCover = Boolean((object.coverType != I.CoverType.None) && object.coverId);
+			className = [this.layoutClass(object.id, object.layout), `align${ret.layoutAlign}`];
+		};
+
+		switch (object.layout) {
+			default:
+				ret.withIcon = Boolean(object.iconEmoji || object.iconImage);
+				break;
+
+			case I.ObjectLayout.Note:
+			case I.ObjectLayout.Bookmark:
+			case I.ObjectLayout.Task: {
+				break;
+			};
+
+			case I.ObjectLayout.Type: {
+				ret.withIcon = Boolean(iconName || iconEmoji) || true;
+				break;
+			};
+
+			case I.ObjectLayout.Human:
+			case I.ObjectLayout.Participant:
+			case I.ObjectLayout.Relation: {
+				ret.withIcon = true;
+				break;
+			};
+		};
+
+		if (U.Object.isInFileLayouts(object.layout)) {
+			ret.withIcon = true;
+		};
+
+		if (featuredRelations.includes('description')) {
+			className.push('withDescription');
+		};
+
+		if (object.templateIsBundled) {
+			className.push('isBundled');
+		};
+
+		if (ret.withIcon && ret.withCover) {
+			className.push('withIconAndCover');
+		} else
+			if (ret.withIcon) {
+				className.push('withIcon');
+			} else
+				if (ret.withCover) {
+					className.push('withCover');
+				};
+
+		ret.className = className.join(' ');
+
+		return ret;
+	};
+
+	/**
+	 * Sorts two objects by their name property.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @returns {number} The sort order.
+	 */
+	sortByName(c1: any, c2: any) {
+		const n1 = String(c1.name || '').toLowerCase();
+		const n2 = String(c2.name || '').toLowerCase();
+		const dn = translate('defaultNamePage').toLowerCase();
+
+		if (!n1 && n2) return 1;
+		if (n1 && !n2) return -1;
+		if ((n1 == dn) && (n2 != dn)) return 1;
+		if ((n1 != dn) && (n2 == dn)) return -1;
+		if (n1 > n2) return 1;
+		if (n1 < n2) return -1;
+		return 0;
+	};
+
+	/**
+	 * Sorts two objects by their orderId and tmpOrder properties.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @returns {number} The sort order.
+	 */
+	sortByOrderId(c1: any, c2: any) {
+		if (c1.tmpOrder > c2.tmpOrder) return 1;
+		if (c1.tmpOrder < c2.tmpOrder) return -1;
+
+		if (!c1.orderId && c2.orderId) return 1;
+		if (c1.orderId && !c2.orderId) return -1;
+
+		if (c1.orderId > c2.orderId) return 1;
+		if (c1.orderId < c2.orderId) return -1;
+
+		return 0;
+	};
+
+	/**
+	 * Sorts two objects by their hidden status.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @returns {number} The sort order.
+	 */
+	sortByHidden(c1: any, c2: any) {
+		if (c1.isHidden && !c2.isHidden) return 1;
+		if (!c1.isHidden && c2.isHidden) return -1;
+		return 0;
+	};
+
+	/**
+	 * Sorts two objects by a numeric key.
+	 * @param {string} key - The key to sort by.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @param {I.SortType} dir - The sort direction.
+	 * @returns {number} The sort order.
+	 */
+	sortByNumericKey (key: string, c1: any, c2: any, dir: I.SortType) {
+		const k1 = Number(c1[key]) || 0;
+		const k2 = Number(c2[key]) || 0;
+
+		if (k1 > k2) return dir == I.SortType.Asc ? 1 : -1;
+		if (k1 < k2) return dir == I.SortType.Asc ? -1 : 1;
+		return 0;
+	};
+
+	/**
+	 * Sorts two objects by their weight property.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @returns {number} The sort order.
+	 */
+	sortByWeight (c1: any, c2: any) {
+		return this.sortByNumericKey('_sortWeight_', c1, c2, I.SortType.Desc);
+	};
+
+	/**
+	 * Sorts two objects by their format property.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @returns {number} The sort order.
+	 */
+	sortByFormat (c1: any, c2: any) {
+		return this.sortByNumericKey('format', c1, c2, I.SortType.Asc);
+	};
+
+	/**
+	 * Sorts two objects by their last used date.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @returns {number} The sort order.
+	 */
+	sortByLastUsedDate (c1: any, c2: any) {
+		return this.sortByNumericKey('lastUsedDate', c1, c2, I.SortType.Desc);
+	};
+
+	typeSortKeys (isChat: boolean) {
+		return isChat ? TYPE_KEYS.chat : TYPE_KEYS.default;
+	};
+
+	/**
+	 * Sorts two objects by their type key.
+	 * @param {any} c1 - The first object.
+	 * @param {any} c2 - The second object.
+	 * @returns {number} The sort order.
+	 */
+	sortByTypeKey (c1: any, c2: any, isChat: boolean) {
+		const keys = this.typeSortKeys(isChat);
+		const i1 = keys.indexOf(c1.uniqueKey);
+		const i2 = keys.indexOf(c2.uniqueKey);
+
+		if ((i1 < 0) && (i2 >= 0)) return 1;
+		if ((i1 >= 0) && (i2 < 0)) return -1;
+		if (i1 > i2) return 1;
+		if (i1 < i2) return -1;
+
+		return 0;
+	};
+
+	/**
+	 * Checks for objects with a specific relation and type, limited by count.
+	 * @param {string} relationKey - The relation key to check.
+	 * @param {string} type - The object type.
+	 * @param {string[]} ids - The list of IDs to check.
+	 * @param {number} limit - The maximum number of results.
+	 * @param {(message: any) => void} [callBack] - Optional callback with the result message.
+	 */
+	checkObjectWithRelationCnt(relationKey: string, type: string, ids: string[], limit: number, callBack?: (message: any) => void) {
+		const filters: I.Filter[] = [
+			{ relationKey: 'type', condition: I.FilterCondition.Equal, value: type },
+		];
+
+		if (relationKey && ids.length) {
+			filters.push({ relationKey: relationKey, condition: I.FilterCondition.In, value: ids });
+		};
+
+		U.Subscription.search({
+			filters,
+			limit,
+		}, (message: any) => {
+			if (!message.error.code) {
+				callBack?.(message);
+			};
+		});
+	};
+
+	/**
+	 * Returns the default link settings for a block.
+	 * @returns {object} The default link settings.
+	 */
+	defaultLinkSettings() {
+		const linkStyle = S.Common.linkStyle;
+		const isCardMedium = (linkStyle == I.LinkDefaultStyle.CardMedium);
+
+		return {
+			iconSize: isCardMedium ? I.LinkIconSize.Medium : I.LinkIconSize.Small,
+			cardStyle: (linkStyle == I.LinkDefaultStyle.Text) ? I.LinkCardStyle.Text : I.LinkCardStyle.Card,
+			description: I.LinkDescription.None,
+			relations: [],
+		};
+	};
+
+	/**
+	 * Checks and returns link settings for a given content and layout.
+	 * @param {I.ContentLink} content - The link content.
+	 * @param {I.ObjectLayout} layout - The object layout.
+	 * @returns {I.ContentLink} The checked link settings.
+	 */
+	checkLinkSettings(content: I.ContentLink, layout: I.ObjectLayout): I.ContentLink {
+		const relationKeys = ['type', 'cover', 'tag'];
+
+		content = U.Common.objectCopy(content);
+		content.iconSize = Number(content.iconSize) || I.LinkIconSize.None;
+		content.cardStyle = Number(content.cardStyle) || I.LinkCardStyle.Text;
+		content.relations = (content.relations || []).filter(it => relationKeys.includes(it));
+
+		if (U.Object.isTaskLayout(layout)) {
+			content.iconSize = I.LinkIconSize.Small;
+		} else
+			if (U.Object.isNoteLayout(layout)) {
+				const filter = ['type'];
+
+				content.description = I.LinkDescription.None;
+				content.iconSize = I.LinkIconSize.None;
+				content.relations = content.relations.filter(it => filter.includes(it));
+			};
+
+		content.relations = U.Common.arrayUnique(content.relations);
+		return content;
+	};
+
+	/**
+	 * Checks if a cover type is an image.
+	 * @param {I.CoverType} type - The cover type.
+	 * @returns {boolean} True if the cover is an image.
+	 */
+	coverIsImage(type: I.CoverType) {
+		return [I.CoverType.Upload, I.CoverType.Source].includes(type);
+	};
+
+	getObjectForTitle(rootId: string, objectId: string) {
+		const spaceview = U.Space.getSpaceview();
+
+		let ret = null;
+		if (spaceview.isOneToOne && (rootId == S.Block.workspace)) {
+			ret = spaceview;
+		} else {
+			ret = S.Detail.get(rootId, objectId);
+		};
+
+		return ret && !ret._empty_ ? ret : null;
+	};
+
+	/**
+	 * Sets the window title based on the object name.
+	 * @param {string} rootId - The root object ID.
+	 * @param {string} objectId - The object ID.
+	 */
+	setWindowTitle(rootId: string, objectId: string) {
+		const object = this.getObjectForTitle(rootId, objectId);
+		const name = U.Object.name(object, true);
+
+		this.setWindowTitleText(name);
+	};
+
+	/**
+	 * Sets the window title text directly.
+	 * @param {string} name - The name to set as the window title.
+	 */
+	setWindowTitleText(name: string) {
+		const spaceview = U.Space.getSpaceview();
+		const title = [];
+
+		if (name) {
+			title.push(name);
+		};
+
+		if (!spaceview._empty_) {
+			title.push(spaceview.name);
+		};
+
+		title.push(J.Constant.appName);
+		document.title = title.map(it => U.String.shorten(it, 60)).join(' - ');
+	};
+
+	/**
+	 * Sets the tab title text.
+	 * @param {string} text - The text to set as the tab title.
+	 * @param {object} routeParam - Route parameters for the current page.
+	 */
+	setTabTitleText(text: string, routeParam?: { action: string; id: string }) {
+		const spaceview = U.Space.getSpaceview();
+		const action = routeParam?.action || '';
+
+		const layouts = {
+			navigation: I.ObjectLayout.Navigation,
+			graph: I.ObjectLayout.Graph,
+			archive: I.ObjectLayout.Archive,
+			settings: I.ObjectLayout.Settings,
+		};
+
+		const layout = layouts[action] || I.ObjectLayout.Page;
+		const icon = layouts[action] ? U.Object.defaultIcon(layout, '', 100) : '';
+
+		Renderer.send('updateTab', S.Common.tabId, {
+			title: text,
+			icon,
+			spaceIcon: U.Graph.imageSrc(spaceview) || U.Object.defaultIcon(spaceview?.layout, spaceview?.type, 100),
+			spaceId: spaceview.targetSpaceId || '',
+			layout,
+			routeParam,
+		});
+	};
+
+	/**
+	 * Sets the tab title based on the object name.
+	 * @param {string} rootId - The root object ID.
+	 * @param {string} objectId - The object ID.
+	 */
+	setTabTitle(rootId: string, objectId: string) {
+		const object = this.getObjectForTitle(rootId, objectId);
+		if (object) {
+			Renderer.send('updateTab', S.Common.tabId, U.Object.getTabData(object));
+		};
+	};
+
+	/**
+	 * Returns the default graph filters for object queries.
+	 * @returns {I.Filter[]} The array of graph filters.
+	 */
+	getGraphFilters() {
+		const filters = U.Subscription.getBaseFilters();
+
+		return filters.concat([
+			{ relationKey: 'resolvedLayout', condition: I.FilterCondition.NotIn, value: U.Object.getGraphSkipLayouts() },
+			{ relationKey: 'id', condition: I.FilterCondition.NotEqual, value: J.Constant.anytypeProfileId },
+			{ relationKey: 'type.uniqueKey', condition: I.FilterCondition.NotIn, value: [J.Constant.typeKey.template] }
+		]);
+	};
+
+	getGraphData (message: any): { nodes: any[]; edges: any[] } {
+		const nodes = (message.nodes || []).map(it => S.Detail.mapper(it)).filter(it => it.type);
+		const nodeIds = new Set(nodes.map(it => it.id));
+
+		return {
+			nodes,
+			edges: (message.edges || []).filter(it => nodeIds.has(it.source) && nodeIds.has(it.target)),
+		};
+	};
+
+	/**
+	 * Moves a list of block IDs to a new page of a given type.
+	 * @param {string} rootId - The root object ID.
+	 * @param {string[]} ids - The block IDs to move.
+	 * @param {string} typeId - The type ID of the new page.
+	 * @param {string} route - The route to use after moving.
+	 */
+	moveToPage(rootId: string, ids: string[], typeId: string, route: string) {
+		const type = S.Record.getTypeById(typeId);
+		if (!type) {
+			return;
+		};
+
+		C.BlockListConvertToObjects(rootId, ids, type.uniqueKey, type.defaultTemplateId, this.getLinkBlockParam('', type.recommendedLayout, false), (message: any) => {
+			if (!message.error.code) {
+				analytics.createObject(type.id, type.recommendedLayout, route, message.middleTime);
+			};
+		});
+	};
+
+	/**
+	 * Loads membership status and products in parallel, skipping the middleware cache.
+	 * Every path settles, see Lib/membership.
+	 * @param {string} [reason] - What triggered the load (logged).
+	 * @param {() => void} [callBack] - Called once both resources have settled.
+	 */
+	getMembershipData(reason?: string, callBack?: () => void) {
+		membership.load(reason || 'load', callBack);
+	};
+
+	/**
+	 * Gets the membership status for the current account.
+	 * @param {() => void} [callBack] - Called once the request has settled (on every path).
+	 */
+	getMembershipStatus(callBack?: () => void) {
+		membership.fetch(I.MembershipResource.Status, 'status', callBack);
+	};
+
+	/**
+	 * Gets the available membership products.
+	 * @param {() => void} [callBack] - Called once the request has settled (on every path).
+	 */
+	getMembershipProducts(callBack?: () => void) {
+		membership.fetch(I.MembershipResource.Products, 'products', callBack);
+	};
+
+	/**
+	 * Checks if the current network is Anytype Network.
+	 * @returns {boolean} True if Anytype Network.
+	 */
+	isAnytypeNetwork(): boolean {
+		return Object.values(J.Constant.networkId).includes(S.Auth.account?.info?.networkId);
+	};
+
+	/**
+	 * Checks if the current network is a development network.
+	 * @returns {boolean} True if development network.
+	 */
+	isDevelopmentNetwork(): boolean {
+		return S.Auth.account?.info?.networkId == J.Constant.networkId.development;
+	};
+
+	/**
+	 * Checks if the current network is a local network.
+	 * @returns {boolean} True if local network.
+	 */
+	isLocalNetwork(): boolean {
+		return !S.Auth.account?.info?.networkId;
+	};
+
+	/**
+	 * Creates a new account, handling errors and callbacks.
+	 * @param {(text: string) => void} [onError] - Optional error callback.
+	 * @param {() => void} [callBack] - Optional callback after account creation.
+	 */
+	accountCreate(onError?: (text: string) => void, callBack?: () => void) {
+		onError = onError || (() => { });
+
+		const { networkConfig } = S.Auth;
+		const { mode, path, preferYamux } = networkConfig;
+		const { dataPath } = S.Common;
+
+		let phrase = '';
+
+		analytics.event('StartCreateAccount');
+
+		this.closeSession(() => {
+			C.WalletCreate(dataPath, (message) => {
+				if (message.error.code) {
+					onError(message.error.description);
+					return;
+				};
+
+				phrase = message.mnemonic;
+
+				this.createSession(phrase, '', '', (message) => {
+					if (message.error.code) {
+						onError(message.error.description);
+						return;
+					};
+
+					C.AccountCreate('', '', dataPath, U.Common.rand(1, J.Constant.count.icon), mode, path, preferYamux, (message) => {
+						if (message.error.code) {
+							onError(message.error.description);
+							return;
+						};
+
+						S.Auth.accountSet(message.account);
+						S.Common.configSet(message.account.config, false);
+						S.Common.gridTitleClickSet(true);
+						S.Common.fullscreenObjectSet(true);
+						U.Subscription.createGlobal();
+
+						this.onInfo(message.account.info);
+
+						Renderer.send('keytarSet', message.account.id, phrase);
+						Renderer.send('closeOtherWindows');
+						C.ObjectImportUseCase(S.Common.space, I.Usecase.GetStarted, (message: any) => {
+							if (message.startingId) {
+								S.Auth.startingId.set(S.Common.space, message.startingId);
+							};
+
+							callBack?.();
+						});
+
+						analytics.event('CreateAccount', { middleTime: message.middleTime });
+						analytics.event('CreateSpace', { middleTime: message.middleTime, usecase: I.Usecase.GetStarted, spaceType: I.SpaceType.Data });
+					});
+				});
+			});
+		});
+	};
+
+	/**
+	 * Groups records into date sections (e.g., today, yesterday, last week).
+	 * @param {any[]} records - The records to group.
+	 * @param {string} key - The key to group by.
+	 * @param {any} [sectionTemplate] - Optional section template.
+	 * @param {I.SortType} [dir] - Optional sort direction.
+	 * @returns {any[]} The grouped records.
+	 */
+	groupDateSections(records: any[], key: string, sectionTemplate?: any, dir?: I.SortType) {
+		const now = U.Date.now();
+		const { d, m, y } = U.Date.getCalendarDateParam(now);
+		const today = now - U.Date.timestamp(y, m, d);
+		const yesterday = now - U.Date.timestamp(y, m, d - 1);
+		const lastWeek = now - U.Date.timestamp(y, m, d - 7);
+		const lastMonth = now - U.Date.timestamp(y, m - 1, d);
+		const groups = {};
+		const ids = ['today', 'yesterday', 'lastWeek', 'lastMonth', 'older'];
+
+		if (dir == I.SortType.Asc) {
+			ids.reverse();
+		};
+
+		ids.forEach(id => groups[id] = []);
+
+		let ret = [];
+		records.forEach(record => {
+			if (!record) {
+				return;
+			};
+
+			const diff = now - record[key];
+
+			let id = '';
+			if (diff < today) {
+				id = 'today';
+			} else
+				if (diff < yesterday) {
+					id = 'yesterday';
+				} else
+					if (diff < lastWeek) {
+						id = 'lastWeek';
+					} else
+						if (diff < lastMonth) {
+							id = 'lastMonth';
+						} else {
+							id = 'older';
+						};
+			groups[id].push(record);
+		});
+
+		ids.forEach(id => {
+			if (groups[id].length) {
+				ret.push(Object.assign({
+					id,
+					name: translate(U.String.toCamelCase(['common', id].join('-'))),
+					isSection: true,
+				}, sectionTemplate || {}));
+
+				if (dir) {
+					groups[id] = groups[id].sort((c1, c2) => U.Data.sortByNumericKey(key, c1, c2, dir));
+				};
+				ret = ret.concat(groups[id]);
+			};
+		});
+		return ret;
+	};
+
+	/**
+	 * Returns the parameters for creating a link block based on layout and options.
+	 * @param {string} id - The target object ID.
+	 * @param {I.ObjectLayout} layout - The object layout.
+	 * @param {boolean} [allowBookmark] - Whether to allow bookmark layout.
+	 * @returns {object} The link block parameters.
+	 */
+	getLinkBlockParam(id: string, layout: I.ObjectLayout, allowBookmark?: boolean) {
+		if (U.Object.isInFileLayouts(layout)) {
+			return {
+				type: I.BlockType.File,
+				content: {
+					targetObjectId: id,
+					style: I.FileStyle.Embed,
+					state: I.FileState.Done,
+					type: U.Object.getFileTypeByLayout(layout),
+				},
+			};
+		};
+
+		if (U.Object.isBookmarkLayout(layout) && allowBookmark) {
+			return {
+				type: I.BlockType.Bookmark,
+				content: {
+					state: I.BookmarkState.Done,
+					targetObjectId: id,
+				},
+			};
+		};
+
+		return {
+			type: I.BlockType.Link,
+			content: { ...this.defaultLinkSettings(), targetBlockId: id },
+		};
+	};
+
+	/**
+	 * Returns the layout width for a given root object.
+	 * @param {string} rootId - The root object ID.
+	 * @returns {number} The layout width.
+	 */
+	getLayoutWidth(rootId: string): number {
+		const root = S.Block.getLeaf(rootId, rootId);
+
+		let ret = 0;
+		if (root && root.fields && (undefined !== root.fields.width)) {
+			ret = root.fields.width;
+		} else {
+			const object = S.Detail.get(rootId, rootId, ['type', 'targetObjectType'], true);
+			const type = S.Record.getTypeById(object.targetObjectType || object.type);
+
+			if (type && type.layoutWidth) {
+				ret = type.layoutWidth;
+			};
+		};
+
+		return Number(ret) || 0;
+	};
+
+	/**
+	 * Sets the RTL (right-to-left) flag for a block if not already set.
+	 * @param {string} rootId - The root object ID.
+	 * @param {I.Block} block - The block.
+	 */
+	setRtl(rootId: string, block: I.Block, value: boolean, callBack?: (message: any) => void) {
+		if (!block || virtualBlock.isVirtualId(block.id)) {
+			callBack?.({});
+			return;
+		};
+
+		const fields = block.fields || {};
+		const current = Boolean(fields.isRtlDetected);
+
+		if (current == value) {
+			callBack?.({});
+			return;
+		};
+
+		C.BlockListSetFields(rootId, [
+			{ blockId: block.id, fields: { ...fields, isRtlDetected: value } }
+		], () => {
+			C.BlockListSetAlign(rootId, [block.id], value ? I.BlockHAlign.Right : I.BlockHAlign.Left, callBack);
+		});
+	};
+
+	/**
+	 * Gets the list of conflicting relation IDs for a root object.
+	 * @param {string} rootId - The root object ID.
+	 * @param {(ids: string[]) => void} callBack - Callback with the list of conflicting IDs.
+	 */
+	getConflictRelations(rootId: string, callBack: (ids: string[]) => void) {
+		if (!rootId) {
+			console.error('[U.Data].getConflictRelations: No rootId');
+			return;
+		};
+
+		C.ObjectTypeListConflictingRelations(rootId, S.Common.space, (message) => {
+			if (message.error.code) {
+				return;
+			};
+
+			const ids = S.Record.checkHiddenObjects(Relation.getArrayValue(message.conflictRelationIds)
+				.map(id => S.Record.getRelationById(id))).map(it => it.id).filter(it => it);
+
+			callBack?.(ids);
+		});
+	};
+
+	/**
+	 * Sorts the items by their temporary order ID.
+	 * @param {string} subId - The subscription ID.
+	 * @param {any[]} items - The items to sort.
+	 * @param {(callBack: (message: any) => void) => void} request - The request function to get the sorted order.
+	 */
+	sortByOrderIdRequest(subId: string, items: any[], request: (callBack: (message: any) => void) => void) {
+		let s = '';
+		items.forEach((it, i) => {
+			s = U.String.lexString(s);
+			S.Detail.update(subId, { id: it.id, details: { tmpOrder: s } }, false);
+		});
+
+		request(message => {
+			if (message.error.code) {
+				return;
+			};
+
+			const list = message.list;
+			for (let i = 0; i < list.length; i++) {
+				const item = items[i];
+				if (item) {
+					S.Detail.update(subId, { id: item.id, details: { tmpOrder: '', orderId: list[i] } }, false);
+				};
+			};
+		});
+	};
+
+	widgetContentParam(object: any, block: I.Block): { layout: I.WidgetLayout, limit: number, viewId: string } {
+		object = object || {};
+
+		let ret: any = {};
+
+		switch (block.content.section) {
+			case I.WidgetSection.Pin: {
+				ret = { ...block.content };
+				break;
+			};
+		};
+
+		return ret;
+	};
+
+	isFreeMember(): boolean {
+		// An unknown status is not the free tier
+		return this.isAnytypeNetwork() && S.Membership.isStatusKnown && !!S.Membership.data?.getTopProduct()?.isIntro;
+	};
+
+	checkIsArchived(id: string): boolean {
+		return S.Record.getRecordIds(U.Subscription.spaceSubId(J.Constant.subId.archived), '').includes(id);
+	};
+
+	checkIsDeleted(id: string): boolean {
+		return S.Record.getRecordIds(U.Subscription.spaceSubId(J.Constant.subId.deleted), '').includes(id);
+	};
+
+	checkPageClose(isPopup: boolean, rootId: string): boolean {
+		return !isPopup || (isPopup && (keyboard.getRootId(false) != rootId));
+	};
+
+	getWidgetTypes(): any[] {
+		const allowedTypes = [
+			J.Constant.typeKey.page,
+			J.Constant.typeKey.task,
+			J.Constant.typeKey.collection,
+		];
+
+		return S.Record.checkHiddenObjects(S.Record.getTypes()).filter(it => {
+			return (
+				!U.Object.isInSystemLayouts(it.recommendedLayout) &&
+				!U.Object.isDateLayout(it.recommendedLayout) &&
+				!U.Object.isParticipantLayout(it.recommendedLayout) &&
+				(it.uniqueKey != J.Constant.typeKey.template) &&
+				(
+					allowedTypes.includes(it.uniqueKey) || 
+					(S.Record.getRecordIds(U.Subscription.typeCheckSubId(it.uniqueKey), '').length > 0)
+				)
+			);
+		});
+	};
+
+	getWidgetChats(): any[] {
+		const spaceview = U.Space.getSpaceview();
+		const space = S.Common.space;
+
+		const chats = S.Record.getRecords(U.Subscription.spaceSubId(J.Constant.subId.chat)).filter(it => {
+			const counters = S.Chat.getChatCounters(space, it.id);
+			const mode = U.Object.getChatNotificationMode(spaceview, it.id);
+
+			if (mode == I.NotificationMode.Nothing) {
+				return (counters.mentionCounter > 0) || (counters.reactionCounter > 0);
+			};
+
+			return (counters.messageCounter > 0) || (counters.mentionCounter > 0) || (counters.reactionCounter > 0);
+		});
+
+		const parents = S.Record.getRecords(U.Subscription.spaceSubId(J.Constant.subId.discussion)).filter(it => {
+			return it.discussionId && U.Object.discussionHasUnread(space, it.discussionId);
+		});
+
+		return chats.concat(parents).sort((a, b) => {
+			const aDate = Number(a.lastMessageDate) || 0;
+			const bDate = Number(b.lastMessageDate) || 0;
+			return bDate - aDate;
+		});
+	};
+
+	getWidgetObjects (rootId: string, withHome: boolean): any[] {
+		let items = [];
+
+		const childrenIds = S.Block.getChildrenIds(rootId, rootId);
+
+		childrenIds.forEach(widgetId => {
+			const widgetBlock = S.Block.getLeaf(rootId, widgetId);
+			if (!widgetBlock || !widgetBlock.isWidget()) {
+				return;
+			};
+
+			const innerIds = S.Block.getChildrenIds(rootId, widgetBlock.id);
+			if (!innerIds.length) {
+				return;
+			};
+
+			const inner = S.Block.getLeaf(rootId, innerIds[0]);
+			const targetId = inner?.getTargetObjectId();
+			if (!targetId) {
+				return;
+			};
+
+			const object = S.Detail.get(rootId, targetId);
+			if (!object || object._empty_ || object.isArchived || object.isDeleted) {
+				return;
+			};
+
+			items.push(object);
+		});
+
+		if (withHome) {
+			const home = U.Space.getDashboard();
+
+			if (home && !U.Space.isSystemDashboard(home.id)) {
+				items = items.filter(it => it.id != home.id);
+				items.unshift({ 
+					...home, 
+					iconParam: { name: 'settings/home', color: 'red' },
+					_isDisabled: true,
+				});
+			};
+		};
+
+		return items;
+	};
+
+	getTypeNames (typeIds: string[], limit: number): string {
+		const types = typeIds.map(id => S.Record.getTypeById(id)).filter(it => it);
+
+		if (!types.length) {
+			return '';
+		};
+
+		const names = types.map(it => it.name);
+		const l = names.length;
+
+		if (l > limit) {
+			const more = l - limit;
+
+			names.splice(limit, more);
+			names.push(`+${more}`);
+		};
+
+		return U.String.sprintf(translate('commonObjectTypeList'), U.Common.plural(l, translate('pluralObjectType')), names.join(', '));
+	};
+
+	updateTabsDimmer(popupList?: I.Popup[], menuList?: I.Menu[]) {
+		const popups = (popupList || S.Popup.list).some(it => !S.Popup.noDimmerIds().includes(it.id));
+		const menus = (menuList || S.Menu.list).some(it => it.param.visibleDimmer);
+
+		Renderer.send('setTabsDimmer', popups || menus);
+	};
+
+	treeFromRecords (ids: string[], getParent: (id: string) => string): TreeNode[] {
+		const idSet = new Set(ids);
+		const childrenMap = new Map<string, string[]>();
+
+		for (const id of ids) {
+			const parent = getParent(id);
+			if (parent && idSet.has(parent)) {
+				if (!childrenMap.has(parent)) {
+					childrenMap.set(parent, []);
+				};
+				childrenMap.get(parent).push(id);
+			};
+		};
+
+		const buildNode = (id: string): TreeNode => {
+			const children = (childrenMap.get(id) || []).map(buildNode);
+			return { id, children };
+		};
+
+		return ids
+			.filter(id => {
+				const parent = getParent(id);
+				return !parent || !idSet.has(parent);
+			})
+			.map(buildNode);
+	};
+
+	flattenIds (node: TreeNode): string[] {
+		return [ node.id, ...node.children.flatMap(c => this.flattenIds(c)) ];
+	};
+
+	/**
+	 * Returns whether the import type is eligible for AI structure enrichment (served by the v2 import engine).
+	 */
+	canImportAi (type: I.ImportType): boolean {
+		return [ I.ImportType.Notion, I.ImportType.Markdown, I.ImportType.Obsidian ].includes(type);
+	};
+
+	/**
+	 * Whether this build embeds the "Provided by Anytype" AI proxy (endpoint and model injected at build time).
+	 * The typeof guard covers environments without the build-time defines (unit tests).
+	 */
+	isImportAiAnytypeAvailable (): boolean {
+		return ('undefined' != typeof IMPORT_AI_ANYTYPE_ENDPOINT) && Boolean(IMPORT_AI_ANYTYPE_ENDPOINT && IMPORT_AI_ANYTYPE_MODEL);
+	};
+
+	/**
+	 * Returns persisted AI import settings with defaults applied.
+	 */
+	getImportAiSettings (): I.ImportAiSettings {
+		return aiProvider.applyDefaults(Storage.get('importAi'), this.isImportAiAnytypeAvailable());
+	};
+
+	setImportAiSettings (settings: Partial<I.ImportAiSettings>): void {
+		Storage.set('importAi', Object.assign(this.getImportAiSettings(), settings));
+	};
+
+	/**
+	 * Builds the wire-format aiParams for ObjectImport, or null when the feature is off
+	 * or the config is incomplete. Never returns a half-filled config: a present-but-broken
+	 * config produces a visible llmPlanFailed warning middleware-side.
+	 */
+	getImportAiParams (): any {
+		const settings = this.getImportAiSettings();
+
+		if (!settings.enabled) {
+			return null;
+		};
+
+		if (settings.providerId == 'anytype') {
+			if (!this.isImportAiAnytypeAvailable()) {
+				return null;
+			};
+
+			return {
+				config: {
+					provider: I.AiProvider.OpenAi,
+					endpoint: IMPORT_AI_ANYTYPE_ENDPOINT,
+					model: IMPORT_AI_ANYTYPE_MODEL,
+					// OPENAI provider requires a non-empty token middleware-side; the proxy may not check it
+					token: IMPORT_AI_ANYTYPE_TOKEN || 'anytype',
+					temperature: 0,
+				},
+				includeContentSamples: settings.includeContentSamples,
+			};
+		};
+
+		const config = aiProvider.resolveConfig(settings);
+
+		if (!config) {
+			return null;
+		};
+
+		return {
+			config,
+			includeContentSamples: settings.includeContentSamples,
+		};
+	};
+
+	/**
+	 * Analytics dimensions for the AI import feature; no endpoint/model values (potentially identifying).
+	 */
+	getImportAiAnalytics (type: I.ImportType): { aiEnabled: boolean; aiProvider: string } {
+		const enabled = this.canImportAi(type) && !!this.getImportAiParams();
+
+		return {
+			aiEnabled: enabled,
+			aiProvider: enabled ? (this.getImportAiSettings().providerId == 'anytype' ? 'anytype' : 'byok') : '',
+		};
+	};
+
+};
+
+export default new UtilData();

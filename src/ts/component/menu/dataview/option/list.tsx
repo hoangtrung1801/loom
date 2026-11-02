@@ -1,0 +1,158 @@
+import React, { forwardRef, useRef, useEffect, useImperativeHandle } from 'react';
+import { OptionSelect } from 'Component';
+import * as I from 'Interface';
+
+const SUB_ID = 'dataviewOptionList';
+
+const MenuOptionList = forwardRef<{}, I.Menu>((props, ref) => {
+
+	const { id, param, close, position, setActive, getId, getContainer, onKeyDown, getSize } = props;
+	const { data, className, classNameWrap } = param;
+	const { canAdd, canEdit, noFilter, cellRef, noSelect, onChange, maxCount, filterMapper, skipIds, filter, selectFirst } = data;
+	const relation = data.relation.get();
+	const value = Relation.getArrayValue(data.value);
+	const optionSelectRef = useRef(null);
+	const n = useRef(-1);
+	const keydownHandler = useRef(null);
+	const clickHandler = useRef(null);
+
+	const rebind = () => {
+		unbind();
+		keydownHandler.current = (e: any) => onKeyDownHandler(e);
+		U.Dom.addEvent(window, 'keydown', keydownHandler.current);
+
+		clickHandler.current = () => S.Menu.close('dataviewOptionEdit');
+		const obj = getContainer();
+		if (obj) {
+			U.Dom.addEvent(obj, 'click', clickHandler.current);
+		};
+		window.setTimeout(() => setActive(), 15);
+	};
+
+	const unbind = () => {
+		if (keydownHandler.current) {
+			U.Dom.removeEvent(window, 'keydown', keydownHandler.current);
+			keydownHandler.current = null;
+		};
+		if (clickHandler.current) {
+			const obj = getContainer();
+			if (obj) {
+				U.Dom.removeEvent(obj, 'click', clickHandler.current);
+			};
+			clickHandler.current = null;
+		};
+	};
+
+	const beforePosition = () => {
+		U.Dom.toggleClass(getContainer(), 'withFilter', !noFilter);
+	};
+
+	const onKeyDownHandler = (e: any) => {
+		if (keyboard.isComposition) {
+			return;
+		};
+
+		const items = optionSelectRef.current?.getItems() || [];
+		const currentIndex = optionSelectRef.current?.getIndex() ?? -1;
+
+		let ret = false;
+
+		keyboard.shortcut('arrowright', e, () => {
+			const item = items[currentIndex];
+			if (item && (item.id != 'add')) {
+				optionSelectRef.current?.onOver(e, item);
+			};
+			ret = true;
+		});
+
+		if (!ret) {
+			onKeyDown(e);
+		};
+	};
+
+	const onValueChange = (newValue: string[]) => {
+		S.Menu.updateData(id, { value: newValue });
+		onChange?.(newValue);
+	};
+
+	const onMenuClose = () => {
+		close();
+	};
+
+	useEffect(() => {
+		rebind();
+
+		return () => {
+			unbind();
+		};
+	}, []);
+
+	useEffect(() => {
+		optionSelectRef.current?.setFilter(filter);
+	}, [ filter ]);
+
+	useEffect(() => {
+		if (!selectFirst) {
+			return;
+		};
+
+		S.Menu.updateData(id, { selectFirst: false });
+		optionSelectRef.current?.setFilter(filter);
+
+		window.setTimeout(() => {
+			const items = optionSelectRef.current?.getItems() || [];
+			const item = items[0];
+
+			if (item) {
+				optionSelectRef.current?.onClick({ stopPropagation: () => {} }, item);
+			};
+		});
+	}, [ selectFirst ]);
+
+	useImperativeHandle(ref, () => ({
+		rebind,
+		unbind,
+		getItems: () => optionSelectRef.current?.getItems() || [],
+		getIndex: () => optionSelectRef.current?.getIndex() ?? n.current,
+		setIndex: (i: number) => {
+			n.current = i;
+			optionSelectRef.current?.setIndex(i);
+		},
+		getFilterRef: () => optionSelectRef.current?.getFilterRef(),
+		getListRef: () => optionSelectRef.current?.getListRef(),
+		onClick: (e: any, item: any) => optionSelectRef.current?.onClick(e, item),
+		onSortEnd: (result: any) => optionSelectRef.current?.onSortEnd?.(result),
+		beforePosition,
+	}), []);
+
+	return (
+		<OptionSelect
+			ref={optionSelectRef}
+			subId={SUB_ID}
+			relationKey={relation.relationKey}
+			value={value}
+			onChange={onValueChange}
+			isReadonly={!canEdit}
+			noFilter={noFilter}
+			noSelect={noSelect}
+			maxCount={maxCount}
+			skipIds={skipIds}
+			filterMapper={filterMapper}
+			canAdd={canAdd}
+			canSort={canEdit}
+			canEdit={canEdit}
+			setActive={setActive}
+			onClose={onMenuClose}
+			menuId={getId()}
+			menuClassName={className}
+			menuClassNameWrap={classNameWrap}
+			getSize={getSize}
+			position={position}
+			cellRef={cellRef}
+			rebind={rebind}
+		/>
+	);
+
+});
+
+export default MenuOptionList;

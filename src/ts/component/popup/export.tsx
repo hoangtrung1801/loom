@@ -1,0 +1,212 @@
+import React, { forwardRef, useEffect, useState } from 'react';
+import { Title, Label, Select, Button, Switch } from 'Component';
+import * as I from 'Interface';
+import ExportFilesHelp from 'Component/util/exportFilesHelp';
+
+const PopupExport = forwardRef<{}, I.Popup>((props, ref) => {
+
+	const { param, close, storageGet, storageSet, position } = props;
+	const { data } = param;
+	const { allowHtml, objectIds, route } = data;
+	const { config, space } = S.Common;
+	const [ stateData, setStateData ] = useState<any>({});
+	const format = Number(stateData.format) || I.ExportType.Markdown;
+	const isAnyBlock = [ I.ExportType.Protobuf, I.ExportType.AnyBlockV2 ].includes(format);
+
+	const init = () => {
+		const options = storageGet();
+		const formats = getFormats();
+
+		let format = Number(options.format);
+		if (!formats.map(it => it.id).includes(format)) {
+			format = formats[0].id;
+		};
+
+		setStateData({
+			format,
+			zip:				 Boolean(options.zip),
+			nested:				 Boolean(options.nested),
+			files:				 Boolean(options.files),
+			archived:			 Boolean(options.archived),
+			json:				 (undefined === options.json) ? true : Boolean(options.json),
+			landscape:			 Boolean(options.landscape),
+			pageSize:			 String(options.pageSize || 'A4'),
+			background:			 (undefined === options.background) ? (S.Common.getThemeClass() ? 'dark' : '') : String(options.background),
+		});
+	};
+
+	const getFormats = () => {
+		return [
+			{ id: I.ExportType.Markdown, name: 'Markdown' },
+			{ id: I.ExportType.Protobuf, name: 'Any-Block v1' },
+			{ id: I.ExportType.AnyBlockV2, name: 'Any-Block v2 (Preview)' },
+			allowHtml ? { id: I.ExportType.Pdf, name: 'PDF' } : null,
+			allowHtml && config.experimental ? { id: I.ExportType.Html, name: 'HTML' } : null,
+		].filter(it => it);
+	};
+
+	const save = (newData) => {
+		storageSet(newData);
+		setStateData(newData);
+	};
+
+	const onConfirm = () => {
+		analytics.event('ClickExport', { type: format, route });
+
+		switch (format) {
+			default:
+				Action.export(space, objectIds, format, { ...stateData, route });
+				close();
+				break;
+
+			case I.ExportType.Html:
+				keyboard.onSaveAsHTML();
+				analytics.event('Export', { type: format, route });
+				break;
+
+			case I.ExportType.Pdf:
+				keyboard.onPrintToPDF(stateData);
+				analytics.event('Export', { type: format, route });
+				break;
+		};
+	};
+
+	const formats = getFormats();
+
+	const pageSize = [
+		{ id: 'A3', name: 'A3'},
+		{ id: 'A4', name: 'A4'},
+		{ id: 'A5', name: 'A5'},
+		{ id: 'legal', name: 'Legal'},
+		{ id: 'letter', name: 'Letter'},
+		{ id: 'tabloid', name: 'Tabloid'},
+	];
+
+	const formatOptions = [
+		{ id: 'json', name: 'JSON'},
+		{ id: 'pb', name: 'Protobuf'},
+	];
+
+	const Option = (item: any) => {
+		let control = null;
+
+		switch (item.control) {
+			case 'switch': {
+				control = (
+					<Switch
+						className="big"
+						value={stateData[item.id]}
+						onChange={(e: any, v: boolean) => save({ ...stateData, [item.id]: v })}
+					/>
+				);
+				break;
+			};
+
+			case 'select': {
+				let value = stateData[item.id];
+				if (item.id == 'json') {
+					value = value ? 'json' : 'pb';
+				};
+
+				control = (
+					<Select
+						id={item.id}
+						value={value}
+						options={item.options}
+						onChange={(v: any) => {
+							if (item.id == 'json') {
+								v = (v == 'json') ? true : false;
+							};
+
+							save({ ...stateData, [item.id]: v });
+						}}
+						arrowClassName="light"
+						isMultiple={false}
+						menuParam={{ width: 300 }}
+					/>
+				);
+				break;
+			};
+		};
+
+		return (
+			<div className="row">
+				<div className="name">
+					{item.name}
+					{(item.id == 'files') && isAnyBlock ? <ExportFilesHelp objectCount={objectIds?.length} /> : ''}
+				</div>
+				<div className="value">
+					{control}
+				</div>
+			</div>
+		);
+	};
+
+	let items: any[] = [
+		{ id: 'format', name: translate('popupExportFormat'), control: 'select', options: formats },
+	];
+
+	switch (format) {
+		case I.ExportType.Markdown:
+		case I.ExportType.Protobuf:
+		case I.ExportType.AnyBlockV2:
+			if (format == I.ExportType.Protobuf) {
+				items.push({ id: 'json', name: translate('popupExportFileFormat'), control: 'select', options: formatOptions });
+			};
+
+			items = items.concat([
+				{ id: 'zip', name: translate('popupExportZipArchive'), control: 'switch' },
+				{ id: 'nested', name: translate('popupExportIncludeLinkedObjects'), control: 'switch' },
+				{ id: 'files', name: translate(isAnyBlock ? 'popupExportIncludeFilesData' : 'popupExportIncludeFiles'), control: 'switch' },
+				{ id: 'archived', name: translate('popupExportIncludeArchivedObjects'), control: 'switch' },
+			]);
+			break;
+
+		case I.ExportType.Pdf: {
+			const backgroundOptions = [
+				{ id: '', name: translate('popupExportBackgroundLight') },
+				{ id: 'dark', name: translate('popupExportBackgroundDark') },
+			];
+
+			items = items.concat([
+				{ id: 'pageSize', name: translate('popupExportPageSize'), control: 'select', options: pageSize },
+				{ id: 'landscape', name: translate('popupExportLandscape'), control: 'switch' },
+				{ id: 'background', name: translate('popupExportBackground'), control: 'select', options: backgroundOptions },
+			]);
+			break;
+		}
+	};
+
+	items = items.filter(it => it);
+
+	useEffect(() => {
+		init();
+	}, []);
+
+	useEffect(() => {
+		position();
+	});
+
+	return (
+		<>
+			<Title text={translate('popupExportTitle')} />
+
+			<div className="notice">
+				<Label className="name" text={translate('exportAnyBlockV2NoticeTitle')} />
+				<Label className="descr" text={translate('exportAnyBlockV2NoticeText')} />
+			</div>
+
+			{items.map((item: any, i: number) => (
+				<Option key={i} {...item} />
+			))}
+
+			<div className="buttons">
+				<Button text={translate('popupExportOk')} onClick={onConfirm} />
+				<Button color="blank" text={translate('commonCancel')} onClick={() => close()} />
+			</div>
+		</>
+	);
+
+});
+
+export default PopupExport;

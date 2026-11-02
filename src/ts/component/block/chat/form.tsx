@@ -1,0 +1,2051 @@
+import React, { forwardRef, useRef, useState, useImperativeHandle, useEffect, DragEvent, MouseEvent, memo } from 'react';
+import sha1 from 'sha1';
+import raf from 'raf';
+import { Editable, Icon, IconObject, Label, Loader } from 'Component';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Navigation, Mousewheel } from 'swiper/modules';
+
+import Attachment from './attachment';
+import * as I from 'Interface';
+import * as M from 'Model';
+import Storage from 'Lib/storage';
+import { presence } from 'Lib/presence';
+
+interface Props extends I.BlockComponent {
+	blockId: string;
+	subId: string;
+	analyticsChatId?: string;
+	isEmpty?: boolean;
+	onScrollToBottomClick: () => void;
+	scrollToBottom: () => void;
+	scrollToMessage: (id: string, animate?: boolean, highlight?: boolean) => void;
+	loadMessagesByOrderId: (orderId: string, callBack?: () => void) => void;
+	getMessages: () => I.ChatMessage[];
+	getReplyContent: (message: any) => any;
+	highlightMessage: (id: string, orderId?: string) => void;
+	reloadAndScrollToBottom: () => void;
+	isBottom: React.RefObject<boolean>;
+};
+
+interface RefProps {
+	onReply: (message: I.ChatMessage) => void;
+	getReplyingId: () => string;
+	onEdit: (message: I.ChatMessage) => void;
+	onDelete: (id: string) => void;
+	getNode: () => HTMLDivElement;
+	onDragOver: (e: DragEvent) => void;
+	onDragLeave: (e: DragEvent) => void;
+	onDrop: (e: DragEvent) => void;
+	getAttachments: () => any[];
+	getMarks: () => I.Mark[];
+	onAttachment: () => void;
+};
+
+const ChatForm = forwardRef<RefProps, Props>((props, ref) => {
+
+	const { account } = S.Auth;
+	const { space } = S.Common;
+	const { 
+		rootId, block, subId, readonly, isPopup, getReplyContent, getMessages,
+		scrollToBottom, scrollToMessage, renderMentions, renderObjects, renderLinks, renderEmoji, onScrollToBottomClick, loadMessagesByOrderId,
+		analyticsChatId, reloadAndScrollToBottom, isBottom,
+	} = props;
+	const [ replyingId, setReplyingId ] = useState<string>('');
+	const nodeRef = useRef(null);
+	const editableRef = useRef(null);
+	const counterRef = useRef(null);
+	const sendRef = useRef(null);
+	const fileInputRef = useRef(null);
+	const timeoutFilter = useRef(0);
+	const timeoutDrag = useRef(0);
+	const timeoutHistory = useRef(0);
+	const isLoading = useRef<string[]>([]);
+	const isSending = useRef(false);
+	const range = useRef<I.TextRange>({ from: 0, to: 0 });
+	const marks = useRef<I.Mark[]>([]);
+	const editingId = useRef<string>('');
+	const speedLimit = useRef({ last: 0, counter: 0 });
+	const counters = S.Chat.getState(subId);
+	const { mentionCounter, reactionCounter } = counters;
+	const messageCounter = S.Chat.counterString(counters.messageCounter);
+	const history = useRef({ position: -1, states: [] });
+	const menuContext = useRef(null);
+	const namespace = U.Dom.getEventNamespace(isPopup);
+	const attachmentsSubId = subId + namespace;
+	const spaceview = U.Space.getSpaceview();
+	const electron = U.Common.getElectron();
+	
+	const attachments = S.Chat.getAttachments(attachmentsSubId);
+
+	const setAttachments = (list: any[]) => {
+		S.Chat.setAttachments(attachmentsSubId, list);
+	};
+
+	const checkSendButton = () => {
+		if (sendRef.current) {
+			U.Dom.css(sendRef.current, { display: (canSend() || isSending.current) ? '' : 'none' });
+		};
+	};
+
+	const onSelect = () => {
+		range.current = getRange();
+		checkTextMenu();
+	};
+
+	const checkTextMenu = () => {
+		if (!hasSelection()) {
+			if (S.Menu.isOpen('chatText')) {
+				S.Menu.close('chatText');
+			};
+			return;
+		};
+
+		S.Common.setTimeout('chatText', 150, () => {
+			// Don't open text menu if context is disabled (e.g., during spellcheck)
+			if (keyboard.isContextOpenDisabled) {
+				return;
+			};
+
+			S.Menu.open('chatText', {
+				classNameWrap: 'fromBlock',
+				element: '#messageBox',
+				recalcRect: () => {
+					const rect = U.Dom.getSelectionRect();
+					return rect ? { ...rect, y: rect.y + window.scrollY } : null;
+				},
+				offsetY: 4,
+				offsetX: -8,
+				passThrough: true,
+				data: {
+					rootId,
+					blockId: block.id,
+					range: range.current,
+					marks: marks.current,
+					onTextButtonToggle: onTextButtonToggle,
+					removeBookmark: removeBookmark
+				}
+			});
+		});
+	};
+
+	const updateTextMenu = () => {
+		if (S.Menu.isOpen('chatText')) {
+			S.Menu.updateData('chatText', {
+				range: range.current,
+				marks: marks.current,
+			});
+		};
+	};
+
+	const onMouseDown = (e: any) => {
+		// Allow native context menu (spellcheck) on right-click
+		if (e.button === 2) {
+			return;
+		};
+		onSelect();
+	};
+
+	const onMouseUp = (e: any) => {
+		// Allow native context menu (spellcheck) on right-click
+		if (e.button === 2) {
+			return;
+		};
+		onSelect();
+	};
+
+	const onFocusInput = () =>	 {
+		keyboard.disableSelection(true);
+		editableRef.current?.placeholderCheck();
+	};
+
+	const onBlurInput = () => {
+		keyboard.disableSelection(false);
+		editableRef.current?.placeholderCheck();
+		presence.stop(rootId);
+
+		saveState(attachments);
+	};
+
+	const insert = (text: string, value: string) => {
+		text = String(text || '');
+		const length = text.length;
+
+		marks.current = Mark.adjust(marks.current, range.current.from, length);
+		value = U.String.insert(value, text, range.current.from, range.current.from);
+		updateMarkup(value, { from: range.current.from + length, to: range.current.from + length });
+	};
+
+	const insertNewLine = () => {
+		let value = getTextValue();
+		const atEnd = range.current.from >= value.length;
+
+		// The trailing-newline append only makes a newline visible at the very end of the
+		// contentEditable; appending it when the caret is mid-text leaves a stray blank line.
+		if (atEnd && !value.match(/\r?\n$/)) {
+			value += '\n';
+		};
+
+		insert('\n', value);
+		scrollToBottom();
+	};
+
+	const onKeyDownInput = (e: any) => {
+		const { chatCmdSend } = S.Common;
+		const cmd = keyboard.cmdKey();
+		const hasMenu = S.Menu.isOpen('blockEmoji') || S.Menu.isOpen('blockMention');
+
+		let value = getTextValue();
+
+		if (!hasMenu) {
+			if (chatCmdSend) {
+				keyboard.shortcut(`${cmd}+enter`, e, () => {
+					e.preventDefault();
+					onSend();
+				});
+			} else {
+				keyboard.shortcut(`enter`, e, () => {
+					e.preventDefault();
+
+					if (U.Chat.isInOpenCodeFence(value, range.current.from)) {
+						insertNewLine();
+					} else {
+						onSend();
+					};
+				});
+
+				keyboard.shortcut(`${cmd}+enter`, e, () => {
+					e.preventDefault();
+					insertNewLine();
+				});
+			};
+		};
+
+		keyboard.shortcut('arrowup', e, () => {
+			if (range.current.to || value || attachments.length || editingId.current) {
+				return;
+			};
+
+			e.preventDefault();
+
+			const list = getMessages().filter(it => it.creator == account.id);
+
+			if (list.length) {
+				onEdit(list[list.length - 1]);
+			};
+		});
+
+		keyboard.shortcut('backspace', e, () => {
+			const parsed = Mark.checkMarkOnBackspace(value, range.current, marks.current);
+
+			if (!parsed.save) {
+				return;
+			};
+
+			e.preventDefault();
+
+			value = parsed.text;
+			setMarks(parsed.marks);
+
+			const l = value.length;
+			updateMarkup(value, { from: l, to: l });
+
+			U.Dom.eventDispatch(window, 'resize');
+		});
+
+		keyboard.shortcut('menuSmile', e, () => {
+			if (!S.Menu.isOpen('smile')) {
+				e.preventDefault();
+				onEmoji();
+			};
+		});
+
+		if (editingId.current) {
+			keyboard.shortcut('escape', e, () => {
+				editingId.current = '';
+				range.current = { from: 0, to: 0 };
+
+				setMarks([]);
+				updateValue('');
+			});
+		};
+
+		keyboard.shortcut(`${cmd}+c`, e, () => {
+			e.preventDefault();
+			onCopy();
+		});
+
+		keyboard.shortcut('shift+enter', e, () => {
+			scrollToBottom();
+		});
+
+		keyboard.shortcut('tab', e, () => {
+			e.preventDefault();
+			insert('\t', value);
+		});
+
+		// Mark-up
+		if (range.current && range.current.to && (range.current.from != range.current.to)) {
+			let type = null;
+
+			for (const item of keyboard.getMarkParam()) {
+				keyboard.shortcut(item.key, e, () => type = item.type);
+			};
+
+			if (type !== null) {
+				e.preventDefault();
+
+				if (type == I.MarkType.Link) {
+					openLinkMenu();
+				} else {
+					onTextButtonToggle(type, '');
+				};
+			};
+		};
+
+		// Paste without formatting
+		keyboard.shortcut(`${cmd}+shift+v`, e, () => {
+			e.preventDefault();
+
+			(async () => {
+				const text = await navigator.clipboard.readText();
+				if (!text) {
+					return;
+				};
+
+				const { from, to } = range.current;
+				const limit = J.Constant.limit.chat.text;
+				const current = getTextValue();
+
+				let newText = U.String.normalizeLineEndings(text);
+				if (newText.length >= limit) {
+					newText = newText.substring(0, limit);
+				};
+
+				const res = U.String.insert(current, newText, from, to);
+
+				marks.current = Mark.adjustForReplace(marks.current, from, to, newText.length);
+				marks.current = Mark.checkRanges(res, marks.current);
+				setMarks(marks.current);
+
+				const rt = from + newText.length;
+				range.current = { from: rt, to: rt };
+				updateMarkup(res, range.current);
+				checkUrls();
+				updateCounter();
+			})();
+		});
+
+		// UnDo, ReDo
+		keyboard.shortcut('undo', e, () => onHistory(e, -1));
+		keyboard.shortcut('redo', e, () => onHistory(e, 1));
+	};
+
+	const onKeyUpInput = (e: any) => {
+		const prevRange = { ...range.current };
+		range.current = getRange();
+
+		const { to } = range.current;
+		const { filter } = S.Common;
+		const value = getTextValue();
+		const parsed = getMarksFromHtml();
+		const oneSymbolBefore = range.current ? value[range.current.from - 1] : '';
+		const twoSymbolBefore = range.current ? value[range.current.from - 2] : '';
+		const menuOpenMention = S.Menu.isOpen('blockMention');
+		const menuOpenEmoji = S.Menu.isOpen('blockEmoji');
+		const canOpenMenuMention = !spaceview.isOneToOne && !menuOpenMention && (oneSymbolBefore == '@') && (!twoSymbolBefore || [ ' ', '\n', '(', '[', '"', '\'' ].includes(twoSymbolBefore));
+		const canOpenMenuEmoji = !menuOpenEmoji && (oneSymbolBefore == ':') && (!twoSymbolBefore || [ ' ', '\n', '(', '[', '"', '\'' ].includes(twoSymbolBefore));
+
+		let cleanedMarks = Mark.checkRanges(parsed.text, parsed.marks);
+
+		// If user typed a character over a selection, remove link/object marks inherited from the replaced text
+		const hadSelection = (prevRange.from !== prevRange.to);
+		const isCharInput = e.key && (e.key.length === 1) && !e.ctrlKey && !e.metaKey && !e.altKey;
+
+		if (hadSelection && isCharInput) {
+			cleanedMarks = cleanedMarks.filter(it => {
+				if (!Mark.needsBreak(it.type)) {
+					return true;
+				};
+
+				return (it.range.to <= prevRange.from) || (it.range.from >= range.current.from);
+			});
+		};
+
+		setMarks(cleanedMarks);
+
+		let adjustMarks = false;
+
+		if (cleanedMarks.length < parsed.marks.length) {
+			updateMarkup(parsed.text, range.current);
+		} else
+		if (value !== parsed.text) {
+			const diff = value.length - parsed.text.length;
+			updateMarkup(parsed.text, { from: to - diff, to: to - diff });
+		};
+
+		if (canOpenMenuMention) {
+			onMention(true);
+		};
+
+		if (canOpenMenuEmoji) {
+			onEmojiSearch();
+		};
+
+		if (menuOpenMention) {
+			window.clearTimeout(timeoutFilter.current);
+			timeoutFilter.current = window.setTimeout(() => {
+				if (!range.current) {
+					return;
+				};
+
+				const d = range.current.from - filter.from;
+
+				if (d >= 0) {
+					const part = value.substring(filter.from, filter.from + d).replace(/^\//, '');
+					S.Common.filterSetText(part);
+				};
+			}, 30);
+
+			keyboard.shortcut('backspace', e, () => {
+				if (!value.match('@')) {
+					S.Menu.close('blockMention');
+				};
+			});
+
+			return;
+		};
+
+		if (menuOpenEmoji) {
+			window.clearTimeout(timeoutFilter.current);
+			timeoutFilter.current = window.setTimeout(() => {
+				if (!range.current) {
+					return;
+				};
+
+				const d = range.current.from - filter.from;
+
+				if (d >= 0) {
+					const part = value.substring(filter.from, filter.from + d).replace(/^:/, '');
+
+					if (part.includes(' ')) {
+						S.Menu.close('blockEmoji');
+					} else {
+						S.Common.filterSetText(part);
+					};
+				};
+			}, 30);
+
+			keyboard.shortcut('backspace', e, () => {
+				if (!value.match(':')) {
+					S.Menu.close('blockEmoji');
+				};
+			});
+
+			return;
+		};
+
+		keyboard.shortcut('backspace', e, () => {
+			scrollToBottom();
+		});
+
+		keyboard.shortcut('space', e, () => {
+			for (let i = 0; i < marks.current.length; ++i) {
+				const mark = marks.current[i];
+
+				if (Mark.needsBreak(mark.type) && (mark.range.to == to)) {
+					const adjusted = Mark.adjust([ mark ], mark.range.to - 1, -1);
+
+					marks.current[i] = adjusted[0];
+					adjustMarks = true;
+				};
+			};
+		});
+
+		if (!value && !attachments.length && editingId.current) {
+			onDelete(editingId.current);
+		};
+
+		if (adjustMarks) {
+			updateMarkup(value, { from: to, to });
+		};
+
+		checkSendButton();
+		removeBookmarks();
+		updateCounter();
+
+		window.clearTimeout(timeoutHistory.current);
+		timeoutHistory.current = window.setTimeout(() => historySaveState(), J.Constant.delay.chatHistory);
+	};
+
+	const onInput = () => {
+		const value = getTextValue();
+		const checkRtl = U.String.checkRtl(value);
+		const editNode = editableRef.current?.getNode();
+
+		if (editNode) {
+			U.Dom.toggleClass(editNode, 'isRtl', checkRtl);
+		};
+
+		if (value) {
+			presence.typing(rootId, '');
+		};
+	};
+
+	const onCopy = () => {
+		const text = getTextValue();
+		const range = getRange();
+		const str = text.substring(range.from, range.to);
+		const res = Mark.getPartOfString(text, range, marks.current);
+		const block = new M.Block({
+			type: I.BlockType.Text,
+			content: res,
+		});
+
+		U.Common.clipboardCopy({
+			text: str,
+			html: Mark.toHtml(res.text, res.marks),
+			anytype: {
+				range,
+				blocks: [ block ],
+			},
+		});
+	};
+
+	const onPaste = (e: any) => {
+		e.preventDefault();
+
+		const { from, to } = range.current;
+		const limit = J.Constant.limit.chat.text;
+		const current = getTextValue();
+		const clipboard = e.clipboardData;
+		const list = U.Common.getDataTransferFiles(clipboard.items).map((it: File) => getObjectFromFile(it)).filter(it => {
+			return !electron.isDirectory(it.path);
+		});
+
+		const json = JSON.parse(String(clipboard.getData('application/json') || '{}'));
+		const html = String(clipboard.getData('text/html') || '').replace(/<meta[^>]*>/gi, '');
+		const text = U.String.normalizeLineEndings(String(clipboard.getData('text/plain') || ''));
+
+		// If pasted content is a pure URL and there's a selection (outside any code), create a link mark
+		const urls = U.String.getUrlsFromText(text);
+		const inCode = U.Chat.isInCode(current, from, to) || U.Chat.isInInlineCode(current, from) || Mark.getInRange(marks.current, I.MarkType.Code, { from, to });
+		if (urls.length && (urls[0].value == text) && (from != to) && !inCode) {
+			const url = urls[0].value;
+			const currentMark = Mark.getInRange(marks.current, I.MarkType.Link, { from, to });
+
+			if (!currentMark) {
+				marks.current.push({ type: I.MarkType.Link, range: { from, to }, param: url });
+				setMarks(marks.current);
+				updateMarkup(current, range.current);
+				return;
+			};
+		};
+
+		let newText = '';
+		let newMarks: I.Mark[] = [];
+
+		const parseBlocks = (blocks: I.Block[]) => {
+			const targetIds = [];
+			const textBlocksCnt = blocks.filter(it => it.isText()).length;
+
+			blocks.forEach((block: I.Block, index: number) => {
+				if (block.isText()) {
+					const text = block.getText();
+			
+					let marks = block.content.marks || [];
+					if (block.isTextHeader()) {
+						marks.push({ type: I.MarkType.Bold, range: { from: 0, to: text.length } });
+					};
+					marks = Mark.adjust(marks, 0, newText.length);
+
+					newText += text;
+
+					if ((index < blocks.length - 1) && (textBlocksCnt > 1)) {
+						newText += '\n';
+					};
+
+					newMarks = newMarks.concat(marks);
+				} else {
+					const targetId = block.getTargetObjectId();
+
+					if (targetId) {
+						targetIds.push(targetId);
+					};
+				};
+			});
+
+			if (targetIds.length) {
+				U.Object.getByIds(targetIds, { spaceId: space }, addAttachments);
+			};
+		};
+
+		const parseText = () => {
+			if (!newText) {
+				return;
+			};
+
+			if (newText.length >= limit) {
+				newText = newText.substring(0, limit);
+			};
+
+			const res = U.String.insert(current, newText, from, to);
+			const skipMarks = [ I.MarkType.Color, I.MarkType.BgColor ];
+
+			newMarks = Mark.adjust(newMarks, 0, from);
+
+			marks.current = Mark.adjustForReplace(marks.current, from, to, newText.length);
+			marks.current = marks.current.concat(newMarks);
+			marks.current = marks.current.filter(it => !skipMarks.includes(it.type));
+			marks.current = Mark.checkRanges(res, marks.current);
+
+			setMarks(marks.current);
+
+			const rt = from + newText.length;
+			range.current = { from: rt, to: rt };
+			updateMarkup(res, range.current);
+			checkUrls();
+		};
+
+		if (json && json.blocks && json.blocks.length) {
+			parseBlocks(json.blocks.map(it => new M.Block(it)));
+			parseText();
+		} else 
+		if (html) {
+			C.BlockPreview(html, '', (message: any) => {
+				if (message.error.code || !message.blocks || !message.blocks.length) {
+					newText = text;
+				} else {
+					parseBlocks(message.blocks.map(it => new M.Block(it)));
+				};
+				parseText();
+			});
+		} else 
+		if (text) {
+			newText = text;
+			parseText();
+		};
+
+		if (list.length) {
+			saveFiles(list);
+		};
+
+		updateCounter();
+	};
+
+	const checkUrls = () => {
+		let text = getTextValue();
+
+		const urls = U.String.getUrlsFromText(text);
+		if (!urls.length) {
+			return;
+		};
+
+		removeBookmarks();
+
+		const toRemove = [];
+
+		for (const url of urls) {
+			const { from, to, isLocal, isUrl } = url;
+
+			if (isLocal) {
+				continue;
+			};
+
+			// Skip URLs inside a code block or inline code — don't auto-link or create a bookmark.
+			if (U.Chat.isInCode(text, from, to) || U.Chat.isInInlineCode(text, from) || Mark.getInRange(marks.current, I.MarkType.Code, { from, to })) {
+				continue;
+			};
+
+			let value = U.String.urlFix(url.value || '');
+			let type = I.MarkType.Link;
+			let fromAnotherSpace = false;
+
+			const route = U.Common.getRouteFromUrl(value);
+			if (route) {
+				const routeParam = U.Router.getParam(route);
+
+				if (routeParam.spaceId != space) {
+					fromAnotherSpace = true;
+				};
+
+				if ((routeParam.action == 'object') && (routeParam.spaceId == space)) {
+					value = `${J.Constant.protocol}://${route}`;
+					type = I.MarkType.Object;
+				};
+			};
+
+			// Internal object link: resolve as attachment and remove URL from text
+			if (type == I.MarkType.Object) {
+				addBookmark(value);
+				toRemove.push({ from, to });
+				continue;
+			};
+
+			if (Mark.getInRange(marks.current, I.MarkType.Link, { from, to })) {
+				continue;
+			};
+
+			marks.current.push({
+				type,
+				range: { from, to },
+				param: value,
+			});
+
+			setMarks(marks.current);
+
+			if (isUrl && !fromAnotherSpace) {
+				addBookmark(value, true);
+			};
+		};
+
+		// Remove internal object URLs from text in reverse order to preserve positions
+		let removed = 0;
+		if (toRemove.length) {
+			for (let i = toRemove.length - 1; i >= 0; i--) {
+				let { from, to } = toRemove[i];
+
+				// Remove one adjacent whitespace to prevent double spaces
+				if ((to < text.length) && /\s/.test(text[to])) {
+					to++;
+				} else
+				if ((from > 0) && /\s/.test(text[from - 1])) {
+					from--;
+				};
+
+				const length = to - from;
+				text = text.substring(0, from) + text.substring(to);
+				marks.current = Mark.adjust(marks.current, from, -length);
+				removed += length;
+			};
+
+			setMarks(marks.current);
+		};
+
+		const r = Math.min(text.length, Math.max(0, range.current.to + 1 - removed));
+		updateMarkup(text, { from: r, to: r });
+	};
+
+	const canDrop = (e: any): boolean => {
+		return !readonly && U.File.checkDropFiles(e);
+	};
+
+	const onDragOver = (e: any) => {
+		if (!canDrop(e)) {
+			return;
+		};
+
+		e.preventDefault();
+		e.stopPropagation();
+
+		window.clearTimeout(timeoutDrag.current);
+		if (nodeRef.current) {
+			U.Dom.addClass(nodeRef.current, 'isDraggingOver');
+			U.Dom.css(nodeRef.current, { height: (U.Dom.getScrollContainer(isPopup)?.clientHeight ?? 0) + 'px' });
+		};
+	};
+	
+	const onDragLeave = (e: any) => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		window.clearTimeout(timeoutDrag.current);
+		timeoutDrag.current = window.setTimeout(clearDragState, 100);
+	};
+
+	const onDrop = (e: any) => {
+		if (!canDrop(e)) {
+			clearDragState();
+			return;
+		};
+
+		e.preventDefault();
+		e.stopPropagation();
+
+		const list = Array.from(e.dataTransfer.files).map((it: File) => getObjectFromFile(it)).filter(it => {
+			return !electron.isDirectory(it.path);
+		});
+
+		keyboard.disableCommonDrop(true);
+
+		saveFiles(list);
+
+		keyboard.disableCommonDrop(false);
+		clearDragState();
+	};
+
+	const clearDragState = () => {
+		if (nodeRef.current) {
+			U.Dom.removeClass(nodeRef.current, 'isDraggingOver');
+			U.Dom.css(nodeRef.current, { height: '' });
+		};
+	};
+
+	const onEmoji = () => {
+		S.Menu.open('smile', {
+			element: `#button-${U.Common.esc(block.id)}-emoji`,
+			...caretMenuParam(),
+			horizontal: I.MenuDirection.Right,
+			recalcRect: undefined,
+			data: {
+				noHead: true,
+				noUpload: true,
+				value: '',
+				onSelect: icon => onChatButtonSelect(I.ChatButton.Emoji, icon),
+				route: analytics.route.message,
+			}
+		});
+	};
+
+	const onAttachmentOver = (e: any, item: any) => {
+		if (!item.arrow) {
+			S.Menu.closeAll(J.Menu.chatForm);
+			return;
+		};
+
+		const context = menuContext.current;
+		if (!context) {
+			return;
+		};
+
+		switch (item.id) {
+			case 'create': {
+				U.Menu.typeSuggest({
+					element: `#${context.getId()} #item-${U.Common.esc(item.id)}`,
+					className: 'fixed',
+					classNameWrap: 'fromSidebar',
+					offsetX: context.getSize().width,
+					vertical: I.MenuDirection.Center,
+					isSub: true,
+					data: {
+						onAdd: () => context?.close(),
+					},
+				}, {}, { noButtons: true }, analytics.route.message, object => {
+					onChatButtonSelect(I.ChatButton.Object, object);
+
+					U.Object.openPopup(object, { onClose: () => updateAttachments(S.Chat.getAttachments(attachmentsSubId)) });
+
+					analytics.event('AttachItemChat', { type: 'Create', count: 1, chatId: analyticsChatId });
+					context?.close();
+				});
+				break;
+			};
+		};
+	};
+
+	const onFileInputChange = (e: any) => {
+		const files = Array.from(e.target.files || []) as File[];
+		const list = files.map((file: File) => getObjectFromFile(file)).filter(it => !electron.isDirectory(it.path));
+
+		if (list.length) {
+			addAttachments(list);
+			analytics.event('AttachItemChat', { type: 'Upload', count: list.length, chatId: analyticsChatId });
+		};
+
+		// Reset input so the same file can be selected again
+		if (fileInputRef.current) {
+			fileInputRef.current.value = '';
+		};
+	};
+
+	const onAttachment = () => {
+		const options: any[] = [
+			{ id: 'create', iconParam: { name: 'menu/action/createObject' }, name: translate('commonNewObject'), arrow: true },
+			{ id: 'search', iconParam: { name: 'menu/block/common/linkto' }, name: translate('spaceExisting') },
+			{ id: 'upload', iconParam: { name: 'menu/action/uploadComputer' }, name: translate('commonUploadComputer') },
+		];
+
+		S.Menu.closeAll(null, () => {
+			S.Menu.open('chatFormOptions', {
+				component: 'select',
+				element: `#block-${U.Common.esc(block.id)} #button-${U.Common.esc(block.id)}-attachment`,
+				className: 'chatAttachment fixed',
+				classNameWrap: 'fromBlock',
+				offsetY: -8,
+				vertical: I.MenuDirection.Top,
+				noFlipX: true,
+				noFlipY: true,
+				subIds: J.Menu.chatForm,
+				onOpen: context => menuContext.current = context,
+				data: {
+					options,
+					noVirtualisation: true,
+					noScroll: true,
+					onOver: onAttachmentOver,
+					onSelect: (e: MouseEvent, option: any) => {
+						switch (option.id) {
+							case 'search': {
+								keyboard.onSearchPopup(analytics.route.message, {
+									data: {
+										skipIds: attachments.map(it => it.id),
+										onObjectSelect: item => {
+											addAttachments([ item ]);
+											analytics.event('AttachItemChat', { type: 'Existing', count: 1, chatId: analyticsChatId } );
+										},
+									},
+								});
+								break;
+							};
+
+							case 'upload': {
+								fileInputRef.current?.click();
+								analytics.event('ClickChatAttach', { type: 'Upload', chatId: analyticsChatId });
+								break;
+							};
+						};
+					},
+				},
+			});
+		});
+	};
+
+	const addAttachments = (list: any[]) => {
+		const limit = J.Constant.limit.chat.attachments;
+		const ids = attachments.map(it => it.id);
+
+		list = list.filter(it => !ids.includes(it.id));
+		list = list.map(it => ({ ...it, timestamp: U.Date.now() }));
+
+		if (list.length + attachments.length > limit) {
+			list = list.slice(0, limit);
+			Preview.toastShow({
+				icon: 'notice',
+				text: U.String.sprintf(translate('toastChatAttachmentsLimitReached'), limit, U.Common.plural(limit, translate('pluralFile')).toLowerCase())
+			});
+		};
+
+		saveState([ ...attachments, ...list ]);
+		historySaveState();
+	};
+
+	// Files without a disk path (pasted, dragged from a browser) are written to temp first, since upload needs a path.
+	// Their id is taken again from that unique path, so different files of the same size pasted together stay apart
+	const saveFiles = (list: any[]) => {
+		U.Common.saveClipboardFiles(list, {}, data => addAttachments(data.files.map(it => ({ ...it, id: getAttachmentId(it.path, it.file) }))));
+	};
+
+	const addBookmark = (url: string, fromText?: boolean) => {
+		const add = (param: any) => {
+			const { title, description, url } = param;
+			const item = {
+				id: sha1(url),
+				name: title,
+				description,
+				layout: I.ObjectLayout.Bookmark,
+				source: url,
+				isTmp: true,
+				timestamp: U.Date.now(),
+				fromText
+			};
+			addAttachments([ item ]);
+		};
+
+		const { isInside, target, spaceId } = U.Common.getLinkParamFromUrl(url);
+
+		if (isInside) {
+			U.Object.getById(target, { spaceId }, object => {
+				if (object) {
+					addAttachments([ object ]);
+				};
+			});
+		} else {
+			isLoading.current.push(url);
+
+			C.LinkPreview(url, (message: any) => {
+				isLoading.current = isLoading.current.filter(it => it != url);
+
+				if (!message.error.code) {
+					add({ ...message.previewLink, url });
+				};
+			});
+		};
+	};
+
+	const removeBookmarks = () => {
+		const bookmarks = attachments.filter(it => (it.layout == I.ObjectLayout.Bookmark) && it.fromText);
+		
+		let filtered = attachments;
+		bookmarks.forEach(it => {
+			const current = marks.current.filter(mark => mark.param == it.source);
+			if (!current.length) {
+				filtered = filtered.filter(file => file.id != it.id);
+			};
+		});
+
+		if (attachments.length != filtered.length) {
+			saveState(filtered);
+		};
+	};
+
+	const removeBookmark = (url: string) => {
+		onAttachmentRemove(sha1(url));
+	};
+
+	const getAttachmentType = (layout: I.ObjectLayout) => {
+		let ret = I.AttachmentType.File;
+		switch (layout) {
+			case I.ObjectLayout.Bookmark: {
+				ret = I.AttachmentType.Link;
+				break;
+			};
+			
+			case I.ObjectLayout.Image: {
+				ret = I.AttachmentType.Image;
+				break;
+			};
+		};
+		return ret;
+	};
+
+	const onSend = () => {
+		if (isSending.current || !canSend() || S.Menu.isOpen('blockMention')) {
+			return;
+		};
+
+		// the message itself supersedes the typing signal
+		presence.stop(rootId);
+
+		const send = sendRef.current;
+		const files = attachments.filter(it => it.isTmp && (U.Object.isFileLayout(it.layout) || U.Object.isImageLayout(it.layout)));
+		const bookmarks = attachments.filter(it => it.isTmp && U.Object.isBookmarkLayout(it.layout));
+		const fl = files.length;
+		const bl = bookmarks.length;
+		const bookmark = S.Record.getBookmarkType();
+
+		// tmp attachment id → created object id. Results are collected here instead of
+		// mutating the attachments array in place: the user can remove attachments while
+		// uploads are in flight, so the final list is resolved from the CURRENT store
+		// state in callBack, not from a stale send-time snapshot.
+		const created = new Map<string, string>();
+
+		let failed = false;
+
+		U.Dom.addClass(send, 'isLoading');
+		isSending.current = true;
+
+		raf(() => {
+			U.Dom.addClass(send, 'anim');
+		});
+
+		// Abort without clear(): the composer keeps its text and attachments so the user can retry.
+		const abort = (text: string) => {
+			isSending.current = false;
+			U.Dom.removeClass(send, 'isLoading');
+			U.Dom.removeClass(send, 'anim');
+
+			Preview.toastShow({ icon: 'notice', text });
+		};
+
+		const callBack = () => {
+			if (failed) {
+				abort(translate('toastChatUploadFailed'));
+				return;
+			};
+
+			// Resolve against the current store list so attachments removed during the
+			// upload don't come back into the message.
+			const newAttachments = S.Chat.getAttachments(attachmentsSubId)
+				.map(it => ({ target: (it.isTmp ? created.get(it.id) : it.id), type: getAttachmentType(it.layout) }))
+				.filter(it => it.target);
+			const parsed = getMarksFromHtml();
+			const text = trim(parsed.text);
+			const match = parsed.text.match(/^\r?\n+/);
+			const diff = match ? match[0].length : 0;
+			const marks = Mark.checkRanges(text, Mark.adjust(parsed.marks, 0, -diff));
+			// Code: store the body as a Code mark over the (fence-less) text in content.text — no blocks.
+			// Keeps it in content.text + marks so every client renders monospace (mobile ignores blocks).
+			const coded = U.Chat.fenceToCodeMarks(text, marks);
+
+			if (editingId.current) {
+				const message = S.Chat.getMessageById(subId, editingId.current);
+				if (message) {
+					const update = U.Common.objectCopy(message);
+
+					update.attachments = newAttachments;
+					update.content.text = coded.text;
+					update.content.marks = coded.marks;
+					update.blocks = [];
+
+					C.ChatEditMessageContent(rootId, editingId.current, update, (response: any) => {
+						if (response.error.code) {
+							abort(translate('toastChatSendFailed'));
+							return;
+						};
+
+						scrollToMessage(editingId.current, true);
+						clear();
+					});
+				};
+			} else {
+				if (replyingId) {
+					const reply = S.Chat.getMessageById(subId, replyingId);
+					if (reply) {
+						S.Chat.setReply(subId, reply);
+					};
+				};
+
+				const message = {
+					replyToMessageId: replyingId,
+					content: {
+						marks: coded.marks,
+						text: coded.text,
+						style: I.TextStyle.Paragraph,
+					},
+					attachments: newAttachments,
+					reactions: [],
+					blocks: [],
+				};
+
+				let messageType = 'Text';
+				if (newAttachments.length) {
+					messageType = message.content?.text.length ? 'Mixed' : 'Attachment';
+				};
+
+				C.ChatAddMessage(rootId, message, (response: any) => {
+					if (response.error.code) {
+						abort(translate('toastChatSendFailed'));
+						return;
+					};
+
+					reloadAndScrollToBottom();
+					clear();
+
+					analytics.event('SentMessage', { type: messageType, chatId: analyticsChatId});
+				});
+			};
+		};
+
+		const uploadFiles = (callBack: () => void) => {
+			if (!fl) {
+				callBack();
+				return;
+			};
+
+			let n = 0;
+			for (const item of files) {
+				C.FileUpload(S.Common.space, '', item.path, I.FileType.None, {}, false, '', 0, rootId, '', (message: any) => {
+					n++;
+
+					if (message.error.code || !message.objectId) {
+						failed = true;
+					} else {
+						created.set(item.id, message.objectId);
+					};
+
+					if (n == fl) {
+						callBack();
+					};
+				});
+			};
+		};
+
+		const fetchBookmarks = (callBack: () => void) => {
+			if (!bl) {
+				callBack();
+				return;
+			};
+
+			let n = 0;
+			for (const item of bookmarks) {
+				C.ObjectCreateBookmark({ source: item.source, createdInContext: rootId, createdInContextRef: '' }, S.Common.space, bookmark.defaultTemplateId, (message: any) => {
+					n++;
+
+					if (message.error.code || !message.objectId) {
+						failed = true;
+					} else {
+						created.set(item.id, message.objectId);
+					};
+
+					if (n == bl) {
+						callBack();
+					};
+				});
+			};
+		};
+
+		uploadFiles(() => fetchBookmarks(callBack));
+	};
+
+	const onEdit = (message: I.ChatMessage) => {
+		// A multiline Code mark is shown back in the composer as raw ``` fences (no live parse);
+		// inline code and other marks pass through unchanged.
+		const { text, marks } = U.Chat.codeMarksToFence(message.content.text, message.content.marks);
+		const l = text.length;
+		const attachments = (message.attachments || []).map(it => it.target).map(id => S.Detail.get(subId, id));
+
+		editingId.current = message.id;
+
+		setMarks(marks);
+		setReplyingId('');
+		updateMarkup(text, { from: l, to: l });
+		updateCounter();
+		setAttachments(attachments);
+		historySaveState();
+
+		analytics.event('ClickMessageMenuEdit', { chatId: analyticsChatId });
+	};
+
+	const clear = () => {
+		isSending.current = false;
+		U.Dom.removeClass(sendRef.current, 'isLoading');
+
+		onEditClear();
+		onReplyClear();
+		checkSpeedLimit();
+		historyClearState();
+
+		U.Dom.eventDispatch(window, 'resize');
+	};
+
+	const onEditClear = () => {
+		editingId.current = '';
+
+		setRange({ from: 0, to: 0 });
+		setMarks([]);
+		updateMarkup('', { from: 0, to: 0 });
+		clearCounter();
+		checkSendButton();
+		saveState([]);
+		checkTextMenu();
+	};
+
+	const onReply = (message: I.ChatMessage) => {
+		if (readonly) {
+			return;
+		};
+
+		const text = getTextValue();
+		const length = text.length;
+
+		range.current = { from: length, to: length };
+
+		setRange(range.current);
+		setReplyingId(message.id);
+
+		analytics.event('ClickMessageMenuReply', { chatId: analyticsChatId });
+	};
+
+	const onReplyClear = () => {
+		setReplyingId('');
+		scrollToBottom();
+	};
+
+	const onDelete = (id: string) => {
+		const messages = getMessages();
+		const idx = messages.findIndex(it => it.id == id);
+		const next = messages[idx + 1];
+
+		S.Popup.open('confirm', {
+			data: {
+				iconParam: { name: 'popup/header/confirm', color: 'orange' },
+				title: translate('popupConfirmChatDeleteMessageTitle'),
+				text: translate('popupConfirmChatDeleteMessageText'),
+				textConfirm: translate('commonDelete'),
+				onConfirm: () => {
+					C.ChatDeleteMessage(rootId, id, () => {
+						if (editingId.current == id) {
+							onEditClear();
+						};
+
+						if (next) {
+							scrollToMessage(next.id, true);
+						} else {
+							scrollToBottom();
+						};
+
+						analytics.event('DeleteMessage', { chatId: analyticsChatId });
+					});
+				},
+				onCancel: () => {
+					if (editingId.current == id) {
+						onEditClear();
+					};
+				},
+			}
+		});
+
+		analytics.event('ClickMessageMenuDelete', { chatId: analyticsChatId });
+	};
+
+	const onHistory = (e, dir) => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		const { position, states } = history.current;
+		const targetIdx = position + dir;
+
+		if (targetIdx < 0) {
+			clear();
+		};
+
+		if (states[targetIdx]) {
+			historyLoadState(targetIdx);
+		};
+	};
+
+	const historySaveState = () => {
+		const parsed = getMarksFromHtml();
+		const text = trim(parsed.text);
+		const match = parsed.text.match(/^\r?\n+/);
+		const diff = match ? match[0].length : 0;
+		const marks = Mark.checkRanges(text, Mark.adjust(parsed.marks, 0, -diff));
+		const item = {
+			text,
+			marks,
+			replyingId,
+			attachments: U.Common.objectCopy(attachments),
+		};
+		const { position, states } = history.current;
+
+		if (U.Common.compareJSON(states[position], item)) {
+			return;
+		};
+
+		if (position < states.length - 1) {
+			history.current.states = states.slice(0, position + 1);
+		};
+
+		history.current.position += 1;
+		history.current.states.push(item);
+	};
+
+	const historyLoadState = (idx: number) => {
+		const { text, marks, attachments, replyingId } = history.current.states[idx];
+		const l = text.length;
+
+		history.current.position = idx;
+		setMarks(marks);
+		setReplyingId(replyingId);
+		updateMarkup(text, { from: l, to: l });
+		updateCounter();
+		setAttachments(attachments);
+	};
+
+	const historyClearState = () => {
+		window.clearTimeout(timeoutHistory.current);
+		history.current = { position: -1, states: [] };
+	};
+
+	const getTextValue = (): string => {
+		return String(editableRef.current?.getTextValue() || '');
+	};
+
+	const getHtmlValue = (): string => {
+		return String(editableRef.current?.getHtmlValue() || '');
+	};
+
+	const trim = (value: string): string => {
+		return String(value || '').replace(/^(\r?\n+)/g, '').replace(/(\r?\n+)$/g, '');
+	};
+
+	const getMarksFromHtml = (): I.FromHtmlResult => {
+		return Mark.fromHtml(getHtmlValue(), []);
+	};
+
+	const onAttachmentRemove = (id: string) => {
+		const value = getTextValue();
+		const item = attachments.find(it => it.id == id);
+		const list = attachments.filter(it => it.id != id);
+
+		if (item.preloadId) {
+			C.FileDiscardPreload(item.preloadId);
+		};
+
+		if (editingId.current && !value && !attachments.length) {
+			onDelete(editingId.current);
+		} else {
+			saveState(list);
+			analytics.event('DetachItemChat', { chatId: analyticsChatId });
+		};
+
+		U.Dom.eventDispatch(window, 'resize');
+	};
+
+	const onNavigationClick = (type: I.ChatReadType) => {
+		switch (type) {
+			case I.ChatReadType.Message: {
+				onScrollToBottomClick();
+
+				analytics.event('ClickScrollToBottom', { chatId: analyticsChatId });
+				break;
+			};
+
+			case I.ChatReadType.Mention: {
+				const { mentionOrderId } = S.Chat.getState(subId);
+				const target = S.Chat.getMessageByOrderId(subId, mentionOrderId);
+
+				if (target) {
+					scrollToMessage(target.id, true, true);
+				} else {
+					loadMessagesByOrderId(mentionOrderId, () => {
+						const loaded = S.Chat.getMessageByOrderId(subId, mentionOrderId);
+						if (loaded) {
+							scrollToMessage(loaded.id, true, true);
+						};
+					});
+				};
+
+				analytics.event('ClickScrollToMention', { chatId: analyticsChatId });
+				break;
+			};
+
+			case I.ChatReadType.Reaction: {
+				const { reactionOrderId } = S.Chat.getState(subId);
+				const target = S.Chat.getMessageByOrderId(subId, reactionOrderId);
+
+				if (target) {
+					scrollToMessage(target.id, true, true);
+				} else {
+					loadMessagesByOrderId(reactionOrderId, () => {
+						const loaded = S.Chat.getMessageByOrderId(subId, reactionOrderId);
+						if (loaded) {
+							scrollToMessage(loaded.id, true, true);
+						};
+					});
+				};
+
+				analytics.event('ClickScrollToReaction', { chatId: analyticsChatId });
+				break;
+			};
+		};
+	};
+
+	const onChatButtonSelect = (type: I.ChatButton, item: any) => {
+		switch (type) {
+			case I.ChatButton.Object: {
+				addAttachments([ item ]);
+				break;
+			};
+
+			case I.ChatButton.Emoji: {
+				const to = range.current.from + 1;
+
+				let value = getTextValue();
+
+				marks.current = Mark.adjust(marks.current, range.current.from, 1);
+				marks.current = Mark.toggle(marks.current, {
+					type: I.MarkType.Emoji,
+					param: item,
+					range: { from: range.current.from, to },
+				});
+
+				value = U.String.insert(value, ' ', range.current.from, range.current.from);
+
+				updateMarkup(value, { from: to, to });
+				break;
+			};
+		};
+	};
+
+	const openLinkMenu = () => {
+		const { from, to } = range.current;
+		const mark = Mark.getInRange(marks.current, I.MarkType.Link, { from, to });
+		const rect = U.Dom.getSelectionRect();
+
+		S.Menu.close('chatText', () => {
+			S.Menu.open('blockLink', {
+				classNameWrap: 'fromBlock',
+				rect: rect ? { ...rect, y: rect.y + window.scrollY } : null,
+				horizontal: I.MenuDirection.Center,
+				vertical: I.MenuDirection.Top,
+				offsetY: -4,
+				noAnimation: true,
+				data: {
+					value: mark?.param,
+					filter: mark?.param,
+					type: mark?.type,
+					skipIds: [ rootId ],
+					onChange: onTextButtonToggle,
+					onClear: (before) => {
+						if (before) {
+							removeBookmark(before);
+						};
+					},
+				},
+			});
+		});
+	};
+
+	const onTextButtonToggle = (type: I.MarkType, param: string) => {
+		const value = getTextValue();
+		const { from, to } = Mark.trimRange(value, range.current);
+
+		setMarks(Mark.toggle(marks.current, { type, param, range: { from, to } }));
+		updateMarkup(value, { from, to });
+		updateTextMenu();
+
+		switch (type) {
+			case I.MarkType.Link: {
+				if (param) {
+					addBookmark(param);
+				};
+				break;
+			};
+
+			case I.MarkType.Object: {
+				U.Object.getById(param, {}, (object: any) => {
+					object.isTmp = true;
+					object.timestamp = U.Date.now();
+
+					saveState([ ...attachments, object ]);
+				});
+				break;
+			};
+		};
+
+		renderMarkup();
+	};
+
+	const getRange = (): I.TextRange => {
+		return editableRef.current?.getRange() || { from: 0, to: 0 };
+	};
+
+	const setRange = (newRange: I.TextRange) => {
+		editableRef.current?.setRange(newRange);
+	};
+
+	const getAttachmentId = (path: string, file: File) => sha1(path + file.lastModified + file.size);
+
+	const getObjectFromFile = (file: File) => {
+		const path = electron.webFilePath(file);
+		const mime = file.type || electron.fileMime(path);
+		const ext = electron.fileExt(path);
+		const type = S.Record.getFileType();
+
+		let layout = I.ObjectLayout.File;
+
+		if (mime) {
+			const [ t1, t2 ] = mime.split('/');
+			if ((t1 == 'image') && J.Constant.fileExtension.image.includes(t2)) {
+				layout = I.ObjectLayout.Image;
+			};
+		};
+
+		return {
+			id: getAttachmentId(path, file),
+			name: file.name,
+			layout,
+			type: type?.id,
+			sizeInBytes: file.size,
+			fileExt: ext,
+			isTmp: true,
+			mime,
+			path,
+			file,
+		};
+	};
+
+	const onMention = (fromKeyboard?: boolean) => {
+		if (!range) {
+			return;
+		};
+
+		let value = editableRef.current?.getTextValue();
+		let from = range.current.from;
+
+		if (fromKeyboard) {
+			value = U.String.cut(value, from - 1, from);
+			from--;
+		};
+
+		S.Common.filterSet(from, '');
+
+		const param = caretMenuParam();
+
+		raf(() => {
+			S.Menu.open('blockMention', {
+				element: `#button-${U.Common.esc(block.id)}-${I.ChatButton.Mention}`,
+				...param,
+				className: [ 'single', param.className ].join(' '),
+				data: {
+					rootId,
+					blockId: block.id,
+					pronounId: U.Space.getMyParticipant()?.id,
+					marks: marks.current,
+					skipIds: [ S.Auth.account.id ],
+					filters: [
+						{ relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Participant }
+					],
+					onChange: (object: any, text: string, newMarks: I.Mark[], from: number, to: number) => {
+						if (S.Menu.isAnimating('blockMention')) {
+							return;
+						};
+
+						S.Detail.update(subId, { id: object.id, details: object }, false);
+
+						setMarks(newMarks);
+						value = U.String.insert(value, text, from, from);
+
+						updateMarkup(value, { from: to, to });
+						analytics.event('Mention', { chatId: analyticsChatId });
+					},
+				},
+			});
+		});
+	};
+
+	const onEmojiSearch = () => {
+		if (!range) {
+			return;
+		};
+
+		let value = editableRef.current?.getTextValue();
+		let from = range.current.from;
+
+		value = U.String.cut(value, from - 1, from);
+		from--;
+
+		S.Common.filterSet(from, '');
+
+		const param = caretMenuParam();
+
+		S.Menu.open('blockEmoji', {
+			element: `#button-${U.Common.esc(block.id)}-${I.ChatButton.Emoji}`,
+			...param,
+			className: [ 'single', param.className ].join(' '),
+			data: {
+				rootId,
+				blockId: block.id,
+				marks: marks.current,
+				onChange: (native: string, newMarks: I.Mark[], from: number, to: number) => {
+					if (S.Menu.isAnimating('blockEmoji')) {
+						return;
+					};
+
+					setMarks(newMarks);
+					value = U.String.insert(value, ' ', from, from);
+
+					updateMarkup(value, { from: to, to });
+				},
+			},
+		});
+	};
+
+	const updateAttachments = (attachments: any[]) => {
+		const list = U.Common.objectCopy(attachments);
+		const ids = list.filter(it => !it.isTmp).map(it => it.id).filter(it => it);
+
+		U.Object.getByIds(ids, {}, (objects: any[]) => {
+			objects.forEach(item => {	
+				const idx = list.findIndex(it => it.id == item.id);
+
+				if (idx >= 0) {
+					list[idx] = item;
+				};
+			});
+
+			saveState(list);
+		});
+	};
+
+	const caretMenuParam = () => {
+		const rect = U.Dom.getSelectionRect();
+		const param: any = {
+			classNameWrap: 'fromChat',
+			className: 'fixed',
+			recalcRect: () => {
+				const rect = U.Dom.getSelectionRect();
+				return rect ? { ...rect, y: rect.y + window.scrollY } : null;
+			},
+			vertical: I.MenuDirection.Top,
+			onClose: () => setRange(range.current),
+			noFlipX: true,
+			noFlipY: true,
+			offsetY: -8,
+		};
+
+		if (rect) {
+			param.horizontal = I.MenuDirection.Center;
+		};
+
+		return param;
+	};
+
+	const canSend = (): boolean => {
+		const v = getTextValue();
+		const isLimit = v.length > J.Constant.limit.chat.text;
+
+		return !isLoading.current.length && !isLimit &&
+		!!(
+			v.trim().length ||
+			attachments.length ||
+			marks.current.length
+		);
+	};
+
+	const hasSelection = (): boolean => {
+		return range.current ? range.current.to != range.current.from : false;
+	};
+
+	const updateMarkup = (value: string, newRange: I.TextRange) => {
+		range.current = newRange;
+		updateValue(value);
+		renderMarkup();
+		checkSendButton();
+	};
+
+	const updateValue = (value: string) => {
+		if (!editableRef.current) {
+			return;
+		};
+
+		editableRef.current.setValue(Mark.toHtml(value, marks.current));
+		editableRef.current.placeholderCheck();
+		setRange(range.current);
+		onInput();
+	};
+
+	const renderMarkup = () => {
+		if (!editableRef.current) {
+			return;
+		};
+
+		const node = editableRef.current?.getNode();
+		const value = editableRef.current?.getTextValue();
+		const onChange = (newText: string, newMarks: I.Mark[]) => {
+			setMarks(newMarks);
+			updateMarkup(newText, range.current);
+		};
+		const getValue = () => value;
+		const param = { onChange, subId, withPreview: false };
+
+		renderMentions(rootId, node, marks.current, getValue, param);
+		renderObjects(rootId, node, marks.current, getValue, props, param);
+		renderLinks(rootId, node, marks.current, getValue, props, param);
+		renderEmoji(node);
+	};
+
+	const renderReply = () => {
+		if (!replyingId) {
+			return;
+		};
+
+		const message = S.Chat.getMessageById(subId, replyingId);
+		if (!message) {
+			return;
+		};
+
+		const getValue = () => String(message.content.text || '');
+		const marks = message.content.marks || [];
+		const node = nodeRef.current;
+		const head = node ? U.Dom.select('.head', node) : null;
+		const param = { subId, iconSize: 16, withPreview: false };
+
+		renderMentions(rootId, head, marks, getValue, param);
+		renderObjects(rootId, head, marks, getValue, props, param);
+		renderLinks(rootId, head, marks, getValue, props, param);
+		renderEmoji(head, param);
+	};
+
+	const updateCounter = (v?: string) => {
+		v = v || getTextValue();
+
+		const el = counterRef.current;
+		const l = v.length;
+		const limit = J.Constant.limit.chat.text;
+
+		if (el) {
+			U.Dom.toggleClass(el, 'red', l > limit);
+
+			if (l > limit - 50) {
+				U.Dom.addClass(el, 'show');
+				el.textContent = String(limit - l);
+			} else {
+				U.Dom.removeClass(el, 'show');
+			};
+		};
+	};
+
+	const clearCounter = () => {
+		if (counterRef.current) {
+			counterRef.current.textContent = '';
+			U.Dom.removeClass(counterRef.current, 'show');
+			U.Dom.removeClass(counterRef.current, 'red');
+		};
+	};
+
+	const checkSpeedLimit = () => {
+		const { last, counter } = speedLimit.current;
+		const now = U.Date.now();
+
+		if (now - last >= 5 ) {
+			speedLimit.current = { last: now, counter: 1 };
+			return;
+		};
+
+		speedLimit.current = { last: now, counter: counter + 1 };
+
+		if (counter >= 5) {
+			speedLimit.current = { last: now, counter: 1 };
+
+			S.Popup.open('confirm', {
+				onClose: () => {
+					setRange(range.current);
+				},
+				data: {
+					iconParam: { name: 'popup/header/warning', color: 'orange' },
+					title: translate('popupConfirmSpeedLimitTitle'),
+					text: translate('popupConfirmSpeedLimitText'),
+					textConfirm: translate('commonOkay'),
+					colorConfirm: 'blank',
+					canCancel: false,
+				}
+			});
+		};
+	};
+
+	const setMarks = (newMarks: I.Mark[]) => {
+		marks.current = newMarks;
+	};
+
+	const saveState = (attachments?: any[]) => {
+		setAttachments(attachments);
+		Storage.setChat(rootId, {
+			text: getTextValue(),
+			marks: marks.current,
+			attachments,
+		});
+	};
+
+	const init = () => {
+		if (readonly) {
+			return;
+		};
+
+		const storage = Storage.getChat(rootId);
+
+		if (storage) {
+			const text = String(storage.text || '');
+			const attachments = (storage.attachments || []).filter(it => !it.isTmp);
+			const length = text.length;
+
+			setMarks(storage.marks || []);
+			updateMarkup(text, { from: length, to: length });
+			updateCounter(text);
+
+			if (attachments.length) {
+				setAttachments(attachments);
+			};
+
+			historySaveState();
+			checkSendButton();
+		} else {
+			editableRef.current?.setRange({ from: 0, to: 0 });
+		};
+	};
+
+	let form = null;
+	let title = '';
+	let text = '';
+	let icon: any = null;
+	let onClear = () => {};
+
+	if (editingId.current) {
+		title = translate('blockChatEditing');
+		onClear = () => onEditClear();
+	} else
+	if (replyingId) {
+		const message = S.Chat.getMessageById(subId, replyingId);
+
+		if (message) {
+			const reply = getReplyContent(message);
+
+			title = reply.title;
+			text = reply.text;
+			if (reply.attachment) {
+				const object = reply.attachment;
+				const iconSize = U.Object.getFileLayouts().concat(U.Object.getHumanLayouts()).includes(object.layout) ? 32 : null;
+
+				icon = <IconObject className={iconSize ? 'noBg' : ''} object={object} size={32} iconSize={iconSize} />;
+			};
+			if (reply.isMultiple && !reply.attachment) {
+				icon = <Icon name="chat/attachment/multiple" className="isMultiple" />;
+			};
+
+			onClear = onReplyClear;
+		};
+	};
+
+	const Button = (item: any) => (
+		<div
+			id={`navigation-${item.type}`}
+			className={`btn ${item.className || ''}`}
+			onMouseDown={() => onNavigationClick(item.type)}
+		>
+			<div className="bg" />
+			<Icon name={item.name} className={item.icon} />
+
+			{item.cnt ? (
+				<div className="counter">
+					<Label text={String(item.cnt)} />
+				</div>
+			) : ''}
+		</div>
+	);
+
+	if (readonly) {
+		form = <div className="readonly">{translate('blockChatFormReadonly')}</div>;
+	} else {
+		form = (
+			<>
+				<Icon
+					id={`button-${block.id}-attachment`}
+					name="plus/menu"
+					className="plus"
+					onClick={onAttachment}
+					tooltipParam={{ text: translate('blockChatAddAttachment'), caption: keyboard.getCaption('chatObject') }}
+				/>
+
+				<div className="form customScrollbar">
+					{title ? (
+						<div className="head">
+							<div className="side left">
+								{icon}
+								<div className="textWrapper">
+									<div className="name">{title}</div>
+									<div className="descr" dangerouslySetInnerHTML={{ __html: U.String.sanitize(text) }} />
+								</div>
+							</div>
+							<div className="side right">
+								<Icon name="common/clear" onClick={onClear} />
+							</div>
+						</div>
+					) : ''}
+
+					{attachments.length ? (
+						<div className="attachments">
+							<Swiper
+								slidesPerView={'auto'}
+								spaceBetween={8}
+								navigation={true}
+								mousewheel={true}
+								modules={[ Navigation, Mousewheel ]}
+							>
+								{attachments.map(item => {
+									const object = item.isTmp ? { syncStatus: I.SyncStatusObject.Synced, ...item } : item;
+									return (
+										<SwiperSlide key={item.id}>
+											<Attachment
+												object={object}
+												withInlineSize={false}
+												onRemove={onAttachmentRemove}
+												bookmarkAsDefault={true}
+												updateAttachments={() => updateAttachments(S.Chat.getAttachments(attachmentsSubId))}
+											/>
+										</SwiperSlide>
+									);
+								})}
+							</Swiper>
+						</div>
+					) : ''}
+
+					<Editable
+						ref={editableRef}
+						id="messageBox"
+						maxLength={J.Constant.limit.chat.text}
+						placeholder={translate('blockChatPlaceholder')}
+						onSelect={onSelect}
+						onFocus={onFocusInput}
+						onBlur={onBlurInput}
+						onKeyUp={onKeyUpInput}
+						onKeyDown={onKeyDownInput}
+						onInput={onInput}
+						onPaste={onPaste}
+						onMouseDown={onMouseDown}
+						onMouseUp={onMouseUp}
+						spellcheck={true}
+					/>
+
+					<div ref={counterRef} className="charCounter" />
+					<Icon ref={sendRef} name="chat/buttons/send" className="send" onClick={onSend} />
+				</div>
+
+				<Icon
+					id={`button-${block.id}-emoji`}
+					name="chat/buttons/emoji"
+					className="emoji"
+					onClick={onEmoji}
+					tooltipParam={{ text: translate('menuSmileGallery') }}
+				/>
+			</>
+		);
+	};
+
+	useEffect(() => {
+		init();
+
+		return () => {
+			window.clearTimeout(timeoutFilter.current);
+			window.clearTimeout(timeoutHistory.current);
+			window.clearTimeout(timeoutDrag.current);
+			keyboard.disableSelection(false);
+		};
+	}, []);
+
+	useEffect(() => {
+		editingId.current = '';
+		setReplyingId('');
+		init();
+	}, [ rootId ]);
+
+	useEffect(() => {
+		renderMarkup();
+		renderReply();
+
+		checkSendButton();
+		scrollToBottom();
+	});
+
+	useEffect(() => {
+		scrollToBottom();
+		setRange(range.current);
+	}, [ attachments ]);
+
+	useImperativeHandle(ref, () => ({
+		getReplyingId: () => replyingId,
+		onReply,
+		onEdit,
+		onEditClear,
+		onDelete,
+		getNode: () => nodeRef.current,
+		onDragOver,
+		onDragLeave,
+		onDrop,
+		getAttachments: () => attachments,
+		onAttachment,
+		getMarks: () => marks.current,
+	}));
+
+	return (
+		<div
+			ref={nodeRef}
+			id="formWrapper"
+			className="formWrapper"
+			onDragOver={onDragOver}
+			onDragLeave={onDragLeave}
+		>
+			<input ref={fileInputRef} type="file" multiple={true} className="dn" onChange={onFileInputChange} />
+			<div className="grad" />
+			<div className="bg" />
+
+			<div className="dragOverlay">
+				<div className="inner">
+					<Icon name="state/drag" size={56} />
+					<Label text={translate('commonDropFiles')} />
+				</div>
+			</div>
+
+			<div className="inner">
+				<div className="navigation">
+					{reactionCounter ? <Button type={I.ChatReadType.Reaction} name="chat/navigation/reaction" icon="reaction" className="active" cnt={reactionCounter} /> : ''}
+					{mentionCounter && !spaceview.isOneToOne ? <Button type={I.ChatReadType.Mention} name="chat/navigation/mention" icon="mention" className="active" cnt={mentionCounter} /> : ''}
+					<Button type={I.ChatReadType.Message} name="chat/navigation/arrow" icon="arrow" className={((!isBottom.current) || messageCounter || (!S.Chat.isAtChatEnd(subId))) ? 'active' : ''} cnt={messageCounter} />
+				</div>
+
+				{form}
+			</div>
+		</div>
+	);
+
+});
+
+export default memo(ChatForm);

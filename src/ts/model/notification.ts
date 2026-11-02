@@ -1,0 +1,107 @@
+import { observable, makeObservable } from 'mobx';
+import * as I from 'Interface';
+import { getExportResultStatus } from 'Lib/util/exportReport';
+
+class Notification implements I.Notification {
+
+	id = '';
+	type: I.NotificationType = I.NotificationType.None;
+	status: I.NotificationStatus = I.NotificationStatus.Created;
+	createTime = 0;
+	isLocal = false;
+	payload: any = {};
+	title = '';
+	text = '';
+
+	constructor (props: I.Notification) {
+		this.id = String(props.id || '');
+		this.type = props.type || I.NotificationType.None;
+		this.status = Number(props.status) || I.NotificationStatus.Created;
+		this.createTime = Number(props.createTime) || 0;
+		this.isLocal = Boolean(props.isLocal);
+		this.payload = props.payload || {};
+
+		this.fillContent();
+
+		makeObservable(this, {
+			status: observable,
+		});
+
+		return this;
+	};
+
+	fillContent () {
+		const { errorCode, name } = this.payload;
+		const lang = errorCode ? 'error' : 'success';
+		const et = U.Common.enumKey(I.NotificationType, this.type);
+		const identityName = U.String.shorten(String(this.payload.identityName || translate('defaultNamePage')), 32);
+		const spaceName = U.String.shorten(String(this.payload.spaceName || translate('defaultNamePage')), 32);
+		const permissions = translate(`participantPermissions${this.payload.permissions}`);
+
+		this.title = translate(U.String.toCamelCase(`notification-${et}-${lang}-title`));
+		this.text = translate(U.String.toCamelCase(`notification-${et}-${lang}-text`));
+
+		switch (this.type) {
+			case I.NotificationType.Export: {
+				const status = getExportResultStatus(this.payload.report, errorCode);
+				if (status != 'Success') {
+					this.title = translate(`popupExportResultTitle${status}`);
+					this.text = translate(`popupExportResultText${status}`);
+				};
+				break;
+			};
+
+			case I.NotificationType.Import: {
+				const issuesCount = Number(this.payload.issuesCount) || 0;
+
+				if (Object.values(J.Error.Code.Import).includes(errorCode)) {
+					this.title = translate('commonError');
+					this.text = translate(`notificationImportErrorText${errorCode}`);
+				} else
+				if (issuesCount) {
+					this.text = U.String.sprintf(translate('notificationImportSuccessIssuesText'), issuesCount, U.Common.plural(issuesCount, translate('pluralIssue')));
+				};
+				break;
+			};
+
+			case I.NotificationType.Gallery: {
+				if (errorCode) {
+					this.text = U.String.sprintf(this.text, name);
+				} else {
+					this.title = U.String.sprintf(this.title, name);
+					this.text = U.String.sprintf(this.text, spaceName);
+				};
+				break;
+			};
+
+			case I.NotificationType.Join: {
+				this.title = '';
+				this.text = U.String.sprintf(this.text, identityName, spaceName);
+				break;
+			};
+
+			case I.NotificationType.Approve: {
+				this.title = '';
+				this.text = U.String.sprintf(this.text, spaceName, permissions);
+				break;
+			};
+
+			case I.NotificationType.Decline:
+			case I.NotificationType.Remove: {
+				this.title = '';
+				this.text = U.String.sprintf(this.text, spaceName);
+				break;
+			};
+
+			case I.NotificationType.Permission: {
+				this.title = '';
+				this.text = U.String.sprintf(this.text, permissions, spaceName);
+				break;
+			};
+
+		};
+	};
+
+};
+
+export default Notification;

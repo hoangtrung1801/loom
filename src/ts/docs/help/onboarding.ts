@@ -1,0 +1,424 @@
+import * as I from 'Interface';
+
+const Data = {
+	productHuntChats: () => ({
+		items: [
+			{
+				name: translate('onboardingProductHuntTitle'),
+				description: translate('onboardingProductHuntText'),
+				noButton: true,
+				buttons: [
+					{ text: translate('onboardingProductHuntUpvote'), action: 'openUrl', url: J.Url.productHuntChats },
+				],
+			}
+		],
+
+		param: {
+			recalcRect: () => {
+				const { ww, wh } = U.Dom.getWindowDimensions();
+				return { x: 0, y: 0, width: ww, height: wh };
+			},
+			width: 360,
+			classNameWrap: 'fixed fromSidebar',
+			className: 'productHunt',
+			horizontal: I.MenuDirection.Left,
+			passThrough: true,
+			offsetY: -4,
+		},
+	}),
+
+	mainGraph: () => ({
+		category: translate('onboardingMainGraph'),
+		items: [
+			{
+				description: translate('onboardingMainGraph11'),
+				video: './img/help/onboarding/space.mp4',
+				buttonText: translate('commonFinish'),
+			}
+		],
+
+		param: {
+			recalcRect: () => {
+				const { ww, wh } = U.Dom.getWindowDimensions();
+				return { x: 0, y: 0, width: ww, height: wh };
+			},
+			classNameWrap: 'fixed fromSidebar',
+			horizontal: I.MenuDirection.Right,
+			passThrough: true,
+			offsetY: -4,
+		},
+	}),
+
+	chat: () => {
+		const chatEl = '#page.pageMainChat';
+		const typeSection = `#sidebarPageWidget #section-${U.Common.esc(I.WidgetSection.Type)}`;
+
+		return {
+			showDimmer: true,
+			withCounter: true,
+			param: {
+				noClose: true,
+				horizontal: I.MenuDirection.Left,
+			},
+			items: [
+				{
+					name: translate('onboardingMainChatTitle1'),
+					description: translate('onboardingCommonText1'),
+					param: {
+						element: chatEl,
+						highlightElements: [ chatEl ],
+						vertical: I.MenuDirection.Center,
+						horizontal: I.MenuDirection.Right,
+						offsetX: () => U.Dom.contentWidth(U.Dom.select(chatEl)) + 8,
+					}
+				},
+				{
+					name: translate('onboardingMainChatTitle2'),
+					description: translate('onboardingCommonText2'),
+					markElements: [ '#page.pageMainChat #button-chat-attachment' ],
+					param: {
+						element: '#page.pageMainChat #button-chat-attachment',
+						highlightElements: [ chatEl ],
+						vertical: I.MenuDirection.Top,
+						offsetY: -8,
+					}
+				},
+				{
+					name: translate('onboardingMainChatTitle3'),
+					description: translate('onboardingCommonText3'),
+					param: {
+						element: typeSection,
+						highlightElements: [ typeSection ],
+						vertical: I.MenuDirection.Center,
+						offsetX: () => U.Dom.contentWidth(U.Dom.select(typeSection)) + 8,
+					}
+				},
+			],
+		};
+	},
+
+	common: () => {
+		const elements = {
+			vault: '#sidebarPageVault',
+			sidebar: '#sidebarLeft',
+			channel: '#sidebarPageVault #button-create-space',
+			widget: '#sidebarPageWidget',
+			pin: '#sidebarPageWidget > #body > .content > .section-pin > .items',
+			type: '#sidebarPageWidget > #body > .content > .section-type > .items',
+			relation: '#header #button-header-relation',
+		};
+
+		const getOffset = (el: string) => () => U.Dom.contentWidth(U.Dom.select(elements[el])) + 8;
+
+		const channels = U.Space.getList().filter(it => it.isAccountActive);
+
+		const items = [
+			{
+				name: translate('onboardingCommonTitleVault'),
+				description: translate('onboardingCommonTextVault'),
+				param: {
+					element: elements.vault,
+					highlightElements: [ elements.vault ],
+					offsetX: getOffset('vault'),
+				}
+			},
+			{
+				name: translate('onboardingCommonTitleSpace'),
+				description: translate('onboardingCommonTextSpace'),
+				param: {
+					element: elements.widget,
+					highlightElements: [ elements.sidebar ],
+					offsetX: getOffset('widget'),
+				}
+			},
+			{
+				name: translate('onboardingCommonTitleTypes'),
+				description: translate('onboardingCommonTextTypes'),
+				img: {
+					src: `${U.Common.helpMediaPath()}/onboarding/common/type.png`,
+				},
+				param: {
+					element: elements.type,
+					highlightElements: [ `#sidebarPageWidget #section-${U.Common.esc(I.WidgetSection.Type)}` ],
+					offsetX: getOffset('type'),
+				}
+			},
+			{
+				name: translate('onboardingCommonTitlePin'),
+				description: translate('onboardingCommonTextPin'),
+				param: {
+					element: elements.pin,
+					highlightElements: [ `#sidebarPageWidget #section-${U.Common.esc(I.WidgetSection.Pin)}` ],
+					offsetX: getOffset('pin'),
+				}
+			},
+			{
+				name: translate('onboardingCommonTitleProperties'),
+				description: translate('onboardingCommonTextProperties'),
+				img: {
+					src: `${U.Common.helpMediaPath()}/onboarding/common/relation.png`,
+					caption: translate('onboardingCommonTextPropertiesImgCaption'),
+				},
+				param: {
+					element: elements.relation,
+					highlightElements: [ elements.relation ],
+					horizontal: I.MenuDirection.Right,
+					offsetX: 0,
+				}
+			},
+		];
+
+		if (channels.length == 1) {
+			items.push({
+				name: translate('onboardingCommonTitleSettings'),
+				description: translate('onboardingCommonTextSettings'),
+				param: {
+					element: '#button-create-space-inline',
+					highlightElements: [ elements.vault ],
+					offsetX: getOffset('vault'),
+				},
+			});
+		};
+
+		return {
+			showDimmer: true,
+			withCounter: true,
+			param: {
+				highlightElements: [ '#sidebarLeft #pageWrapper' ],
+				stickToElementEdge: I.MenuDirection.Top,
+			},
+			items,
+		};
+	},
+
+	membership: () => ({
+		showDimmer: true,
+		param: {
+			horizontal: I.MenuDirection.Right,
+			width: 288,
+			offsetX: -304,
+			offsetY: () => {
+				const el = U.Dom.select('.containerSettings #item-membership');
+				return -(el?.offsetHeight || 0);
+			},
+		},
+		items: [
+			{
+				category: translate('onboardingMembershipTitle'),
+				description: translate('onboardingMembershipText'),
+				buttonText: translate('onboardingMembershipButton'),
+				cloneElementClassName: 'onboardingSettingsItem',
+				param: {
+					element: '.containerSettings #item-membership',
+				}
+			}
+		]
+	}),
+
+	syncStatus: () => {
+		return {
+			showDimmer: true,
+			param: {
+				width: 288,
+				highlightElements: [],
+				classNameWrap: 'fixed',
+			},
+			items: [
+				{
+					category: translate('onboardingSyncStatusTitle'),
+					description: translate('onboardingSyncStatusText'),
+					cloneElementClassName: 'onboardingHeaderSync',
+					param: {
+						element: '#sidebarPageWidget #headerSync',
+						horizontal: I.MenuDirection.Right,
+						highlightElements: [ '#sidebarPageWidget #headerSync' ],
+						offsetY: 14,
+					}
+				},
+				{
+					category: translate('onboardingMobileTitle'),
+					description: translate('onboardingMobileText'),
+					buttonText: translate('onboardingMobileButton'),
+					cloneElementClassName: 'onboardingIconP2P',
+					img: {
+						src: `${U.Common.helpMediaPath()}/onboarding/syncStatus/qr.png`
+					},
+					param: {
+						className: 'qrDownload',
+						element: '#icon-p2p',
+						horizontal: I.MenuDirection.Right,
+						stickToElementEdge: I.MenuDirection.Top,
+						offsetX: -295,
+					}
+				},
+			]
+		};
+	},
+
+	collections: () => ({
+		showDimmer: true,
+		items: [
+			{
+				category: translate('onboardingCollectionsTitle'),
+				description: translate('onboardingCollectionsText'),
+				buttonText: translate('onboardingCollectionsButton'),
+				cloneElementClassName: 'onboardingCollectionNewButton',
+				param: {
+					element: '#button-dataview-add-record',
+					offsetY: 8,
+				}
+			}
+		]
+	}),
+
+	typeDeleted: () => ({
+		items: [
+			{
+				name: translate('onboardingTypeDeleted1Title'),
+				description: translate('onboardingTypeDeleted1Description'),
+				noButton: true,
+				param: {
+					element: '#block-featuredRelations',
+					offsetY: 10,
+				},
+				buttons: [
+					{ text: translate('blockFeaturedTypeMenuChangeType'), action: 'changeType' },
+				],
+			},
+		],
+	}),
+
+	sourceDeleted: () => ({
+		items: [
+			{
+				name: translate('onboardingSourceDeleted1Title'),
+				description: translate('onboardingSourceDeleted1Description'),
+				param: {
+					element: '#block-featuredRelations',
+					offsetY: 10,
+				}
+			},
+		],
+	}),
+
+	inlineSet: () => ({
+		items: [
+			{
+				name: translate('onboardingInlineSet1Title'),
+				description: translate('onboardingInlineSet1Description'),
+				param: {
+					element: '.dataviewHead #value',
+					offsetY: 32,
+				}
+			},
+			{
+				name: translate('onboardingInlineSet2Title'),
+				description: translate('onboardingInlineSet2Description'),
+				param: {
+					element: '#dataviewControls #dataviewControlsSideLeft',
+					offsetY: 10,
+				}
+			},
+		],
+	}),
+
+	inlineCollection: () => ({
+		items: [
+			{
+				name: translate('onboardingInlineCollection1Title'),
+				description: translate('onboardingInlineCollection1Description'),
+				param: {
+					element: '.dataviewHead #value',
+					offsetY: 36,
+				}
+			},
+			{
+				name: translate('onboardingInlineCollection2Title'),
+				description: translate('onboardingInlineCollection2Description'),
+				param: {
+					element: '#dataviewControls #dataviewControlsSideLeft',
+					offsetY: 10,
+				}
+			},
+		],
+	}),
+
+	setSettings: () => (
+		{
+			items: [
+				{
+					name: translate('onboardingDefaultTypeTitle'),
+					description: translate('onboardingDefaultTypeDescription'),
+					param: {
+						element: '#button-dataview-add-record-select',
+						horizontal: I.MenuDirection.Right,
+						offsetX: -4,
+						offsetY: 12,
+					},
+				},
+			],
+		}
+	),
+
+	templateSelect: () => (
+		{
+			items: [
+				{
+					name: translate('onboardingTemplateSelectTitle'),
+					description: translate('onboardingTemplateSelectDescription'),
+					noButton: true,
+				},
+			],
+
+			param: {
+				element: '#headerBanner',
+				horizontal: I.MenuDirection.Center,
+				offsetY: 12,
+			},
+		}
+	),
+
+	objectDescriptionButton: () => {
+		const controls = '#page.isFull .editorControls';
+		const btn = `${controls} #button-description`;
+
+		if (!U.Dom.select(btn)) {
+			return;
+		};
+
+		return {
+			items: [
+				{
+					description: translate('onboardingMainObject'),
+					buttonText: translate('commonOk'),
+				}
+			],
+			param: {
+				element: btn,
+				horizontal: I.MenuDirection.Center,
+				passThrough: true,
+				offsetY: 16,
+				onOpen: () => U.Dom.addClass(U.Dom.select(controls), 'active'),
+				onClose: () => U.Dom.removeClass(U.Dom.select(controls), 'active'),
+			},
+		};
+	},
+
+	typeResetLayout: () => ({
+		items: [
+			{
+				description: translate('onboardingMainType'),
+				buttonText: translate('commonOk'),
+			}
+		],
+
+		param: {
+			element: '#pageFlex.isFull .headSimple #button-edit',
+			horizontal: I.MenuDirection.Center,
+			offsetY: 16,
+		},
+	}),
+
+};
+
+export default Data;

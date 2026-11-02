@@ -1,0 +1,435 @@
+import React, { forwardRef, useRef, useState, useEffect, useImperativeHandle } from 'react';
+import { Input, IconObject, ChatCounter, Icon } from 'Component';
+import * as I from 'Interface';
+
+const CellText = forwardRef<I.CellRef, I.Cell>((props, ref: any) => {
+
+	const [ isEditing, setIsEditing ] = useState(false);
+	const inputRef = useRef(null);
+	const { showRelativeDates, dateFormat } = S.Common;
+	const { 
+		id, recordId, relation, textLimit, isInline, iconSize, placeholder, shortUrl, canEdit, viewType, getView, getRecord, onChange, cellPosition, onRecordAdd,
+		groupId, recordIdx,
+	} = props;
+	const record = getRecord(recordId);
+	const isName = relation.relationKey == 'name';
+	const isLongText = relation.format == I.RelationType.LongText;
+	const isDate = relation.format == I.RelationType.Date;
+	const isNumber = relation.format == I.RelationType.Number;
+	const isUrl = relation.format == I.RelationType.Url;
+	const isEmail = relation.format == I.RelationType.Email;
+	const isPhone = relation.format == I.RelationType.Phone;
+	const view = getView ? getView() : null;
+	const range = useRef(null);
+	const value = useRef(null);
+
+	const onSelect = (e: any) => {
+		range.current = {
+			from: e.currentTarget.selectionStart,
+			to: e.currentTarget.selectionEnd,
+		};
+	};
+
+	const setEditingHandler = (v: boolean) => {
+		if (canEdit && (v != isEditing)) {
+			setIsEditing(v);
+		};
+	};
+
+	const onPaste = (e: any, v: any) => {
+		range.current = inputRef.current.getRange();
+
+		// Do not save immediately on paste: the resulting record update re-renders
+		// the cell and remounts the input mid-edit, blurring and closing the editor
+		// (JS-9181). The value is saved on blur/enter/unmount instead. Date cells
+		// keep the immediate save to sync the calendar menu with the parsed value.
+		if (isDate) {
+			v = fixDateValue(v);
+			setValue(v);
+			save(v);
+
+			if (!relation.includeTime) {
+				S.Menu.close('calendar');
+			};
+		} else {
+			setValue(v);
+		};
+	};
+
+	const onKeyDown = (e: any, v: string) => {
+		if (keyboard.isComposition) {
+			return;
+		};
+
+		keyboard.shortcut('escape, enter, enter+shift', e, pressed => {
+			e.preventDefault();
+
+			save(v, () => {
+				S.Menu.closeAll(J.Menu.cell);
+
+				range.current = null;
+				setEditingHandler(false);
+
+				if (onRecordAdd && pressed.match('shift')) {
+					onRecordAdd(e, 0, groupId, {}, recordIdx + 1);
+				};
+			});
+		});
+	};
+
+	const onKeyUp = (e: any, v: string) => {
+		if (isLongText) {
+			return;
+		};
+
+		if (isUrl || isEmail || isPhone) {
+			S.Menu.updateData('select', { disabled: !v });
+		};
+
+		setValue(v);
+	};
+
+	const onKeyUpDate = (e: any, v: any) => {
+		v = fixDateValue(v);
+
+		setValue(v);
+
+		if (v) {
+			S.Menu.updateData('calendar', { value: v });
+		};
+
+		if (keyboard.isComposition) {
+			return;
+		};
+
+		keyboard.shortcut('enter', e, () => {
+			e.preventDefault();
+			save(v, () => S.Menu.close('calendar'));
+		});
+	};
+
+	const onFocus = (e: any) => {
+		keyboard.setFocus(true);
+	};
+
+	const onBlur = (e: any) => {
+		const record = getRecord(recordId);
+
+		if (!inputRef.current || keyboard.isBlurDisabled || !record) {
+			return;
+		};
+
+		keyboard.setFocus(false);
+		range.current = null;
+
+		if (U.Common.compareJSON(record[relation.relationKey], value.current)) {
+			setEditingHandler(false);
+			return;
+		};
+
+		save(value.current, () => {
+			if (!S.Menu.isOpen('calendar')) {
+				setEditingHandler(false);
+			};
+		});
+	};
+
+	const onUnmount = () => {
+		if (isEditing && (record[relation.relationKey] !== value.current)) {
+			save(value.current);
+		};
+	};
+
+	const setValue = (v: any) => {
+		value.current = v;
+	};
+
+	const save = (v: any, callBack?: () => void) => {
+		if (onChange) {
+			onChange(v, callBack);
+		};
+	};
+
+	const fixDateValue = (v: any) => {
+		v = String(v || '').replace(/_/g, '');
+
+		if (v) {
+			v = U.Date.parseDate(v, dateFormat);
+		};
+
+		return v ? v : null;
+	};
+
+	let Name = null;
+	let EditorComponent = null;
+	let val = record[relation.relationKey];
+	let icon = null;
+	let counter = null;
+
+	if (isDate || isNumber) {
+		val = Relation.formatValue(relation, val, true);
+		if (isNumber) {
+			val = val !== null ? String(val) : null;
+		};
+	} else {
+		val = String(val || '');
+	};
+
+	if (isLongText && !isEditing && isInline && !view?.wrapContent) {
+		val = val.replace(/\n/g, ' ');
+	};
+
+	if (isEditing) {
+		if (isLongText) {
+			EditorComponent = () => <span>{val}</span>;
+		} else 
+		if (isDate) {
+			const mask = [];
+			const ph = [];
+
+			switch (dateFormat) {
+				case I.DateFormat.ISO: {
+					mask.push('9999.99.99');
+					ph.push('yyyy.mm.dd');
+					break;
+				};
+
+				case I.DateFormat.ShortUS:
+				case I.DateFormat.MonthAbbrBeforeDay:
+				case I.DateFormat.Long:
+				case I.DateFormat.Default: {
+					mask.push('99.99.9999');
+					ph.push('mm.dd.yyyy');
+					break;
+				};
+
+				default: {
+					mask.push('99.99.9999');
+					ph.push('dd.mm.yyyy');
+					break;
+				};
+			};
+			
+			if (relation.includeTime) {
+				mask.push('99:99');
+				ph.push('hh:mm');
+			};
+
+			EditorComponent = (item: any) => (
+				<Input
+					key={[ recordId, relation.relationKey, 'input' ].join('-')}
+					ref={inputRef}
+					id="input"
+					focusOnMount={true}
+					{...item}
+					maskOptions={{
+						mask: mask.join(' '),
+						separator: '.',
+						hourFormat: 12,
+						alias: 'datetime',
+					}}
+					placeholder={ph.join(' ')}
+					onKeyUp={onKeyUpDate}
+				/>
+			);
+		} else {
+			EditorComponent = (item: any) => (
+				<Input
+					key={[ recordId, relation.relationKey, 'input' ].join('-')}
+					ref={inputRef}
+					id="input"
+					focusOnMount={true}
+					{...item}
+					placeholder={placeholder}
+					onKeyDown={onKeyDown}
+					onKeyUp={onKeyUp}
+				/>
+			);
+		};
+
+		Name = (item: any) => (
+			<EditorComponent 
+				value={item.name} 
+				className="name" 
+				onFocus={onFocus} 
+				onBlur={onBlur}
+				onSelect={onSelect}
+				onPaste={onPaste}
+				onCut={onPaste}
+				onUnmount={onUnmount}
+			/>
+		);
+	} else {
+		Name = (item: any) => {
+			let name = item.name;
+			let content = null;
+
+			if (name) {
+				if (isUrl && shortUrl) {
+					name = U.String.shortUrl(name, true);
+				};
+				if (textLimit) {
+					name = U.String.shorten(name, textLimit);
+				};
+				content = <div className="name">{name}</div>;
+			} else {
+				if (isName && U.Object.isNoteLayout(record.layout)) {
+					content = <span className="emptyText">{translate('commonEmpty')}</span>;
+				} else {
+					content = <div className="empty">{placeholder}</div>;
+				};
+			};
+			return content;
+		};
+
+		if (isDate) {
+			if (val !== null) {
+				val = Number(val) || 0;
+
+				const day = showRelativeDates ? U.Date.dayString(val) : null;
+				const date = day ? day : U.Date.dateWithFormat(dateFormat, val);
+				const time = U.Date.timeWithFormat(S.Common.timeFormat, val);
+				
+				val = relation.includeTime ? [ date, time ].join((day ? ', ' : ' ')) : date;
+			} else {
+				val = '';
+			};
+		};
+
+		if (isUrl) {
+			val = val !== null ? val : '';
+		};
+
+		if (isNumber) {
+			if (val !== null) {
+				const mapped = Relation.mapValue(relation, val);
+				val = mapped !== null ? mapped : U.Common.formatNumber(val);
+			} else {
+				val = '';
+			};
+		};
+	};
+
+	if (isName) {
+		if (!view || (view && !view.hideIcon)) {
+			if (S.Common.isDownloading(record.id) && U.Object.isInFileLayouts(record.layout)) {
+				icon = <Icon className="downloading" />;
+			} else {
+				icon = (
+					<IconObject
+						id={[ relation.relationKey, record.id ].join('-')}
+						size={iconSize}
+						canEdit={canEdit}
+						object={record}
+						noClick={true}
+						menuParam={{ offsetY: 4 }}
+					/>
+				);
+			};
+		};
+
+		if (!isEditing) {
+			if (U.Object.isNoteLayout(record.layout)) {
+				val = record.snippet;
+			} else
+			if (U.Object.isTypeLayout(record.layout)) {
+				val = record.name || record.pluralName || translate('defaultNamePage');
+			} else {
+				val = val || translate('defaultNamePage');
+			};
+
+			if (U.Object.isChatLayout(record.layout)) {
+				counter = <ChatCounter chatId={record.id} />;
+			};
+		};
+	};
+
+	useEffect(() => {
+		setValue(Relation.formatValue(relation, record[relation.relationKey], true));
+	}, []);
+
+	useEffect(() => {
+		const cell = U.Dom.get(id);
+		const card = viewType == I.ViewType.Grid ? null : U.Dom.get(`record-${record.id}`);
+
+		if (isEditing) {
+			let val = value.current;
+
+			if (relation.relationKey == 'name') {
+				if (val == translate('defaultNamePage')) {
+					val = '';
+				};
+			} else
+			if (isDate) {
+				const format = [];
+
+				switch (dateFormat) {
+					case I.DateFormat.ISO: format.push('Y.m.d'); break;
+					case I.DateFormat.ShortUS:
+					case I.DateFormat.MonthAbbrBeforeDay:
+					case I.DateFormat.Long:
+					case I.DateFormat.Default: format.push('m.d.Y'); break;
+					default: format.push('d.m.Y'); break;
+				};
+
+				if (relation.includeTime) {
+					format.push('H:i');
+				};
+
+				val = val !== null ? U.Date.date(format.join(' ').trim(), val) : '';
+			} else
+			if (isNumber) {
+				val = Relation.formatValue(relation, val, true);
+				val = val !== null ? String(val) : null;
+			};
+
+			if (inputRef.current) {
+				inputRef.current.setValue(val);
+
+				if (inputRef.current.setRange) {
+					const length = String(val || '').length;
+					inputRef.current.setRange(range.current || { from: length, to: length }, false);
+				};
+			};
+
+			if (cellPosition) {
+				cellPosition(id);
+			};
+		} else {
+			setValue(Relation.formatValue(relation, record[relation.relationKey], true));
+
+			const cellContent = U.Dom.select('.cellContent', cell);
+			if (cellContent) {
+				U.Dom.css(cellContent, { left: '', right: '' });
+			};
+		};
+
+		U.Dom.toggleClass(cell, 'isEditing', isEditing);
+		if (card) {
+			U.Dom.toggleClass(card, 'isEditing', isEditing);
+		};
+
+		if (S.Common.cellId) {
+			U.Dom.addClass(U.Dom.get(S.Common.cellId), 'isEditing');
+		};
+	}, [ isEditing ]);
+
+	useImperativeHandle(ref, () => ({
+		setEditing: (v: boolean) => setEditingHandler(v),
+		isEditing: () => isEditing,
+		onChange: (v: any) => setValue(v),
+		getValue: () => val,
+		onBlur,
+	}));
+
+	return (
+		<>
+			{icon}
+			<Name name={val} />
+			{counter}
+		</>
+	);
+
+});
+
+export default CellText;

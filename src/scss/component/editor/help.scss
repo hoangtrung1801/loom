@@ -1,0 +1,67 @@
+.editor.help {
+	.cover { position: absolute; left: 16px; top: 44px; height: 256px; width: calc(100% - 32px); border-radius: 4px; }
+
+	.blocks {
+		.block {
+			> .wrapContent { width: 100% !important; }
+			> .wrapContent {
+				.link { white-space: nowrap; }
+				.note { text-align: right; color: var(--color-text-tertiary); display: block; }
+		
+				.icon { width: 20px; height: 20px; margin-top: -4px; }
+
+				.c50, .c60, .c70, .half, .full, .screen { margin: 16px auto; border-radius: 8px; display: block; }
+
+				.full, .c100 { width: 100%; }
+				.half, .c50 { width: 50%; }
+				.c40 {  width: 40%; }
+				.c60 {  width: 60%; }
+				.c70 { width: 70%; }
+				.screen { box-shadow: 0px 0px 25px rgba(0,0,0,0.2); }
+
+				img.mention { margin-left: -18px; }
+
+				b { font-weight: 600; }
+			}
+		}
+
+		.block.align1 {
+			> .wrapContent {
+				.flex { justify-content: center; }
+			}
+		}
+
+		.block.blockText {
+			> .wrapContent { min-height: 24px; }
+
+			&.textCallout {
+				> .wrapContent {
+					> .selectionTarget {
+						> .dropTarget { padding: 16px; }
+					}
+				}
+			}
+
+			&.textHeader4 {
+				.wrap > span { display: inline-block; vertical-align: top; position: relative; }
+				.wrap > span {
+					&:not(:first-child) { padding-left: 19px; }
+					&:not(:first-child) {
+						&:before {
+							content: ''; position: absolute; left: 8px; top: 10px; width: 3px; height: 3px;
+							background: var(--color-control-active); border-radius: 50%;
+						}
+					}
+				}
+			}
+		}
+		.block.blockDiv { margin: 30px 0px; }
+
+		.toggleItems { padding-left: 20px; padding-bottom: 32px; }
+		.toggleWrapper { align-items: center; }
+	}
+
+	&.withCover {
+		.blocks { padding-top: 150px; }
+	}
+}

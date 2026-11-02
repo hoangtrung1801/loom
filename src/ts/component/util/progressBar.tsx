@@ -1,0 +1,81 @@
+import React, { FC, MouseEvent } from 'react';
+import { Label } from 'Component';
+
+interface Segment {
+	name: string;
+	caption: string;
+	percent: number;
+	isActive: boolean;
+	className?: string;
+};
+
+interface Props {
+	segments: Segment[];
+	current?: string;
+	max?: string;
+	complete?: boolean;
+};
+
+const ProgressBar: FC<Props> = ({
+	segments = [],
+	current = '',
+	max = '',
+	complete = false,
+}) => {
+	const total = segments.reduce((res, current) => res += current.percent, 0);
+	const cn = [ 'progressBar' ];
+
+	if (complete) {
+		cn.push('isComplete');
+	};
+
+	const onTooltipShow = (e: MouseEvent, item: Segment) => {
+		const name = U.String.htmlSpecialChars(item.name);
+		const caption = U.String.htmlSpecialChars(item.caption);
+		const t = Preview.tooltipCaption(name, caption);
+
+		if (t) {
+			Preview.tooltipShow({ text: t, element: e.currentTarget as HTMLElement });
+		};
+	};
+
+	const Item = (item: any) => {
+		const cn = [ 'fill' ];
+
+		if (item.isActive) {
+			cn.push('isActive');
+		};
+
+		if (item.className) {
+			cn.push(item.className);
+		};
+
+		return (
+			<div 
+				className={cn.join(' ')} 
+				style={{ width: `${item.percent * 100}%` }} 
+				onMouseEnter={e => onTooltipShow(e, item)}
+				onMouseLeave={() => Preview.tooltipHide(false)}
+			/>
+		);
+	};
+
+	return (
+		<div className={cn.join(' ')}>
+			<div className="bar">
+				{segments.map((item, i) => (
+					<Item key={i} {...item} />
+				))}
+				<div className="fill empty" style={{ width: `${(1 - total) * 100}%` }} />
+			</div>
+
+			<div className="labels">
+				{current ? <Label className="current" text={current} /> : ''}
+				{max ? <Label className="max" text={max} /> : '' }
+			</div>
+		</div>
+	);
+
+};
+
+export default ProgressBar;

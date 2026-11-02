@@ -1,0 +1,389 @@
+import React, { forwardRef, useState, useEffect, useImperativeHandle, useRef } from 'react';
+import { AutoSizer, CellMeasurer, InfiniteLoader, List, CellMeasurerCache } from 'react-virtualized';
+import { Filter, IconObject, ObjectName, EmptySearch, Icon } from 'Component';
+import * as I from 'Interface';
+
+const LIMIT = 16;
+const HEIGHT = 56;
+
+interface ChatSearchResult {
+	id?: string;
+	chatId: string;
+	messageId: string;
+	score: number;
+	highlight: string;
+	highlightRanges: I.TextRange[];
+	message: I.ChatMessage;
+};
+
+const MenuSearchChat = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
+
+	const { param, onKeyDown, setActive, getId, getContainer, close, position } = props;
+	const { data } = param;
+	const { chatId, route, scrollToMessage } = data;
+	const { showRelativeDates, dateFormat, space } = S.Common;
+	const [ currentIndex, setCurrentIndex ] = useState(-1);
+	const [ dummy, setDummy ] = useState(0);
+	const [ isDropdownOpen, setIsDropdownOpen ] = useState(true);
+	const cache = useRef(new CellMeasurerCache({ fixedWidth: true, defaultHeight: HEIGHT }));
+	const filterRef = useRef(null);
+	const listRef = useRef(null);
+	const timeout = useRef(0);
+	const itemsRef = useRef<ChatSearchResult[]>([]);
+	const n = useRef(0);
+	const offset = useRef(0);
+	const filter = useRef('');
+	const keydownHandler = useRef(null);
+	const cnu = [ 'arrow', 'up' ];
+	const cnd = [ 'arrow', 'down' ];
+
+	useEffect(() => {
+		rebind();
+		focus();
+		position();
+		analytics.event('ScreenChatSearch', { route });
+
+		return () => {
+			unbind();
+			window.clearTimeout(timeout.current);
+		};
+	}, []);
+
+	useEffect(() => {
+		position();
+	});
+
+	const focus = () => {
+		window.setTimeout(() => filterRef.current?.focus(), 15);
+	};
+
+	// Expand into the full search popup, scoped to this chat: a chat-focused
+	// Messages token rides along with the typed query - the full popup adds what
+	// this inline search lacks (the "/by" people filter, tokens). A "/" typed at
+	// the start expands too, carrying the "/" so the popup opens straight into its
+	// command list (the keystroke that asked for filters lands on them)
+	const onExpand = (preset?: string) => {
+		const presetFilter = (preset === undefined) ? filter.current : preset;
+
+		close();
+
+		window.setTimeout(() => {
+			keyboard.onSearchPopup(route || '', {
+				data: {
+					presetFilter,
+					presetTokens: [ { kind: 'kind', id: 'message', focus: { chatId } } ],
+				},
+			});
+		}, S.Menu.getTimeout());
+	};
+
+	const rebind = () => {
+		unbind();
+		keydownHandler.current = (e: any) => onKeyDown(e);
+		U.Dom.addEvent(window, 'keydown', keydownHandler.current);
+		window.setTimeout(() => setActive(), 15);
+	};
+
+	const unbind = () => {
+		if (keydownHandler.current) {
+			U.Dom.removeEvent(window, 'keydown', keydownHandler.current);
+			keydownHandler.current = null;
+		};
+	};
+
+	const getItems = () => {
+		return [].concat(itemsRef.current).map(it => ({ ...it, id: it.messageId }));
+	};
+
+	const loadMoreRows = ({ startIndex, stopIndex }) => {
+		return new Promise((resolve, reject) => {
+			offset.current += J.Constant.limit.menuRecords;
+			load(false, resolve);
+		});
+	};
+
+	const reload = () => {
+		n.current = 0;
+		offset.current = 0;
+		setCurrentIndex(-1);
+		setIsDropdownOpen(true);
+		load(true);
+	};
+
+	const load = (clear: boolean, callBack?: (message: any) => void) => {
+		const text = filter.current;
+		const sorts = [
+			{ key: I.SearchSortKey.CreatedAt, type: I.SortType.Desc },
+		];
+
+		if (!text) {
+			itemsRef.current = [];
+			setDummy(prev => prev + 1);
+			callBack?.({});
+			return;
+		};
+
+		C.ChatSearch(space, chatId, text, offset.current, J.Constant.limit.menuRecords, sorts, [], (message: any) => {
+			if (message.error.code) {
+				callBack?.(message);
+				return;
+			};
+
+			if (clear) {
+				itemsRef.current = [];
+			};
+
+			itemsRef.current = itemsRef.current.concat(message.list);
+
+			// Only reset index for new searches, not when restoring state
+			if (clear && (itemsRef.current.length > 0) && !callBack) {
+				setCurrentIndex(0);
+			};
+
+			setDummy(prev => prev + 1);
+			callBack?.(message);
+		});
+	};
+
+	const onMouseEnter = (e: any, item: any) => {
+		if (!keyboard.isMouseDisabled) {
+			setActive(item, false);
+		};
+	};
+
+	const onClick = (e: any, item: any) => {
+		e.stopPropagation();
+
+		scrollToMessage?.(item.id);
+		close();
+
+		analytics.event('ClickChatSearchResult');
+	};
+
+	const onFilterChange = (v: string) => {
+		window.clearTimeout(timeout.current);
+
+		// "/" at the start asks for filters - only the full popup has them
+		if (v.startsWith('/')) {
+			onExpand(v);
+			return;
+		};
+
+		timeout.current = window.setTimeout(() => {
+			filter.current = filterRef.current?.getValue() || '';
+			reload();
+
+			if (filter.current) {
+				analytics.event('ChatSearchInput');
+			};
+		}, J.Constant.delay.keyboard);
+	};
+
+	const onArrow = (dir: number) => {
+		const items = getItems();
+		if (!items.length) {
+			return;
+		};
+
+		// Close dropdown when navigation buttons are clicked
+		if (isDropdownOpen) {
+			setIsDropdownOpen(false);
+		};
+
+		const newIndex = currentIndex + dir;
+		if ((newIndex < 0) || (newIndex >= items.length)) {
+			return;
+		};
+
+		setCurrentIndex(newIndex);
+		analytics.event('ClickChatSearchNavigation', { type: dir > 0 ? 'Up' : 'Down' });
+
+		const item = items[newIndex];
+		if (item) {
+			setActive(item, true);
+			scrollToMessage?.(item.id);
+		};
+	};
+
+	const beforePosition = () => {
+		const items = getItems().slice(0, LIMIT);
+		const menu = getContainer();
+		const content = U.Dom.select('.content', menu);
+		const { wh } = U.Dom.getWindowDimensions();
+		const containerEl = U.Dom.getScrollContainer(data.isPopup);
+		const headerEl = U.Dom.select('#header .side.center', containerEl);
+		const width = Math.min(headerEl?.clientWidth || 0, J.Size.editor);
+
+		let height = 0;
+		if (!isDropdownOpen) {
+			height = 46;
+		} else
+		if (!items.length) {
+			height = filter.current ? 160 : 46;
+		} else {
+			height = items.length * HEIGHT + 62;
+		};
+
+		height = Math.min(height, wh - 104);
+		U.Dom.css(menu, { width: `${width}px` });
+		U.Dom.css(content, { height: `${height}px` });
+	};
+
+	const scrollToRow = (items: any[], index: number) => {
+		if (!listRef.current || !items.length) {
+			return;
+		};
+
+		const listHeight = listRef.current.props.height;
+
+		let offset = 0;
+		let total = 0;
+
+		for (let i = 0; i < items.length; ++i) {
+			if (i < index) {
+				offset += HEIGHT;
+			};
+			total += HEIGHT;
+		};
+
+		if (offset + HEIGHT < listHeight) {
+			offset = 0;
+		} else {
+			offset -= listHeight / 2 - HEIGHT / 2;
+		};
+
+		offset = Math.min(offset, total - listHeight + 16);
+		listRef.current.scrollToPosition(offset);
+	};
+
+	const rowRenderer = (param: any) => {
+		const item: ChatSearchResult = items[param.index];
+		if (!item || !item.message) {
+			return null;
+		};
+
+		const { message } = item;
+		const { creator, createdAt } = message;
+		const author = U.Space.getParticipant(U.Space.getParticipantId(S.Common.space, creator));
+		const highlightedText = U.Chat.getSearchResultHtml(item);
+		const day = showRelativeDates ? U.Date.dayString(createdAt) : null;
+		const date = day ? day : U.Date.dateWithFormat(dateFormat, createdAt);
+
+		return (
+			<CellMeasurer
+				key={param.key}
+				parent={param.parent}
+				cache={cache.current}
+				columnIndex={0}
+				rowIndex={param.index}
+			>
+				<div
+					id={`item-${item.id}`}
+					className="item"
+					onMouseEnter={e => onMouseEnter(e, item)}
+					onClick={e => onClick(e, item)}
+					style={param.style}
+				>
+					<IconObject object={{ ...author, layout: I.ObjectLayout.Participant }} size={32} />
+					<div className="info">
+						<div className="nameWrapper">
+							<ObjectName object={author} />
+							<span className="time">{date}</span>
+						</div>
+						<div
+							className="text"
+							dangerouslySetInnerHTML={{ __html: highlightedText }}
+						/>
+					</div>
+				</div>
+			</CellMeasurer>
+		);
+	};
+
+	const items = getItems();
+	if ((currentIndex >= items.length - 1) || (currentIndex < 0)) {
+		cnu.push('disabled');
+	};
+	if (currentIndex <= 0) {
+		cnd.push('disabled');
+	};
+
+	useImperativeHandle(ref, () => ({
+		rebind,
+		unbind,
+		getItems,
+		getIndex: () => n.current,
+		setIndex: (i: number) => n.current = i,
+		getListRef: () => listRef.current,
+		getFilterRef: () => filterRef.current,
+		onClick,
+		beforePosition,
+		scrollToRow,
+	}), []);
+
+	return (
+		<div className="wrap">
+			<div className="filterWrapper">
+				<div className="filterInner">
+					<Filter
+						ref={filterRef}
+						placeholder={translate('popupSearchPlaceholderShort')}
+						value=""
+						iconParam={{ name: 'common/search' }}
+						onChange={onFilterChange}
+						focusOnMount={true}
+					/>
+
+					<Icon
+						name="common/expand"
+						className="expand"
+						tooltipParam={{ text: translate('menuSearchChatExpand') }}
+						onClick={() => onExpand()}
+					/>
+				</div>
+
+				<div className="arrowWrapper">
+					<Icon name="arrow/small" size={8} className={cnu.join(' ')} onClick={() => onArrow(1)} />
+					<Icon name="arrow/small" size={8} className={cnd.join(' ')} onClick={() => onArrow(-1)} />
+				</div>
+			</div>
+
+			{!items.length && filter.current && isDropdownOpen ? (
+				<EmptySearch filter={filter.current} text={translate('menuSearchChatEmptySearch')} />
+			) : ''}
+
+			{items.length && isDropdownOpen ? (
+				<div className="items">
+					<InfiniteLoader
+						rowCount={items.length}
+						loadMoreRows={loadMoreRows}
+						isRowLoaded={({ index }) => !!itemsRef.current[index]}
+						threshold={LIMIT}
+					>
+						{({ onRowsRendered }) => (
+							<AutoSizer className="scrollArea">
+								{({ width, height }) => (
+									<List
+										ref={listRef}
+										width={width}
+										height={height}
+										deferredMeasurmentCache={cache.current}
+										rowCount={items.length}
+										rowHeight={HEIGHT}
+										rowRenderer={rowRenderer}
+										onRowsRendered={onRowsRendered}
+										overscanRowCount={10}
+										scrollToAlignment="center"
+									/>
+								)}
+							</AutoSizer>
+						)}
+					</InfiniteLoader>
+				</div>
+			) : ''}
+		</div>
+	);
+
+});
+
+export default MenuSearchChat;

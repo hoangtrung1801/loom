@@ -1,0 +1,511 @@
+import React, { forwardRef, useRef, useEffect } from 'react';
+import { Icon, Select, Input, Label, Tag } from 'Component';
+import ItemObject from 'Component/cell/item/object';
+import * as I from 'Interface';
+
+interface Props {
+	rootId: string;
+	blockId: string;
+	rule: I.Filter;
+	index: number;
+	depth: number;
+	parentPath: string;
+	operator: I.FilterOperator;
+	getView: () => any;
+	getTarget: () => any;
+	isInline: boolean;
+	loadData: (viewId: string, offset: number, clear?: boolean) => void;
+	readonly?: boolean;
+	onRemove: (index: number) => void;
+	onUpdate: (index: number, data: Partial<I.Filter>) => void;
+	onOperatorChange: (operator: I.FilterOperator) => void;
+	onTurnIntoGroup: (index: number) => void;
+};
+
+const DataviewFilterRule = forwardRef<{}, Props>((props, ref) => {
+
+	const {
+		rootId, blockId, rule, index, depth, parentPath, operator, getView, getTarget, isInline, loadData,
+		readonly, onRemove, onUpdate, onOperatorChange, onTurnIntoGroup
+	} = props;
+	const nodeId = `rule-${parentPath}-${index}`;
+	const { dateFormat } = S.Common;
+	const { relationKey, condition, value } = rule;
+	const operatorRef = useRef(null);
+	const conditionRef = useRef(null);
+	const inputRef = useRef(null);
+	const relationRaw: any = relationKey ? S.Record.getRelationByKey(relationKey) : null;
+	const relation: any = (relationRaw && !relationRaw.isArchived && !relationRaw.isDeleted) ? relationRaw : null;
+	const conditionOptions = relation ? Relation.filterConditionsByType(relation.format) : [];
+	const operatorOptions = [
+		{ id: String(I.FilterOperator.And), name: translate('filterOperatorAnd') },
+		{ id: String(I.FilterOperator.Or), name: translate('filterOperatorOr') },
+	];
+	const operatorOption: any = operatorOptions.find(it => it.id == String(operator)) || {};
+	const operatorName = operatorOption.name || '';
+	const subId = `advancedFilter-${nodeId}`;
+
+	useEffect(() => {
+		if (!relation) {
+			return;
+		};
+
+		if (![ I.RelationType.Object, I.RelationType.File ].includes(relation.format)) {
+			return;
+		};
+
+		const ids = Relation.getArrayValue(value).filter(it => it);
+
+		if (!ids.length) {
+			return () => {
+				U.Subscription.destroyList([ subId ]);
+			};
+		};
+
+		U.Subscription.subscribeIds({
+			subId,
+			ids,
+			noDeps: true,
+		});
+
+		return () => {
+			U.Subscription.destroyList([ subId ]);
+		};
+	}, [ relationKey, value ]);
+
+	const getValue = () => {
+		if (!relation) {
+			return null;
+		};
+
+		if ([ I.FilterCondition.Empty, I.FilterCondition.NotEmpty ].includes(condition)) {
+			return null;
+		};
+
+		switch (relation.format) {
+			case I.RelationType.Date: {
+				const quickOption = rule.quickOption ?? I.FilterQuickOption.ExactDate;
+				const quickOptions = Relation.filterQuickOptions(relation.format, condition);
+
+				let dateValue = null;
+
+				if ([ I.FilterQuickOption.NumberOfDaysAgo, I.FilterQuickOption.NumberOfDaysNow ].includes(quickOption)) {
+					dateValue = (
+						<Input
+							key={`${nodeId}-days-${quickOption}`}
+							ref={inputRef}
+							value={value}
+							size={36}
+							placeholder={translate(`placeholderCell${I.RelationType.Number}`)}
+							onKeyUp={(e: any, v: string) => onUpdate(index, { value: v })}
+							readonly={readonly}
+						/>
+					);
+				} else
+				if (quickOption == I.FilterQuickOption.ExactDate) {
+					let mask = '';
+					let ph = '';
+					let inputFormat = '';
+
+					switch (dateFormat) {
+						case I.DateFormat.ISO: { mask = '9999.99.99'; ph = 'yyyy.mm.dd'; inputFormat = 'Y.m.d'; break; };
+						case I.DateFormat.ShortUS:
+						case I.DateFormat.MonthAbbrBeforeDay:
+						case I.DateFormat.Long:
+						case I.DateFormat.Default: { mask = '99.99.9999'; ph = 'mm.dd.yyyy'; inputFormat = 'm.d.Y'; break; };
+						default: { mask = '99.99.9999'; ph = 'dd.mm.yyyy'; inputFormat = 'd.m.Y'; break; };
+					};
+
+					dateValue = (
+						<Input
+							key={`${nodeId}-date-${quickOption}`}
+							ref={inputRef}
+							value={value ? U.Date.date(inputFormat, value) : ''}
+							size={36}
+							placeholder={ph}
+							maskOptions={{
+								mask,
+								separator: '.',
+								alias: 'datetime',
+							}}
+							readonly={readonly}
+							onClick={() => {
+								if (readonly) {
+									return;
+								};
+
+								S.Menu.open('calendar', {
+									element: `#${nodeId} .dateInput`,
+									classNameWrap: 'fromBlock',
+									horizontal: I.MenuDirection.Center,
+									offsetY: 4,
+									data: {
+										value: rule.value || U.Date.now(),
+										canEdit: true,
+										canClear: true,
+										onChange: (v: number) => {
+											onUpdate(index, { value: v });
+											inputRef.current?.setValue(v ? U.Date.date(inputFormat, v) : '');
+										},
+									},
+								});
+							}}
+						/>
+					);
+				};
+
+				return (
+					<div className="dateWrapper">
+						<Select
+							size={36}
+							key={`${nodeId}-quick-${relationKey}-${condition}`}
+							id={`${nodeId}-quick`}
+							className="round"
+							value={String(quickOption)}
+							options={quickOptions}
+							onChange={v => onUpdate(index, {
+								quickOption: Number(v) as I.FilterQuickOption,
+								value: Relation.formatValue(relation, null, false),
+							})}
+							menuParam={{ classNameWrap: 'fromBlock', offsetY: 4 }}
+							readonly={readonly}
+						/>
+						{dateValue ? <div className="dateInput">{dateValue}</div> : ''}
+					</div>
+				);
+			};
+
+			case I.RelationType.Checkbox: {
+				const checkboxOptions = [
+					{ id: '1', name: translate('menuDataviewFilterValuesChecked') },
+					{ id: '0', name: translate('menuDataviewFilterValuesUnchecked') },
+				];
+				return (
+					<Select
+						key={`${nodeId}-checkbox-${relationKey}`}
+						id={`${nodeId}-checkbox`}
+						value={value ? '1' : '0'}
+						options={checkboxOptions}
+						className="round"
+						size={36}
+						onChange={v => onUpdate(index, { value: Boolean(Number(v)) })}
+						menuParam={{ classNameWrap: 'fromBlock', offsetY: 4 }}
+						readonly={readonly}
+					/>
+				);
+			};
+
+			case I.RelationType.ShortText:
+			case I.RelationType.LongText:
+			case I.RelationType.Number:
+			case I.RelationType.Url:
+			case I.RelationType.Phone:
+			case I.RelationType.Email: {
+				return (
+					<Input
+						ref={inputRef}
+						value={value}
+						size={36}
+						placeholder={translate(`placeholderCell${relation.format}`)}
+						onKeyUp={(e: any, v: string) => onUpdate(index, { value: v })}
+						readonly={readonly}
+					/>
+				);
+			};
+
+			case I.RelationType.Object:
+			case I.RelationType.File: {
+				const isObject = Relation.isObject(relation.format);
+				const isFile = Relation.isFile(relation.format);
+
+				const items = Relation.getArrayValue(value)
+					.map(id => {
+						const template = isObject ? Relation.getFilterTemplateOption(id) : null;
+						return template ? { ...template, isSystem: true } : S.Detail.get(subId, id, []);
+					})
+					.filter(it => !it._empty_ && !it.isArchived && !it.isDeleted);
+
+				if (!items.length) {
+					const key = relation.format == I.RelationType.File ? 'filterPlaceholderFile' : 'filterPlaceholderObject';
+					return <Label className="placeholder" text={translate(key)} />;
+				};
+
+				const visible = items.slice(0, 1);
+				const rest = items.slice(1);
+				const restId = `${nodeId}-rest`;
+
+				return (
+					<div className="objectsList">
+						{visible.map((item: any) => {
+							const tooltipId = `${nodeId}-${item.id}`;
+							const el = (
+								<ItemObject
+									key={item.id}
+									cellId={nodeId}
+									getObject={() => isFile ? { ...item, name: U.String.shortMask(item.name, 5) } : item}
+									relation={relation}
+									canEdit={false}
+								/>
+							);
+
+							if (isFile && item.name.length > 13) {
+								return (
+									<span
+										key={item.id}
+										id={tooltipId}
+										onMouseEnter={() => Preview.tooltipShow({ text: item.name, element: U.Dom.get(tooltipId) })}
+										onMouseLeave={() => Preview.tooltipHide(false)}
+									>
+										{el}
+									</span>
+								);
+							};
+
+							return el;
+						})}
+						{rest.length ? (
+							<div
+								id={restId}
+								className="rest"
+								onMouseEnter={() => Preview.tooltipShow({ text: rest.map(it => it.name).join(', '), element: U.Dom.get(restId) })}
+								onMouseLeave={() => Preview.tooltipHide(false)}
+							>
+								+{rest.length}
+							</div>
+						) : ''}
+					</div>
+				);
+			};
+
+			case I.RelationType.Select:
+			case I.RelationType.MultiSelect: {
+				const items = Relation.getOptions(value)
+					.filter(it => !it.isArchived && !it.isDeleted && !it._empty_);
+
+				if (!items.length) {
+					return <Label className="placeholder" text={translate('filterPlaceholderSelect')} />;
+				};
+
+				const visible = items.slice(0, 2);
+				const rest = items.slice(2);
+				const restId = `${nodeId}-rest`;
+
+				return (
+					<div className="optionsList">
+						{visible.map((item: any) => (
+							<Tag
+								key={item.id}
+								text={item.name}
+								color={item.color}
+								className={Relation.selectClassName(relation.format)}
+							/>
+						))}
+						{rest.length ? (
+							<div
+								id={restId}
+								className="rest"
+								onMouseEnter={() => Preview.tooltipShow({ text: rest.map(it => it.name).join(', '), element: U.Dom.get(restId) })}
+								onMouseLeave={() => Preview.tooltipHide(false)}
+							>
+								+{rest.length}
+							</div>
+						) : ''}
+					</div>
+				);
+			};
+
+			default: {
+				return null;
+			};
+		};
+	};
+
+	const onValueClick = () => {
+		if (!relation) {
+			return;
+		};
+
+		const view = getView();
+		const withMenu = [
+			I.RelationType.Object,
+			I.RelationType.File,
+			I.RelationType.Select,
+			I.RelationType.MultiSelect
+		].includes(relation.format);
+
+		if (!view || readonly || !withMenu) {
+			return;
+		};
+
+		S.Menu.open('dataviewFilterValues', {
+			element: `#${nodeId} .valueSelect`,
+			classNameWrap: 'fromBlock',
+			className: 'compact',
+			horizontal: I.MenuDirection.Right,
+			offsetY: 4,
+			data: {
+				rootId,
+				blockId,
+				isInline,
+				getView,
+				getTarget,
+				readonly,
+				filter: rule,
+				hideHead: true,
+				onFilterPropChange: (k: string, v: any) => {
+					onUpdate(index, { [k]: v });
+				},
+			}
+		});
+	};
+
+	const onRelationClick = (e: any) => {
+		e.stopPropagation();
+
+		const element = `#${nodeId} .relationSelect`;
+
+		U.Menu.sortOrFilterRelationSelect({
+			element,
+			classNameWrap: 'fromBlock',
+			horizontal: I.MenuDirection.Left,
+			offsetY: 4,
+		}, {
+			rootId,
+			blockId,
+			getView,
+			onSelect: (item: any) => {
+				const conditions = Relation.filterConditionsByType(item.format);
+				const newCondition = conditions.length ? conditions[0].id : I.FilterCondition.None;
+
+				onUpdate(index, {
+					relationKey: item.relationKey ? item.relationKey : item.id,
+					condition: newCondition as I.FilterCondition,
+					value: Relation.formatValue(item, null, false),
+				});
+			},
+		});
+	};
+
+	const onMore = (e: any) => {
+		e.stopPropagation();
+
+		const options: any[] = [];
+
+		if (depth < 2) {
+			options.push({ id: 'group', name: translate('menuDataviewFilterTurnIntoGroup'), iconParam: { name: 'menu/action/group' } });
+		};
+
+		options.push({ id: 'delete', name: translate('commonDelete'), iconParam: { name: 'menu/action/remove' } });
+
+		S.Menu.open('select', {
+			element: `#${nodeId} .icon.more`,
+			classNameWrap: 'fromBlock',
+			horizontal: I.MenuDirection.Right,
+			offsetY: 4,
+			data: {
+				options,
+				onSelect: (e: any, option: any) => {
+					switch (option.id) {
+						case 'group': onTurnIntoGroup(index); break;
+						case 'delete': onRemove(index); break;
+					};
+				},
+			}
+		});
+	};
+
+	const valueContent = relation ? getValue() : null;
+	const cn = [ 'rule' ];
+	const vscn = [ 'valueSelect' ];
+
+	if (relation) {
+		vscn.push(`is${I.RelationType[relation.format]}`);
+	};
+
+	if (readonly) {
+		cn.push('isReadonly');
+	};
+
+	if (!valueContent) {
+		vscn.push('isEmpty');
+	};
+
+	return (
+		<div
+			id={nodeId}
+			className={cn.join(' ')}
+		>
+			{index == 0 ? (
+				<div className="head">
+					<Label text={translate('commonWhere')} />
+				</div>
+			) : index == 1 ? (
+				<div className="head">
+					<Select
+						ref={operatorRef}
+						id={`${nodeId}-operator`}
+						value={String(operator)}
+						options={operatorOptions}
+						onChange={v => onOperatorChange(Number(v) as I.FilterOperator)}
+						menuParam={{ classNameWrap: 'fromBlock', offsetY: 4 }}
+						readonly={readonly}
+					/>
+				</div>
+			) : (
+				<div className="head">
+					<Label text={operatorName} />
+				</div>
+			)}
+
+			<div className="inner">
+				<div className="relationSelect select round size36" onClick={onRelationClick}>
+					{relation ? <Icon name={Relation.registryName(relation.relationKey, relation.format)} /> : ''}
+					<Label text={relation ? relation.name : translate('commonNone')} />
+					<Icon name="arrow/button" size={8} className="arrow" />
+				</div>
+
+				{relation ? (
+					<Select
+						size={36}
+						className="conditionSelect round"
+						key={`${nodeId}-condition-${relationKey}`}
+						ref={conditionRef}
+						id={`${nodeId}-condition`}
+						value={String(condition)}
+						options={conditionOptions}
+						onChange={v => {
+							const newCondition = Number(v) as I.FilterCondition;
+							const data: Partial<I.Filter> = { condition: newCondition };
+
+							if ([ I.FilterCondition.None, I.FilterCondition.Empty, I.FilterCondition.NotEmpty ].includes(newCondition)) {
+								data.value = Relation.formatValue(relation, null, false);
+							};
+
+							if (relation.format == I.RelationType.Date) {
+								const qo = Relation.filterQuickOptions(relation.format, newCondition);
+								const currentQo = qo.find(it => it.id == rule.quickOption);
+
+								if (!currentQo && qo.length) {
+									data.quickOption = qo[0].id as I.FilterQuickOption;
+								};
+							};
+
+							onUpdate(index, data);
+						}}
+						menuParam={{ classNameWrap: 'fromBlock', offsetY: 4 }}
+						readonly={readonly}
+					/>
+				) : ''}
+
+				<div className={vscn.join(' ')} onClick={onValueClick}>
+					{valueContent}
+				</div>
+
+				{!readonly ? <Icon name="common/more" className="more" withBackground={true} onClick={onMore} /> : ''}
+			</div>
+		</div>
+	);
+
+});
+
+export default DataviewFilterRule;

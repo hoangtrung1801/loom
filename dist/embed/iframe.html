@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta name="referrer" content="origin" />
+		<meta charset="utf-8" />
+
+		<script src="../js/jquery.js"></script>
+		<style type="text/css">
+			* { margin: 0px; padding: 0px; box-sizing: border-box; user-select: none; }
+
+			body { background-color: #fff; }
+			html.dark body { background-color: #171717; }
+
+			html.align1 body { text-align: center; }
+			html.align2 body { text-align: right; }
+
+			html:not(.allowIframeResize) { height: 100%; }
+			html:not(.allowIframeResize) {
+				body, #root { height: 100%; }
+				iframe { width: 100% !important; height: 100% !important; border: 0px !important; }
+			}
+
+			#root { font-size: 0px; }
+			iframe { margin: 0px !important; display: inline-block !important; }
+
+			.twitter-tweet, .instagram-media { margin: 0px !important; display: inline-flex !important; }
+			.gist-file { margin: 0px 0px 16px 0px !important; }
+			.gist-file:last-child { margin-bottom: 0px !important; }
+
+			.cp_embed_iframe { border: 0px !important; height: auto; aspect-ratio: 16/9; }
+
+			html.align1 .twitter-tweet, body.align1 .instagram-media { justify-content: center; }
+			html.align2 .twitter-tweet, body.align2 .instagram-media { justify-content: flex-end; }
+
+			html.isChart canvas { background: #fff; }
+			html.isKroki #root svg { max-width: 100%; height: auto !important; background: #fff; }
+		</style>
+	</head>
+	<body>
+		<div id="root"></div>
+		<div id="scripts"></div>
+
+		<script type="text/javascript">
+			$(() => {
+				const Processor = {
+					Latex:			 0,
+					Mermaid:		 1,
+					Chart:			 2,
+					Youtube:		 3,
+					Vimeo:			 4,
+					Soundcloud:		 5,
+					GoogleMaps:		 6,
+					Miro:			 7,
+					Figma:			 8,
+					Twitter:		 9,
+					OpenStreetMap:	 10,
+					Reddit:			 11,
+					Facebook:		 12,
+					Instagram:		 13,
+					Telegram:		 14,
+					GithubGist:		 15,
+					Codepen:		 16,
+					Bilibili:		 17,
+					Excalidraw:		 18,
+					Kroki:			 19,
+					Graphviz:		 20,
+					Sketchfab:		 21,
+					Image:			 22,
+					Spotify:		 23,
+				};
+
+				const win = $(window);
+				const htmlEl = $('html');
+				const head = $('head');
+				const body = $('body');
+				const root = $('#root');
+				const scripts = $('#scripts');
+				const param = getParam();
+				const allowedOrigins = [
+					'//localhost:',
+					'file://',
+					'^null$',
+				];
+
+				let processor = 0;
+				let useRootHeight = false;
+				let cachedHtml = '';
+				let height = 0;
+				let isMiniApp = false;
+				let blockId = '';
+				let player;
+				let html = '';
+
+				win.off('message resize');
+
+				win.on('message', e => {
+					const oe = e.originalEvent;
+					if (!allowedOrigins.some(it => oe.origin.match(it))) {
+						return;
+					};
+
+					// ── AnytypeMiniApp short-circuit ──────────────────────────────
+					// Receives { html, state } and injects the html into #root,
+					// re-creating <script> elements so React deps actually execute.
+					// State is exposed on window.__ANYTYPE_STATE__ before scripts run.
+					if (oe.data && oe.data.anytypeMiniApp) {
+						blockId = oe.data.blockId;
+						processor = oe.data.processor;
+						isMiniApp = true;
+
+						htmlEl.attr({ class: '' });
+						if (param.theme) {
+							htmlEl.addClass(param.theme);
+						};
+						if (oe.data.allowIframeResize) {
+							htmlEl.addClass('allowIframeResize');
+						};
+						htmlEl.addClass(`align${oe.data.align}`);
+
+						if (oe.data.allowIframeResize) {
+							if (window.__anytypeMiniAppResizeTimer__) {
+								clearInterval(window.__anytypeMiniAppResizeTimer__);
+							};
+							window.__anytypeMiniAppResizeTimer__ = setInterval(resize, 300);
+						};
+
+						injectAnytypeMiniApp(oe.data.anytypeMiniApp);
+						return;
+					};
+					// ──────────────────────────────────────────────────────────────
+
+					let { js, className, insertBeforeLoad, allowIframeResize, align } = oe.data;
+
+					html = String(oe.data.html || '');
+					libs = oe.data.libs || [];
+					blockId = oe.data.blockId;
+					processor = oe.data.processor;
+					useRootHeight = oe.data.useRootHeight;
+
+					const envContent = getEnvironmentContent(processor);
+
+					if (envContent.html) {
+						html = envContent.html;
+					};
+
+					if (envContent.libs && envContent.libs.length) {
+						libs = libs.concat(envContent.libs);
+					};
+
+					scripts.html('');
+					htmlEl.attr({ class: '' });
+
+					if (param.theme) {
+						htmlEl.addClass(param.theme);
+					};
+					if (className) {
+						htmlEl.addClass(className);
+					};
+					if (allowIframeResize) {
+						htmlEl.addClass('allowIframeResize');
+					};
+					htmlEl.addClass(`align${align}`);
+
+					if (allowIframeResize) {
+						setInterval(resize, 300);
+					};
+
+					// Github Gist
+					if (processor == Processor.GithubGist) {
+						loadGithubGist(html);
+					} else
+					if (processor == Processor.Kroki) {
+						loadKroki(html);
+					} else {
+						if ((processor == Processor.Telegram) && !html.match(/<script/)) {
+							const post = html.replace(/^https:\/\/t.me\//, '');
+							html = '<' + `script async src="https://telegram.org/js/telegram-widget.js?22" data-telegram-post="${post}" data-width="100%"></script` + '>';
+						};
+
+						if (processor == Processor.Twitter) {
+							const m = html.match(/https:\/\/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
+							if (m) {
+								const theme = param.theme == 'dark' ? 'dark' : 'light';
+								html = `<iframe src="https://platform.twitter.com/embed/Tweet.html?id=${m[1]}&theme=${theme}" style="width:100%;border:none;" allowfullscreen></iframe>`;
+
+								win.on('message.twitter', (e) => {
+									const d = e.originalEvent.data;
+									if (!d || !d['twttr.embed']) return;
+
+									const msg = d['twttr.embed'];
+									if ((msg.method == 'twttr.private.resize') && msg.params && msg.params.length) {
+										const h = msg.params[0] && msg.params[0].height;
+										if (h) {
+											root.find('iframe').css({ height: h });
+											resize();
+										};
+									};
+								});
+							};
+						};
+
+						if (insertBeforeLoad) {
+							insertHtml(html);
+						};
+
+						if (processor == Processor.Youtube) {
+							window.onYouTubeIframeAPIReady = () => {
+								player = new YT.Player('player', {
+									events: {
+										onReady,
+										onStateChange,
+									}
+								});
+							};
+
+							const onReady = (event) => {
+							};
+
+							const onStateChange = (event) => {
+							};
+						};
+
+						loadLibs(libs, () => {
+							if (!insertBeforeLoad) {
+								insertHtml(html);
+							};
+
+							if (js) {
+								try {
+									eval(js);
+								} catch (e) {
+									console.error(e);
+								};
+							};
+
+							resize();
+						});
+					};
+				});
+
+				win.on('resize', resize);
+
+				function resize () {
+					const h = useRootHeight ? root.height() : document.documentElement.scrollHeight;
+					height = isMiniApp ? Math.max(height, h) : h;
+					window.parent.postMessage({ type: 'resize', height, blockId }, '*');
+				};
+
+				function insertHtml (html) {
+					if (cachedHtml !== html) {
+						root.html(html);
+						cachedHtml = html;
+
+						renderLinks();
+					};
+				};
+
+				function loadLibs (list, callBack) {
+					if (!list.length) {
+						callBack?.();
+						return;
+					};
+
+					const src = list.shift();
+					const script = document.createElement('script');
+
+					scripts.append(script);
+					script.onload = function (e) {
+						if (list.length) {
+							loadLibs(list, callBack);
+						} else {
+							callBack?.();
+						};
+					};
+
+					script.type = 'text/javascript';
+					script.src = src;
+				};
+
+				function getParam () {
+					const p = {};
+					try {
+						const u = new URL(location.href);
+
+						if (u.searchParams) {
+							u.searchParams.forEach((v, k) => p[k] = v);
+						};
+					} catch (e) {
+						console.error(e);
+					};
+					return p;
+				};
+
+				function loadGithubGist (html) {
+					const m = html.match(/src="([^"]+)"/); 
+					if (!m || (m.length < 1)) {
+						return;
+					};
+
+					$.ajax({
+						url: m[1].replace(/\.js$/, '.json'),
+						dataType: 'jsonp',
+						timeout: 1000,
+						success: (data) => {
+							if (!head.find('#gist-css').length) {
+								head.append(`<link id="gist-css" href="${data.stylesheet}" rel="stylesheet">`);
+							};
+
+							root.html(data.div);
+
+							renderLinks();
+							resize();
+						}
+					});
+				};
+
+				let lastInjectedAppHtml = null;
+
+				function setupAnytypeApi () {
+					// Outbound bridge: React calls window.__ANYTYPE_API__.setState(next)
+					// to push a new state to the host. Anytype writes it into the JSON
+					// sibling block; on the echo back the state-only path runs and
+					// dispatches an 'anytype:state' CustomEvent, which the React app
+					// listens to and uses to update its local mirror state.
+					//
+					// IMPORTANT: the React app's 'anytype:state' listener must NOT
+					// call setState() — it should only update its local React state.
+					// That's the structural rule that prevents echo loops.
+					window.__ANYTYPE_API__ = {
+						setState: function (nextState) {
+							window.parent.postMessage({
+								type: 'anytypeMiniAppState',
+								state: nextState,
+								blockId: blockId,
+							}, '*');
+						},
+					};
+				};
+
+				function injectAnytypeMiniApp (payload) {
+					const html = String((payload && payload.html) || '');
+					const state = (payload && payload.state) !== undefined ? payload.state : null;
+
+					// State-only fast path: html unchanged → don't tear down React.
+					// Just update window.__ANYTYPE_STATE__ and dispatch an event so
+					// the user's React app can update its local state without losing
+					// scroll position, focus, or any non-canonical UI state.
+					if (html === lastInjectedAppHtml) {
+						window.__ANYTYPE_STATE__ = state;
+						window.dispatchEvent(new CustomEvent('anytype:state', { detail: state }));
+						return;
+					};
+
+					// Full re-inject: html changed (first load, or user edited the
+					// html code block). Reset max height so the new content
+					// measures fresh.
+					height = 0;
+					lastInjectedAppHtml = html;
+					window.__ANYTYPE_STATE__ = state;
+					setupAnytypeApi();
+
+					// Wipe previous content + scripts so re-injects start clean.
+					scripts.html('');
+					root.empty();
+
+					if (!html) {
+						return;
+					};
+
+					// Parse the HTML in a detached div so we can extract <script>
+					// elements. innerHTML alone does NOT execute <script> tags;
+					// we have to clone them into fresh nodes appended to the DOM.
+					const tmp = document.createElement('div');
+					tmp.innerHTML = html;
+
+					const scriptNodes = Array.from(tmp.querySelectorAll('script'));
+					scriptNodes.forEach(s => s.parentNode && s.parentNode.removeChild(s));
+
+					// Move the non-script content into #root.
+					const rootEl = root.get(0);
+					while (tmp.firstChild) {
+						rootEl.appendChild(tmp.firstChild);
+					};
+
+					// Now sequentially append fresh script elements. External
+					// (src=) scripts wait for onload before the next runs so
+					// dependency order (e.g. react before react-dom before app)
+					// is preserved. Inline scripts execute synchronously on append.
+					const scriptsEl = scripts.get(0);
+					let i = 0;
+					function next () {
+						if (i >= scriptNodes.length) {
+							resize();
+							return;
+						};
+						const old = scriptNodes[i++];
+						const s = document.createElement('script');
+
+						for (let j = 0; j < old.attributes.length; j++) {
+							const attr = old.attributes[j];
+							s.setAttribute(attr.name, attr.value);
+						};
+
+						if (old.src) {
+							s.async = false;
+							s.onload = next;
+							s.onerror = function () {
+								console.warn('AnytypeMiniApp: script load failed', old.src);
+								next();
+							};
+							scriptsEl.appendChild(s);
+						} else {
+							s.textContent = old.textContent;
+							scriptsEl.appendChild(s);
+							next();
+						};
+					};
+					next();
+				};
+
+				function loadKroki (html) {
+					if (!html) {
+						return;
+					};
+
+					$.ajax({
+						url: html,
+						dataType: 'text',
+						timeout: 3000,
+						success: (data) => {
+							root.html(data);
+
+							renderLinks();
+						}
+					});
+				};
+
+				function renderLinks () {
+					root.find('a').off('click').on('click', function (e) {
+						e.preventDefault();
+
+						const el = $(this);
+						const url = el.attr('href') || el.attr('xlink:href');
+
+						window.parent.postMessage({ type: 'openUrl', url, blockId }, '*');
+					});
+				};
+
+				function getEnvironmentContent (processor) {
+					const libs = [];
+
+					let html = '';
+					switch (processor) {
+						case Processor.Chart: {
+							html = `<canvas id="chart"></canvas>`;
+							libs.push('https://cdn.jsdelivr.net/npm/chart.js');
+							break;
+						};
+
+						case Processor.Twitter: {
+							break;
+						};
+
+						case Processor.Reddit: {
+							libs.push('https://embed.reddit.com/widgets.js');
+							break;
+						};
+
+						case Processor.Instagram: {
+							libs.push('https://www.instagram.com/embed.js');
+							break;
+						};
+
+						case Processor.Codepen: {
+							libs.push('https://cpwebassets.codepen.io/assets/embed/ei.js');
+							break;
+						};
+
+						case Processor.Youtube:
+							libs.push('https://www.youtube.com/iframe_api');
+							break;
+					};
+
+					return { 
+						html, 
+						libs, 
+					};
+				};
+
+			});
+		</script>
+	</body>
+</html>

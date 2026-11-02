@@ -1,0 +1,47 @@
+import React, { forwardRef, memo } from 'react';
+import { IconObject } from 'Component';
+import * as I from 'Interface';
+
+
+interface Props extends I.ChatMessageReaction, I.ChatMessageComponent {
+	onSelect: (icon: string) => void;
+};
+
+const ChatMessageReaction = forwardRef<{}, Props>((props, ref) => {
+
+	const { account } = S.Auth;
+	const { space } = S.Common;
+	const { icon, authors, onSelect } = props;
+	const mapped = authors.map(it => U.Space.getParticipant(U.Space.getParticipantId(space, it))).filter(it => it);
+	const tooltip = mapped.map(it => it.name).filter(it => it).join('\n');
+	const length = authors.length;
+	const author = length ? U.Space.getParticipant(U.Space.getParticipantId(space, authors[0])) : '';
+	const isSelf = authors.includes(account.id);
+	const cn = [ 'reaction' ];
+
+	if (isSelf) {
+		cn.push('isSelf');
+	};
+	if (length > 1) {
+		cn.push('isMulti');
+	};
+
+	return (
+		<div 
+			className={cn.join(' ')}
+			onClick={() => onSelect(icon)}
+			onMouseEnter={e => Preview.tooltipShow({ text: tooltip, element: e.currentTarget as HTMLElement })}
+			onMouseLeave={() => Preview.tooltipHide(false)}
+		>
+			<div className="value">
+				<IconObject object={{ iconEmoji: icon }} size={18} />
+			</div>
+			<div className="count">
+				{length > 1 ? length : <IconObject object={author} size={18} />}
+			</div>
+		</div>
+	);
+
+});
+
+export default memo(ChatMessageReaction);

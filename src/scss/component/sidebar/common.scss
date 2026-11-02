@@ -1,0 +1,120 @@
+@import "~scss/_mixins";
+
+.sidebarAnimation { transition: width $transitionSidebarTime $easeDecelerate; }
+
+#sidebarUpdateBanner { position: fixed; bottom: 12px; z-index: 25; transition: left $transitionSidebarTime $easeDecelerate; }
+
+.sidebar { 
+	position: fixed; z-index: 24; user-select: none; top: 0px; height: 100%;
+	display: flex; flex-direction: column;
+}
+
+.sidebar {
+	@import "./page/common";
+
+	.pageWrapper, .subPageWrapper { flex-shrink: 0; position: relative; flex-direction: column; }
+	.pageWrapper, .subPageWrapper {
+		&.sidebarAnimation {
+			.sidebarPage { transition: opacity $transitionSidebarTime $easeInQuint; }
+		}
+
+		&.isClosed {
+			.sidebarPage { border: 0px; }
+		}
+	}
+
+	.pageWrapper { padding: 0px 0px 8px 8px; z-index: 2; display: flex; background: var(--color-bg-primary); height: 100%; }
+	.pageWrapper {
+		&.sidebarAnimation { transition-property: width, transform; }
+		&.isClosed { padding-left: 0px; }
+	}
+
+	.subPageWrapper { width: 336px; display: flex; padding: 0px 0px 8px 0px; height: 100%; }
+	.subPageWrapper {
+		.sidebarPage { background: var(--color-bg-primary); border-radius: 12px 0px 0px 12px; border-right: 1px solid var(--color-shape-secondary); }
+		.sidebarPage {
+			> .head {
+				> .left { gap: 0px 8px; }
+			}
+		}
+
+		&.sidebarAnimation { transition-property: transform; overflow: hidden; }
+	}
+
+	.resize-h { width: 12px; height: 100%; cursor: col-resize; z-index: 2; flex-shrink: 0; position: absolute; top: 0px; }
+	.resize-h {
+		.resize-handle {
+			position: absolute; left: 0px; top: 50%; margin: -16px 0px 0px 0px; transition: $transitionAllCommon;
+			width: 100%; height: 32px;
+		}
+		.resize-handle::after {
+			content: ''; position: absolute; left: 50%; top: 0px; width: 6px; height: 100%; background-color: var(--color-shape-secondary);
+			border-radius: 3px; opacity: 0; transition: $transitionAllCommon; margin-left: -3px;
+		}
+
+		&:hover, &:active {
+			.resize-handle::after { opacity: 1; }
+		}
+
+		&:active {
+			.resize-handle { height: 64px; margin-top: -32px; }
+		}
+		.resize-handle:hover::after, .resize-handle:active::after { background-color: var(--color-shape-primary); }
+	}
+
+	.loaderWrapper { position: absolute; left: 0px; top: 0px; width: 100%; height: 100%; }
+	.banner.update { position: absolute; bottom: 45px; z-index: 10; left: 12px; width: 312px; }
+
+	&.withPreview { z-index: 20; }
+	&.left { left: 0px; flex-direction: row; }
+	&.left {
+		.resize-h { right: -12px; }
+	}
+
+	.subPageWrapper.isClosed {
+		.resize-h { display: none; }
+	}
+
+	.subPageWrapper.withSidebarLeft {
+		.head {
+			> .side.left {
+				.icon.vaultToggle { display: none; }
+			}
+		}
+	}
+
+	&.right { right: 0px; flex-shrink: 0; }
+	&.right {
+		.resize-h { left: -12px; }
+		&.sidebarAnimation { transition-property: transform; }
+
+		@import "./preview";
+
+		.sidebarPage { 
+			background: var(--color-bg-primary); border-left: 1px solid var(--color-shape-secondary); border-radius: 0px 12px 12px 0px; 
+			margin-right: 4px;
+		}
+	}
+}
+
+html.platformWindows {
+	.sidebar .sidebarPage > .body { overflow-y: overlay; }
+}
+
+html.platformMac {
+	.sidebar .subPageWrapper.sidebarAnimation .sidebarPage > .head .side.left {
+		transition: padding-left $transitionSidebarTime $easeDecelerate;
+	}
+
+	&.isSingleTab .sidebar .subPageWrapper:not(.withSidebarLeft) .sidebarPage > .head {
+		padding-left: 84px;
+	}
+}
+
+html.platformLinux {
+	.sidebar .subPageWrapper:not(.withSidebarLeft) .sidebarPage > .head .side.left {
+		padding-left: 36px;
+	}
+}
+
+@import "./progress";

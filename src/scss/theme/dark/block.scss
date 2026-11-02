@@ -1,0 +1,129 @@
+.block.blockCover {
+    .loaderWrapper { background: var(--color-shape-highlight-light); }
+
+	.author, .author a { color: var(--color-text-primary); }
+
+    .elements {
+		.btn.white { background: var(--color-shape-secondary); color: var(--color-text-primary); }
+        .btn.white:hover { background: var(--color-shape-primary); color: var(--color-text-primary); }
+
+		.btn.black { color: var(--color-text-primary); }
+
+    }
+}
+
+.blocks {
+    /* BlockFile */
+
+    .block.blockFile {
+        .loaderWrapper { border: 0px; }
+    }
+
+    /* BlockMedia */
+
+    .block.blockMedia {
+        .loaderWrapper { border: 0px; }
+    }
+
+
+    /* BlockDataview */
+
+    .block.blockDataview {
+		.dataviewHead {
+			.icon.source { opacity: 0; }
+		}
+
+        .viewContent.viewGrid {
+			.row:hover { background-color: rgba(223, 221, 208, 0.04); }
+
+			.cellHead.cellKeyHover::after, 
+			.cellHead.active::after,
+			.cellHead.isDragging::after { background-color: rgba(223, 221, 208, 0.04); }
+
+			.cellHead.last::after, .cellHead.active::after { background: none; }
+	
+			.cell.cellKeyHover { background-color: rgba(223, 221, 208, 0.04); }
+        }
+
+        .viewContent.viewBoard {
+            .cardContent { background: var(--color-bg-secondary); }
+			.card.add { background: var(--color-bg-secondary); }
+
+        }
+    }
+
+	/* BlockEmbed */
+
+	.block.blockEmbed {
+		.empty { color: var(--color-text-secondary); }
+		.wrap.isEditing { background: var(--color-shape-highlight-medium); }
+
+		.preview {
+			.label { color: var(--color-text-secondary); }
+		}
+	}
+	.block.blockEmbed:not(.isLatex) {
+		#value svg { background: none; }
+	}
+
+    /* BlockText */
+
+	.block.blockText {
+		markupbgcolor {
+			&.bgColor-grey { background: #3c3c3c !important; }
+			&.bgColor-yellow { background: #55500d !important; }
+			&.bgColor-orange { background: #5f430a !important; }
+			&.bgColor-red { background: #74321e !important; }
+			&.bgColor-pink { background: #712055 !important; }
+			&.bgColor-purple { background: #542663 !important; }
+			&.bgColor-blue { background: #2b3368 !important; }
+			&.bgColor-ice { background: #19465f !important; }
+			&.bgColor-teal { background: #16534e !important; }
+			&.bgColor-lime { background: #36551d !important; }
+		}
+	}
+
+    .block.blockText.textCallout, 
+	.block.blockText.textCallout {
+		> .wrapContent { background: var(--color-shape-highlight-medium); }
+	}
+
+    /* BlockBookmark */
+
+    .block.blockBookmark {
+		.loaderWrapper { border: 0px; }
+		.inner::after { background: rgba(255,255,255,0.03); }
+    }
+
+	/* BlockTable */
+
+	.block.blockTable {
+
+		.cell {
+			.icon.menu:hover {
+				.inner { box-shadow: 0px 0px; }
+			}
+		}
+	}
+
+	/* BlockChat */
+	.block.blockChat {
+
+		.message {
+			.bubble { background: var(--color-shape-tertiary); }
+		}
+
+
+		.form {
+
+			.attachments {
+				.swiper-button-prev { background: linear-gradient(-90deg, rgba(0, 0, 0, 0) 0%, var(--color-bg-primary) 100%); }
+				.swiper-button-next { background: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, var(--color-bg-primary) 100%); }
+				.swiper-button-prev::before,
+				.swiper-button-next::before { box-shadow: none; }
+				.swiper-button-prev::after,
+				.swiper-button-next::after { background-image: url('~img/theme/dark/icon/arrow/swiper.svg'); }
+			}
+		}
+	}
+}

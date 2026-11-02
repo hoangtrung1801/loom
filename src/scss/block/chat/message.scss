@@ -1,0 +1,255 @@
+.message { @include text-common; position: relative; }
+.message {
+	* { user-select: text !important; }
+
+	.label.small { display: inline-block; @include text-small; color: var(--color-text-secondary); }
+	.label.small.withText { margin: 0px 0px 0px 4px; }
+
+	> .flex { display: flex; flex-direction: row; gap: 0px 8px; align-items: stretch; }
+	> .flex {
+		> .side.left { flex-shrink: 0; width: 32px; display: flex; align-items: flex-end; }
+		> .side.left {
+			.iconObject { display: none; }
+		}
+		> .side.right { display: flex; flex-direction: column; position: relative; align-items: flex-start; flex-grow: 1; overflow: hidden; }
+	}
+
+	.bubbleOuter { display: flex; flex-direction: column; width: 100%; }
+
+	.bubbleInner { display: flex; flex-direction: row; gap: 0px 8px; align-items: center; }
+	.bubbleInner {
+		> .controls { 
+			flex-shrink: 0; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0px 8px; 
+			opacity: 0; transition: opacity $transitionCommon; min-width: 76px;
+		}
+		> .controls {
+			.icon { width: 20px; height: 20px; }
+			.icon:hover, .icon.hover { color: var(--color-text-primary); }
+		}
+
+		.bubble:not(.withLayout) { max-width: 480px; }
+		.bubble.withLayout { max-width: 540px; }
+	}
+
+	.icon.status { width: 12px !important; height: 12px !important; color: inherit; }
+	.icon.status {
+		> svg { width: 100%; height: 100%; }
+	}
+	.icon.status.isHidden { display: none; }
+
+	.bubble { 
+		border-radius: 16px; background-color: var(--color-shape-tertiary); display: flex; flex-direction: column;
+		transition: background-color $easeInQuint 0.2s; 
+	}
+	.bubble {
+		.textWrapper { line-height: 20px; padding: 6px 12px; }
+		.text { user-select: text !important; display: inline; }
+		// A multiline code mark renders as its own block element (see U.Chat.splitCodeRuns) — no bordering <br>s,
+		// so no empty lines and no selection strip. Inline code (single-line) stays a markupcode pill.
+		.text .codeMark {
+			display: block; margin: 8px 0px; padding: 16px 12px; border-radius: 8px;
+			background: var(--color-shape-highlight-medium); box-shadow: 0px 0px 0px 1px var(--color-shape-highlight-dark) inset;
+			font-family: 'Plex Mono', monospace; font-size: 13px; line-height: 18px;
+			white-space: pre-wrap; tab-size: 4; overflow-wrap: anywhere;
+		}
+		.codeBlock {
+			display: block; padding: 16px 12px; margin: 8px 0px; border-radius: 8px; background: var(--color-shape-highlight-light-solid);
+			color: var(--color-text-primary); font-family: 'Plex Mono', monospace; font-size: 13px; line-height: 18px;
+			white-space: pre-wrap; tab-size: 4; overflow-wrap: anywhere; user-select: text !important; position: relative;
+		}
+		.codeBlock {
+			code { font-family: inherit; font-size: inherit; }
+			.codeLang {
+				position: absolute; top: 4px; right: 4px; padding: 2px 8px; @include text-very-small;
+				color: var(--color-text-secondary); font-family: var(--fontFamily); background: var(--color-shape-highlight-medium);
+				border-radius: 4px; user-select: none;
+			}
+		}
+		.textWrapper > .codeBlock:first-child { margin-top: 0px; }
+		.time {
+			@include text-very-small; line-height: 14px; letter-spacing: -0.07px; color: var(--color-text-secondary); float: right; padding: 4px 0px 0px 4px;
+			display: flex; align-items: center; gap: 0px 4px; white-space: nowrap; user-select: none !important;
+		}
+
+		.attachments { padding: 4px; }
+	}
+
+	.icon.reactionAdd { width: 28px; height: 28px; border-radius: 50%; }
+
+	.reply { margin: 0px 0px 4px 0px; position: relative; overflow: hidden; opacity: 0.5; max-width: 360px; cursor: default; }
+	.reply {
+		.bubble { 
+			display: flex; flex-direction: row; align-items: center; gap: 0px 6px; padding: 8px 12px; border-radius: 16px; margin-left: 8px; 
+			position: relative;
+		}
+		.bubble::before {
+			content: ''; position: absolute; left: -8px; top: 0px; width: 4px; height: 100%; background-color: var(--color-shape-primary);
+			border-radius: 4px;
+		}
+
+		> .icon, > .iconObject { width: 32px; height: 32px; }
+		> .iconObject:not(.noBg, .isParticipant) { border-radius: 4px !important; background-color: var(--color-shape-highlight-medium) !important; }
+
+
+		.textWrapper { padding: 0px; width: 100%; @include text-small; display: flex; flex-direction: column; overflow: hidden; }
+		.name { @include text-small; font-weight: 500; padding-left: 12px; }
+
+		:not(.withAttachment) {
+			.text { @include clamp3; }
+		}
+
+		.markuplink, markupobject { color: var(--color-text-primary); pointer-events: none; }
+
+		&.withAttachment {
+			.text { @include clamp1; display: block; height: var(--line-height-small); }
+			.markuplink { white-space: normal; }
+		}
+	}
+
+	.attachments {
+		.attachment {
+			.icon.chatButtonsRemove { display: none; }
+		}
+	}
+
+	.author { display: none; align-items: center; gap: 0px 8px; margin-bottom: 4px; padding-left: 12px; max-width: calc(100% - 12px); }
+	.author {
+		.name { @include text-small; @include text-overflow-nw; font-weight: 500; }
+	}
+	.author * { user-select: text !important; }
+
+	.expand { display: none; align-items: center; color: var(--color-text-secondary); white-space: nowrap; cursor: default; }
+
+	.sub { @include text-small; color: var(--color-text-secondary); display: none; }
+	.sub {
+		.item:hover { color: var(--color-text-primary); }
+	}
+
+	.reactions { padding: 4px 0px 0px 0px; display: flex; flex-wrap: wrap; flex-direction: row; gap: 8px; align-items: center; }
+	.reactions {
+		.reaction { 
+			display: flex; flex-direction: row; border-radius: 14px; gap: 0px 4px; align-items: center; @include text-small; font-weight: 500; 
+			background-color: var(--color-shape-highlight-medium); padding: 5px 6px; flex-shrink: 0;
+		}
+		.reaction {
+			&:hover { background-color: var(--color-shape-highlight-dark); }
+			&.isMulti { gap: 0px 2px; }
+			&.isSelf { color: #fff; background-color: var(--color-system-accent-100); }
+
+			.count { min-width: 18px; text-align: center; user-select: none !important; cursor: default; }
+		}
+		.reactionAdd { background-color: var(--color-shape-highlight-medium); }
+	}
+
+	.newMessages { display: none; justify-content: center; position: absolute; top: -9px; left: 0px;  width: 100%; }
+	.newMessages {
+		.label { @include text-small; padding: 0px 12px; font-weight: 500; background: var(--color-bg-primary); color: var(--color-text-secondary); }
+	}
+
+	&.isSelf {
+		> .flex { flex-direction: row-reverse; }
+		> .flex {
+			> .side.left { display: none; }
+			> .side.right { align-items: flex-end; }
+		}
+
+		.bubbleOuter { align-items: flex-end; }
+
+		.bubbleInner { flex-direction: row-reverse; }
+		.bubbleInner {
+			> .controls { flex-direction: row-reverse; }
+
+			.bubble { color: #fff; background-color: var(--color-system-accent-100); }
+			.bubble {
+				.time { color: var(--color-text-white60); }
+			}
+
+			::selection { background-color: var(--color-system-accent-25); }
+			.markuplink, markupobject { color: var(--color-text-white60); }
+
+			markupmention { background-color: rgba(0,0,0,0.2); }
+			markupmention {
+				name { color: var(--color-text-white); }
+			}
+		}
+
+		.reactions { justify-content: flex-end; }
+	}
+
+	&.withAttachment {
+		.bubbleInner {
+			.bubble {
+				.textWrapper { padding: 8px 12px 0px; }
+			}
+		}
+	}
+
+	&.withAttachment.withMedia {
+		.bubbleInner {
+			.bubble { flex-direction: column-reverse; }
+			.bubble {
+				.textWrapper { padding: 0px 12px 8px; max-width: 532px; }
+			}
+		}
+	}
+
+	&:hover, &.hover {
+		.controls { opacity: 1; }
+	}
+
+	&:first-child { margin-top: 0px; }
+
+	&.isFirst { margin: 12px 0px 0px 0px; }
+	&.isFirst {
+		.author { display: flex; }
+	}
+
+	&:not(.withText) {
+		.bubbleInner {
+			.bubble { position: relative; }
+			.bubble {
+				.textWrapper { padding: 0px !important; }
+				.time {
+    				position: absolute; bottom: 12px; right: 12px; z-index: 2; padding: 3px 6px; border-radius: 10px;
+					background-color: rgba(0, 0, 0, 0.11); color: #fff;
+				}
+			}
+		}
+	}
+
+	&.isLast { margin: 0px 0px 12px 0px; }
+	&.isLast {
+		> .flex > .side.left {
+			.iconObject { display: block; }
+		}
+	}
+
+	&:not(.isLast) {
+		.reactions { padding-bottom: 8px; }
+	}
+
+	&.isNew { position: relative; margin-top: 26px; padding-top: 26px; border-top: 1px solid var(--color-shape-tertiary); }
+	&.isNew {
+		.newMessages { display: flex; }
+	}
+
+	&.highlight {
+		.bubbleInner {
+			.bubble { 
+				background-color: var(--color-very-light-ice) !important; color: var(--color-text-primary) !important;
+			}
+		}
+	}
+
+	&.attachmentsLayout1 {
+		.bubble { max-width: 360px; }
+	}
+
+	&.withText {
+		.attachments.isSingle {
+			.attachment.isImage.withBlur {
+				.imgWrapper { width: 352px; }
+			}
+		}
+	}
+}
