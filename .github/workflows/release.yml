@@ -1,0 +1,76 @@
+name: release
+
+# Builds the Loom desktop app and the loom CLI and publishes them as ONE GitHub release.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# or run it from the Actions tab and give the tag to publish (created on the selected commit).
+# Builds are UNSIGNED and NOT notarized: no signing secrets are used, and nothing is published
+# to an auto-update server. loom-app.yml and loom-cli.yml still publish their own releases
+# on loom-app-v* and loom-v* tags.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (created on the selected commit if it does not exist)'
+        required: true
+        type: string
+
+# contents: write is needed here because the called workflows contain their own release jobs
+# (skipped in this run); a called workflow cannot request more than its caller grants.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  app:
+    name: app
+    uses: ./.github/workflows/loom-app.yml
+
+  cli:
+    name: cli
+    uses: ./.github/workflows/loom-cli.yml
+
+  release:
+    name: release
+    needs: [app, cli]
+    runs-on: ubuntu-24.04
+    steps:
+      # App installers are named loom-app-<platform>; CLI archives loom-<os>-<arch>.
+      - name: Download build outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: loom-*
+          path: dist
+          merge-multiple: true
+
+      # electron-updater metadata only matters for a published update feed, and the macOS
+      # arm64 and x64 jobs both produce latest-mac.yml, so one would overwrite the other.
+      - name: Drop auto-update metadata
+        run: rm -f dist/latest*.yml
+
+      - name: List release files
+        run: ls -alh dist
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Contains the Loom desktop app (Linux, macOS, Windows) and the `loom` CLI (Linux, macOS, Windows).
+
+            Builds are unsigned and not notarized. On macOS, right-click the app and choose Open the first time;
+            on Windows, SmartScreen will warn about an unknown publisher.
+            Each CLI archive has a `.sha256` file next to it.
+          files: dist/*

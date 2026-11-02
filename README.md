@@ -196,6 +196,7 @@ To build the CLI yourself, see [`.github/workflows/loom-cli.yml`](.github/workfl
 
 | Workflow                                                      | What it does                                                                                       |
 |---------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| [`release.yml`](.github/workflows/release.yml)                 | Builds the desktop app **and** the `loom` CLI and publishes them in one GitHub release. Push a `v<version>` tag (e.g. `v0.1.0`), or run it manually with the tag to publish. |
 | [`loom-app.yml`](.github/workflows/loom-app.yml)               | Builds the desktop app for Linux, macOS and Windows. Builds are **unsigned** and not published to any update server. Push a `loom-app-v<version>` tag to attach the installers to a GitHub release. |
 | [`loom-cli.yml`](.github/workflows/loom-cli.yml)               | Builds the `loom` CLI for Linux, macOS and Windows. Push a `loom-v<version>` tag to attach the binaries to a GitHub release. |
 
