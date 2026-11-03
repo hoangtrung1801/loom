@@ -3,6 +3,7 @@ import { is } from 'electron-util';
 import { autoUpdater, UpdateInfo } from 'electron-updater';
 import ConfigManager from './config';
 import Util from './util';
+import { updaterChannel } from './lib/updateChannel';
 import { AppWindow, DownloadProgress } from './types';
 
 const TIMEOUT_UPDATE = 600 * 1000;
@@ -29,7 +30,9 @@ class UpdateManager {
 		(autoUpdater.logger as any).transports.file.level = 'debug';
 		autoUpdater.autoDownload = false;
 		autoUpdater.autoInstallOnAppQuit = false;
-		autoUpdater.channel = channel;
+		autoUpdater.channel = updaterChannel(channel);
+		// Releases are published as GitHub pre-releases (unsigned builds), which the provider skips by default
+		autoUpdater.allowPrerelease = true;
 
 		this.setTimeout();
 
@@ -110,7 +113,7 @@ class UpdateManager {
 	};
 
 	setChannel (channel: string): void {
-		autoUpdater.channel = channel;
+		autoUpdater.channel = updaterChannel(channel);
 		this.checkUpdate(false);
 	};
 

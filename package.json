@@ -1121,8 +1121,9 @@
 			"artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
 			"publish": [
 				{
-					"provider": "generic",
-					"url": "https://anytype-release.fra1.digitaloceanspaces.com"
+					"provider": "github",
+					"owner": "hoangtrung1801",
+					"repo": "loom"
 				}
 			],
 			"signIgnore": [
@@ -1142,8 +1143,9 @@
 			"icon": "electron/img/icons/256x256.ico",
 			"publish": [
 				{
-					"provider": "generic",
-					"url": "https://anytype-release.fra1.digitaloceanspaces.com"
+					"provider": "github",
+					"owner": "hoangtrung1801",
+					"repo": "loom"
 				}
 			]
 		},
@@ -1163,8 +1165,9 @@
 			"description": "Loom",
 			"publish": [
 				{
-					"provider": "generic",
-					"url": "https://anytype-release.fra1.digitaloceanspaces.com"
+					"provider": "github",
+					"owner": "hoangtrung1801",
+					"repo": "loom"
 				}
 			],
 			"desktop": {
