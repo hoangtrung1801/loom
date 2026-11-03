@@ -2,6 +2,8 @@ name: loom CLI
 
 on:
   workflow_dispatch:
+  # Called by release.yml, which builds the app and the CLI for one release.
+  workflow_call:
   push:
     tags:
       - 'loom-v*'

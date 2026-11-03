@@ -22,8 +22,9 @@ Context-sensitive detail panel with animation (motion/react):
 - `page/object/relation.tsx` - Object relation editing
 - `page/object/tableOfContents.tsx` - Document TOC
 - `page/widget.tsx` - Widget preview
+- `page/agent.tsx` - AI Agent chat (page `agent`): message list with markdown replies (`lib/agentMarkdown.ts`, rendered as React elements, never innerHTML), collapsible tool rows with Allow/Decline cards for changes, and an in-panel settings view (provider, key, model, base URL, tool tier, confirm-before-changes). State lives in `S.Agent`; opened from the object header button or the `agent` shortcut (Cmd/Ctrl+Shift+A)
 
-Registered components: `type`, `objectRelation`, `objectTableOfContents`, `widget`.
+Registered components: `agent`, `type`, `objectRelation`, `objectTableOfContents`, `widget`.
 
 ## Sections (`section/`)
 

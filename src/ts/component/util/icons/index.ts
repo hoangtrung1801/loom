@@ -31,6 +31,7 @@ import './menu/block/media';
 import './menu/block/text';
 import './menu/mark';
 import './default';
+import './web';
 import './menu/align/horizontal';
 import './menu/align/vertical';
 import './menu/common';

@@ -45,6 +45,7 @@ const getSections = () => {
 						{ id: 'copyDeepLink', name: translate('commonCopyDeeplink'), keys: [] },
 						{ id: 'moveToBin', name: translate('popupShortcutMainBasics25'), keys: [] },
 						{ id: 'tableOfContents', name: translate('sidebarToc'), keys: [] },
+						{ id: 'agent', name: translate('agentTitle'), keys: [ cmdKey, 'shift', 'a' ] },
 						{ id: 'createSpace', name: translate('commonCreateSpace'), keys: [] },
 						{ id: 'logout', name: translate('commonLogout'), keys: [] },
 					]

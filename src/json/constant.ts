@@ -231,6 +231,27 @@ export default {
 		personalWidgetsPrefix: '_personalWidgets_',
 	},
 
+	webAppIcons: [
+		{ id: 'x', color: '#000000', colorDark: '#e1e1e1', hosts: [ 'x.com', 'twitter.com' ] },
+		{ id: 'facebook', color: '#1877f2', hosts: [ 'facebook.com', 'fb.com', 'fb.watch' ] },
+		{ id: 'youtube', color: '#ff0000', hosts: [ 'youtube.com', 'youtu.be' ] },
+		{ id: 'github', color: '#181717', colorDark: '#e1e1e1', hosts: [ 'github.com' ] },
+		{ id: 'linkedin', color: '#0a66c2', hosts: [ 'linkedin.com' ] },
+		{ id: 'threads', color: '#000000', colorDark: '#e1e1e1', hosts: [ 'threads.net', 'threads.com' ] },
+		{ id: 'reddit', color: '#ff4500', hosts: [ 'reddit.com', 'redd.it' ] },
+		{ id: 'instagram', color: '#ff0069', hosts: [ 'instagram.com' ] },
+		{ id: 'tiktok', color: '#000000', colorDark: '#e1e1e1', hosts: [ 'tiktok.com' ] },
+		{ id: 'pinterest', color: '#bd081c', hosts: [ 'pinterest.com', 'pin.it' ] },
+		{ id: 'discord', color: '#5865f2', hosts: [ 'discord.com', 'discord.gg' ] },
+		{ id: 'telegram', color: '#26a5e4', hosts: [ 'telegram.org', 'telegram.me', 't.me' ] },
+		{ id: 'whatsapp', color: '#25d366', hosts: [ 'whatsapp.com', 'wa.me' ] },
+		{ id: 'bluesky', color: '#0285ff', hosts: [ 'bsky.app' ] },
+		{ id: 'mastodon', color: '#6364ff', hosts: [ 'mastodon.social', 'mastodon.online' ] },
+		{ id: 'twitch', color: '#9146ff', hosts: [ 'twitch.tv' ] },
+		{ id: 'medium', color: '#000000', colorDark: '#e1e1e1', hosts: [ 'medium.com' ] },
+		{ id: 'hackernews', color: '#ff6600', hosts: [ 'news.ycombinator.com' ] },
+	],
+
 	monthDays: {
 		1:				 31,
 		2:				 28,

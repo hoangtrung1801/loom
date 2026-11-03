@@ -1,0 +1,87 @@
+import { AgentConfig, AgentTier } from './types';
+
+export const MAX_TURNS = 25;
+export const MAX_RESULT_CHARS = 16000;
+export const MAX_HISTORY_MESSAGES = 60;
+export const APP_TOOL_PREFIX = 'loom_';
+
+/** Which MCP tier to ask for: large models get every tool, local models the small set. */
+export const resolveTier = (config: Pick<AgentConfig, 'provider' | 'tier'>): Exclude<AgentTier, 'auto'> => {
+	if (config.tier !== 'auto') {
+		return config.tier;
+	};
+	return config.provider === 'anthropic' ? 'large' : 'small';
+};
+
+/** Cuts a tool result so one huge read cannot flood the context window. */
+export const truncateText = (text: string, max = MAX_RESULT_CHARS): string => {
+	text = String(text || '');
+	if (text.length <= max) {
+		return text;
+	};
+	return `${text.slice(0, max)}\n…[truncated ${text.length - max} characters — use find/read with a narrower request]`;
+};
+
+/**
+ * Keeps the newest messages. The window always starts on a user message, so a tool result is
+ * never separated from the assistant message that called the tool.
+ */
+export const trimMessages = <T extends { role: string }>(messages: T[], max = MAX_HISTORY_MESSAGES): T[] => {
+	if (messages.length <= max) {
+		return messages;
+	};
+
+	// The leading system messages (prompt, tool declarations) always stay
+	let head = 0;
+	while ((head < messages.length) && (messages[head].role === 'system')) {
+		head++;
+	};
+
+	const rest = messages.slice(head);
+	if (rest.length <= max) {
+		return messages;
+	};
+
+	let start = rest.length - max;
+	while ((start < rest.length) && (rest[start].role !== 'user')) {
+		start++;
+	};
+	if (start >= rest.length) {
+		start = rest.length - max;
+	};
+
+	// A system message written just before the user message (app context) belongs with it
+	while ((start > 0) && (rest[start - 1].role === 'system')) {
+		start--;
+	};
+
+	return messages.slice(0, head).concat(rest.slice(start));
+};
+
+/** MCP tools declare readOnlyHint; anything that does not is treated as a change. */
+export const isMutating = (readOnlyHint?: boolean): boolean => readOnlyHint !== true;
+
+/** Folds earlier turns into one prompt section for a chat the main process no longer holds. */
+export const historySection = (history: { role: string; text: string }[] = []): string => {
+	const lines = history.filter(it => it.text).map(it => `${it.role}: ${it.text}`);
+	return lines.length ? `<previous_conversation>\n${lines.join('\n')}\n</previous_conversation>` : '';
+};
+
+export const contextSection = (ctx: { spaceId?: string; spaceName?: string; objectId?: string; objectName?: string; objectType?: string }): string => {
+	const lines: string[] = [];
+
+	if (ctx.spaceId) {
+		lines.push(`Current space: ${ctx.spaceName || ''} (id: ${ctx.spaceId})`);
+	};
+	if (ctx.objectId) {
+		lines.push(`Open object: ${ctx.objectName || 'Untitled'}${ctx.objectType ? ` [${ctx.objectType}]` : ''} (id: ${ctx.objectId})`);
+	};
+	return lines.length ? `<app_context>\n${lines.join('\n')}\n</app_context>` : '';
+};
+
+export const SYSTEM_PROMPT = [
+	'You are the AI agent built into Loom, a note-taking and knowledge app. You help the user read and change their own data (spaces, objects, properties, blocks).',
+	'Use the provided tools to look things up before answering; never invent object contents. Prefer the current space and open object from <app_context> when the user says "this page" or "here".',
+	'Make the smallest change that does what was asked and say what you changed. If a request is ambiguous or would affect many objects, ask first.',
+	'Answer concisely in markdown.',
+].join('\n');

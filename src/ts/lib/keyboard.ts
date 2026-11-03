@@ -305,6 +305,11 @@ class Keyboard {
 			});
 		};
 
+		this.shortcut('agent', e, () => {
+			e.preventDefault();
+			sidebar.rightPanelToggle(isPopup, { page: 'agent' });
+		});
+
 		// Navigation
 		if (!this.isNavigationDisabled) {
 			this.shortcut('back', e, () => this.onBack(isPopup));
