@@ -23,6 +23,14 @@ export interface AgentContext {
 	apiAddr: string;
 	/** Account the local API key belongs to. */
 	accountId: string;
+	/** Objects the user referenced with @ in this message. */
+	mentions?: AgentMention[];
+};
+
+export interface AgentMention {
+	id: string;
+	name: string;
+	type?: string;
 };
 
 export interface AgentRunParams {

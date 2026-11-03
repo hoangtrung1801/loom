@@ -37,6 +37,7 @@ Application infrastructure: API communication, constants, services, utilities, a
 | `sound.ts` | `Sound`, `SYSTEM_SOUND_ID` | Audio playback (bongo, clave, chimes) |
 | `scrollOnMove.ts` | `scrollOnMove` | Auto-scroll when dragging near viewport edges |
 | `reactionScheduler.ts` | `scheduleReaction`, `setReactionsPaused` | Pauses MobX observer re-renders in inactive Electron tabs |
+| `agentSession.ts` | `createSession`, `listSessions`, ... | AI agent chat sessions stored as objects in the space: creates the "AI Chat" type and the hidden messages relation on first save (fixed keys, so every space gets the same schema), and serializes messages (latest 200; long tool arguments and results cut to 2000 characters) |
 | `linkApproval.ts` | `approvalName`, `approvalLabel`, `approvalSpaces` | Caller identity and active user-space catalog for local-link approval; excludes the technical space |
 | `linkApprovalGrant.ts` | `linkApprovalGrant`, `isValidLinkGrant` | Explicit space IDs or dynamic all-spaces access, with read/edit permission; shared with Electron main |
 

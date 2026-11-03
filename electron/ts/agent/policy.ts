@@ -67,7 +67,10 @@ export const historySection = (history: { role: string; text: string }[] = []): 
 	return lines.length ? `<previous_conversation>\n${lines.join('\n')}\n</previous_conversation>` : '';
 };
 
-export const contextSection = (ctx: { spaceId?: string; spaceName?: string; objectId?: string; objectName?: string; objectType?: string }): string => {
+export const contextSection = (ctx: {
+	spaceId?: string; spaceName?: string; objectId?: string; objectName?: string; objectType?: string;
+	mentions?: { id: string; name: string; type?: string }[];
+}): string => {
 	const lines: string[] = [];
 
 	if (ctx.spaceId) {
@@ -76,12 +79,20 @@ export const contextSection = (ctx: { spaceId?: string; spaceName?: string; obje
 	if (ctx.objectId) {
 		lines.push(`Open object: ${ctx.objectName || 'Untitled'}${ctx.objectType ? ` [${ctx.objectType}]` : ''} (id: ${ctx.objectId})`);
 	};
+
+	const mentions = (ctx.mentions || []).filter(it => it && it.id).slice(0, 20);
+	if (mentions.length) {
+		lines.push('Objects the user referenced with @ in their message:');
+		mentions.forEach(it => lines.push(`- ${it.name || 'Untitled'}${it.type ? ` [${it.type}]` : ''} (id: ${it.id})`));
+	};
 	return lines.length ? `<app_context>\n${lines.join('\n')}\n</app_context>` : '';
 };
 
 export const SYSTEM_PROMPT = [
 	'You are the AI agent built into Loom, a note-taking and knowledge app. You help the user read and change their own data (spaces, objects, properties, blocks).',
 	'Use the provided tools to look things up before answering; never invent object contents. Prefer the current space and open object from <app_context> when the user says "this page" or "here".',
+	'When the user writes @Name, they mean the referenced object of that name listed in <app_context>; read it by its id.',
+	'When you pass an object id from <app_context> to a tool, also pass the current space id as `space`, since no find has set the working space yet.',
 	'Make the smallest change that does what was asked and say what you changed. If a request is ambiguous or would affect many objects, ask first.',
 	'Answer concisely in markdown.',
 ].join('\n');

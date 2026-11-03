@@ -45,6 +45,31 @@
 	.composer { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px 0px; padding: 8px 16px 16px 16px; }
 	.composer {
 		.buttons { display: flex; justify-content: flex-end; gap: 0px 8px; }
+		.editableWrap { position: relative; @include text-common; line-height: 20px; min-height: 52px; max-height: 240px; overflow-x: hidden; overflow-y: auto; }
+		.editableWrap {
+			.editable, .placeholder { padding: 6px 12px; }
+			.editable { white-space: pre-wrap; word-break: break-word; }
+		}
+	}
+
+	.message.user {
+		.mention { padding: 1.5px 2px; background-color: var(--color-system-highlight); border-radius: 2px; }
+	}
+
+	.body.history { gap: 2px 0px; padding-top: 4px; }
+	.body.history {
+		.session { display: flex; align-items: center; justify-content: space-between; gap: 0px 8px; padding: 6px 8px; border-radius: 8px; }
+		.session {
+			.info { display: flex; flex-direction: column; gap: 2px 0px; min-width: 0; }
+			.name { @include text-common; color: var(--color-text-primary); @include text-overflow-nw; }
+			.date { @include text-small; color: var(--color-text-secondary); }
+			.icon.delete { flex-shrink: 0; opacity: 0; }
+		}
+		.session:hover, .session.active { background: var(--color-shape-highlight-medium); }
+		.session:hover {
+			.icon.delete { opacity: 1; }
+		}
+		.note { @include text-common; color: var(--color-text-secondary); padding: 8px; }
 	}
 
 	.body.settings { gap: 16px 0px; }
