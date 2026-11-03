@@ -1,0 +1,8 @@
+{
+	"id": "sample",
+	"name": "Sample",
+	"version": "1.0.0",
+	"minAppVersion": "0.54.0",
+	"description": "A Progress database view, a command and a settings tab.",
+	"author": "Loom"
+}

@@ -277,6 +277,7 @@ Detailed documentation is available in `docs/` for deeper context on each module
 - [`docs/src/ts/lib/api/README.md`](docs/src/ts/lib/api/README.md) - gRPC communication: dispatcher, 100+ commands, protobuf mapping
 - [`docs/src/ts/lib/util/README.md`](docs/src/ts/lib/util/README.md) - ~20 utility modules (common, data, menu, object, router, string, etc.)
 - [`docs/src/ts/lib/constant/README.md`](docs/src/ts/lib/constant/README.md) - Application constants and static configuration
+- [`docs/src/ts/lib/plugin/README.md`](docs/src/ts/lib/plugin/README.md) - Plugin system: loader, registry, `loom` API, custom dataview views (author docs: [`docs/plugin/README.md`](docs/plugin/README.md))
 - [`docs/src/ts/lib/service/README.md`](docs/src/ts/lib/service/README.md) - Singleton services (sidebar, analytics, focus, translation)
 
 ### State & Data
