@@ -13,6 +13,7 @@ import { virtualBlock } from 'Lib/virtualBlock';
 import { useScrollRestore } from 'Hook';
 import { computeRestoreScrollTop } from 'Lib/util/scrollAnchor';
 import { getTopLevelIds, getIndentTargetId } from 'Lib/util/blockSelection';
+import { emitPluginEvent } from 'Lib/plugin/events';
 
 interface Props extends I.PageComponent {
 	onOpen?(): void;
@@ -251,6 +252,7 @@ const EditorPage = forwardRef<I.BlockRef, Props>((props, ref) => {
 			S.Common.setRightSidebarState(isPopup, { rootId });
 
 			onOpen?.();
+			emitPluginEvent('object-open', { id: rootId });
 			focusInit();
 			controlsRef.current?.forceUpdate();
 			tocRef.current?.forceUpdate();

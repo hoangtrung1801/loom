@@ -390,6 +390,16 @@ class Keyboard {
 				this.onSearchPopup(route);
 			});
 
+			// Command palette
+			this.shortcut('commandPalette', e, () => {
+				if (S.Popup.isOpen('command') || (pin && !this.isPinChecked)) {
+					return;
+				};
+
+				e.preventDefault();
+				S.Popup.open('command', {});
+			});
+
 			// Global (cross-space) search: Cmd+K widened by Shift. Raw combo on purpose -
 			// the named cmd+shift+k belongs to textLink, which owns the key while a text
 			// or block selection is active; without a selection it falls through to search
@@ -620,6 +630,20 @@ class Keyboard {
 			e.preventDefault();
 			Renderer.send('setZoom', zoom + (pressed.endsWith('numpadAdd') ? 1 : -1));
 		});
+
+		// Plugin hotkeys come last, a built-in shortcut with the same keys always wins
+		if (isMain && !S.Plugin.restricted) {
+			S.Plugin.getHotkeys(cmd, this.shortcuts).forEach(item => {
+				this.shortcut(item.combo, e, () => {
+					if (pin && !this.isPinChecked) {
+						return;
+					};
+
+					e.preventDefault();
+					S.Plugin.runCommand(item.key);
+				});
+			});
+		};
 
 		this.initPinCheck();
 	};

@@ -6,6 +6,7 @@ import type {
 import type { Plugin } from './plugin';
 import { evaluate } from './loader';
 import { compareVersions } from './version';
+import { parseHotkey, hotkeyCombo, findShortcutConflict } from './hotkey';
 
 export const STORAGE_RESTRICTED = 'pluginsRestricted';
 export const STORAGE_ENABLED = 'pluginsEnabled';
@@ -53,6 +54,7 @@ export class PluginRegistry {
 	private tokens: Map<string, number> = new Map();
 	private deps: RegistryDeps;
 	private enabledIds: Set<string> = new Set();
+	private warned: Set<string> = new Set();
 
 	constructor (deps: RegistryDeps) {
 		this.deps = deps;
@@ -200,6 +202,44 @@ export class PluginRegistry {
 
 	getCommands (): RegisteredCommand[] {
 		return Array.from(this.commands.values());
+	};
+
+	/**
+	 * Hotkeys of the registered commands. Built-in shortcuts always win and the first plugin to claim a combo keeps it;
+	 * each conflict is logged once.
+	 */
+	getHotkeys (mod: string, shortcuts: Record<string, { keys?: string[] }>): { combo: string; key: string }[] {
+		const ret: { combo: string; key: string }[] = [];
+		const used: Map<string, string> = new Map();
+
+		this.commands.forEach(item => {
+			const keys = parseHotkey(item.command.hotkey, mod);
+
+			if (!keys.length) {
+				return;
+			};
+
+			const combo = hotkeyCombo(keys);
+			const builtIn = findShortcutConflict(keys, shortcuts);
+			const owner = used.get(combo);
+
+			if (builtIn || owner) {
+				this.warnOnce(`${item.key}|${combo}`, `[Plugin] ${item.key}: hotkey "${item.command.hotkey}" is already used by ${builtIn ? `the "${builtIn}" shortcut` : `"${owner}"`}`);
+				return;
+			};
+
+			used.set(combo, item.key);
+			ret.push({ combo, key: item.key });
+		});
+
+		return ret;
+	};
+
+	private warnOnce (id: string, message: string): void {
+		if (!this.warned.has(id)) {
+			this.warned.add(id);
+			console.warn(message);
+		};
 	};
 
 	getSettingTab (pluginId: string): RegisteredSettingTab | undefined {
