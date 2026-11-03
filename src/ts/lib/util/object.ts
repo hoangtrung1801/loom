@@ -1337,6 +1337,31 @@ class UtilObject {
 		return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 	};
 
+	/**
+	 * Returns a data URI of the bundled web app icon (X, Facebook, YouTube, etc.) matching the host of the url.
+	 * @param {string} url - Bookmark source url.
+	 * @param {number} size - Icon size in px.
+	 * @returns {string} Data URI or an empty string when the host has no bundled icon.
+	 */
+	webAppIcon (url: string, size: number): string {
+		const host = U.String.shortUrl(url).split('/')[0].toLowerCase();
+		const id = J.Constant.webAppIcons.find(it => it.hosts.some(h => (host == h) || host.endsWith(`.${h}`)))?.id;
+
+		if (!id) {
+			return '';
+		};
+
+		const theme = S.Common.getThemeClass();
+		const fill = J.Theme[theme].color.default;
+		const svg = getIconSvg(`web/${id}`, { style: { width: size, height: size } });
+
+		if (!svg) {
+			return '';
+		};
+
+		return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg.replace(/currentColor/g, fill))));
+	};
+
 	chatHasUnread (spaceId: string, chatId: string): boolean {
 		const counters = S.Chat.getChatCounters(spaceId, chatId);
 		const spaceview = U.Space.getSpaceviewBySpaceId(spaceId);

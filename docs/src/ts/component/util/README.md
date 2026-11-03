@@ -98,6 +98,7 @@ All icons are React components rendering inline SVGs, organized by category:
 | `relation/` | ~13 | Relation type icons (date, email, number, select, etc.) |
 | `header/` | ~11 | Header icons (graph, search, settings, invite, widget, etc.) |
 | `default/` | ~11 | Default object layout icons (page, set, chat, graph, etc.) |
+| `web/` | 5 | Brand icons for well-known web apps (X, Facebook, YouTube, GitHub, LinkedIn); used as the Bookmark icon fallback via `U.Object.webAppIcon()` / `J.Constant.webAppIcons` |
 | `plus/` | ~10 | Add/create icons (block, comment, space, template, etc.) |
 | `layout/` | ~10 | Layout type icons (page, note, task, bookmark, etc.) |
 | `emoji/` | ~10 | Emoji category icons (people, nature, foods, etc.) |

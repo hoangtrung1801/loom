@@ -231,6 +231,14 @@ export default {
 		personalWidgetsPrefix: '_personalWidgets_',
 	},
 
+	webAppIcons: [
+		{ id: 'x', hosts: [ 'x.com', 'twitter.com' ] },
+		{ id: 'facebook', hosts: [ 'facebook.com', 'fb.com', 'fb.watch' ] },
+		{ id: 'youtube', hosts: [ 'youtube.com', 'youtu.be' ] },
+		{ id: 'github', hosts: [ 'github.com' ] },
+		{ id: 'linkedin', hosts: [ 'linkedin.com' ] },
+	],
+
 	monthDays: {
 		1:				 31,
 		2:				 28,

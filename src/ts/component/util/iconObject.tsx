@@ -392,7 +392,14 @@ const IconObject = forwardRef<IconObjectRefProps, Props>((props, ref) => {
 				icn = icn.concat([ 'iconCommon', `c${iconSize}` ]);
 				icon = <img src={S.Common.imageUrl(iconImage, iconSize * 2)} className={icn.join(' ')} />;
 			} else {
-				defaultIcon();
+				const webIcon = U.Object.webAppIcon(object.source, iconSize);
+
+				if (webIcon) {
+					icn = icn.concat([ 'iconCommon', `c${iconSize}` ]);
+					icon = <img src={webIcon} className={icn.join(' ')} />;
+				} else {
+					defaultIcon();
+				};
 			};
 			break;
 		};
