@@ -53,10 +53,14 @@ jobs:
           bun install --ignore-scripts
           bunx patch-package
 
-      - name: Generate protobuf bindings
+      # Same as loom-app.yml: the bindings, plus the bundled relation/type JSON the app imports
+      - name: Generate protobuf bindings and bundled JSON
         env:
           SKIP_HEART_BUILD: '1'
-        run: bash scripts/generate-protos.sh
+        run: |
+          bash scripts/generate-protos.sh
+          mkdir -p dist/lib/json/generated
+          cp loom-heart/pkg/lib/bundle/system*.json loom-heart/pkg/lib/bundle/internal*.json dist/lib/json/generated/
 
       - name: Unit tests
         run: bun run test
