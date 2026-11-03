@@ -30,6 +30,7 @@ dist/js/chunks/
 
 # generated from electron/*.ts
 electron.js
+electron-agent.js
 
 # generated service registry
 src/ts/lib/api/service.ts
