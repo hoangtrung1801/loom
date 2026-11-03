@@ -190,7 +190,6 @@ const App: FC = () => {
 
 		Renderer.on('route', (e: any, route: string) => onRoute(route));
 		S.Agent.init();
-		S.Lo.init();
 		Renderer.on('popup', onPopup);
 		Renderer.on('update-not-available', onUpdateUnavailable);
 		Renderer.on('update-downloaded', onUpdateDownloaded);
