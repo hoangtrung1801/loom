@@ -1,6 +1,7 @@
 import React, { forwardRef, useRef, useImperativeHandle, useEffect, } from 'react';
 import { InputWithLabel, MenuItemVertical } from 'Component';
 import * as I from 'Interface';
+import { clearBinding } from 'Lib/plugin/viewBinding';
 
 const MenuViewSettings = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 
@@ -254,6 +255,8 @@ const MenuViewSettings = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 
 					if (next) {
 						C.BlockDataviewViewDelete(rootId, blockId, view.id, () => {
+							clearBinding(rootId, blockId, view.id);
+
 							if (current.id == view.id) {
 								loadData(next.id, 0);
 							};

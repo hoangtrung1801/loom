@@ -9,6 +9,7 @@ import Head from './head';
 import * as I from 'Interface';
 import * as M from 'Model';
 import Storage from 'Lib/storage';
+import { clearBinding } from 'Lib/plugin/viewBinding';
 
 interface Props extends I.ViewComponent {
 	onFilterChange?: (v: string) => void; 
@@ -163,6 +164,8 @@ const Controls = forwardRef<ControlsRefProps, Props>((props, ref) => {
 
 		if (next) {
 			C.BlockDataviewViewDelete(rootId, block.id, view.id, () => {
+				clearBinding(rootId, block.id, view.id);
+
 				if (view.id == current.id) {
 					onViewSet(next);
 				};

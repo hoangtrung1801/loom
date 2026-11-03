@@ -2,6 +2,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 import * as I from 'Interface';
 import * as M from 'Model';
 import Storage from 'Lib/storage';
+import { copyBinding } from 'Lib/plugin/viewBinding';
 
 class Dataview {
 
@@ -914,6 +915,8 @@ class Dataview {
 				callBack?.(message);
 				return;
 			};
+
+			copyBinding(rootId, blockId, view.id, message.viewId);
 
 			if (sourceOrder) {
 				const groupsCopy = (sourceOrder.groups || []).map((it: any) => ({ ...it }));

@@ -18,6 +18,7 @@ import ViewList from './dataview/view/list';
 import ViewCalendar from './dataview/view/calendar';
 import ViewGraph from './dataview/view/graph';
 import ViewTimeline from './dataview/view/timeline';
+import ViewCustom from './dataview/view/custom';
 import * as I from 'Interface';
 import Storage from 'Lib/storage';
 import { focus } from 'Lib/focus';
@@ -1726,6 +1727,10 @@ const BlockDataview = forwardRef<I.BlockRef, Props>((props, ref) => {
 
 		case I.ViewType.Timeline:
 			ViewComponent = ViewTimeline;
+			break;
+
+		case I.ViewType.Custom:
+			ViewComponent = ViewCustom;
 			break;
 	};
 

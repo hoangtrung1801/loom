@@ -436,8 +436,7 @@ class UtilMenu {
 
 	getViews () {
 		const { config } = S.Common;
-
-		return [
+		const ret: any[] = [
 			{ id: I.ViewType.Grid },
 			{ id: I.ViewType.Gallery },
 			{ id: I.ViewType.List },
@@ -446,6 +445,13 @@ class UtilMenu {
 			{ id: I.ViewType.Graph },
 			config.experimental ? { id: I.ViewType.Timeline } : null,
 		].filter(it => it).map(it => ({ ...it, name: translate(`viewName${it.id}`) }));
+
+		// Views registered by plugins; they all share the Custom type and differ by pluginViewKey
+		S.Plugin.getViews().forEach(it => {
+			ret.push({ id: I.ViewType.Custom, pluginViewKey: it.key, name: it.def.name, pluginIcon: it.def.icon });
+		});
+
+		return ret;
 	};
 
 	viewContextMenu (param: any) {
