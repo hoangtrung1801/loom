@@ -2079,6 +2079,8 @@ class UtilMenu {
 			spaceList: translate('popupSettingsSpacesListTitle'),
 			dataPublish: translate('popupSettingsDataManagementDataPublishTitle'),
 			api: translate('popupSettingsApiTitle'),
+			plugins: translate('pageSettingsPluginsTitle'),
+			pluginSettings: translate('pageSettingsPluginsTitle'),
 			set: types,
 			relation: relations,
 		};

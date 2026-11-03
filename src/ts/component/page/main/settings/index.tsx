@@ -7,6 +7,8 @@ import PagePersonal from './personal';
 import PagePhrase from './phrase';
 import PageLanguage from './language';
 import PageApi from './api';
+import PagePlugins from './plugins';
+import PagePluginSettings from './pluginSettings';
 
 import PageDataIndex from './data/index';
 import PageDataPublish from './data/publish';
@@ -50,6 +52,8 @@ const Components: any = {
 	membership:			 PageMembership,
 	language:			 PageLanguage,
 	api:				 PageApi,
+	plugins:			 PagePlugins,
+	pluginSettings:		 PagePluginSettings,
 
 	pinIndex:			 PagePinIndex,
 	pinSelect:			 PagePinSelect,

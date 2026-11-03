@@ -29,6 +29,7 @@ export default {
 	api:				 '127.0.0.1:31009',
 	developerPortal:	 'https://developers.anytype.io',
 	mcp:				 'https://github.com/anyproto/anytype-mcp',
+	pluginDocs:			 'https://github.com/hoangtrung1801/loom/blob/main/docs/plugin/README.md',
 
 	productHuntChats:	 'https://www.producthunt.com/products/anytype/launches/anytype-chats',
 

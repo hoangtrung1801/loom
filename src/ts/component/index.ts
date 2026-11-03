@@ -79,6 +79,7 @@ import Pager from './util/pager';
 import Dimmer from './util/dimmer';
 import Error from './util/error';
 import ErrorBoundary from './util/errorBoundary';
+import PluginErrorBoundary from './util/pluginErrorBoundary';
 import Toast from './util/toast';
 import Marker from './util/marker';
 import Sync from './util/sync';
@@ -186,6 +187,7 @@ export {
 	Label,
 	Error,
 	ErrorBoundary,
+	PluginErrorBoundary,
 	Notification,
 	Banner,
 	UpdateBanner,

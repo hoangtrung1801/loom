@@ -17,6 +17,7 @@ import { Presence } from './presence';
 import { ChatStatus } from './chatStatus';
 import { Agent } from './agent';
 import { Lo } from './lo';
+import { Plugin } from './plugin';
 
 export {
 	Common,
@@ -38,4 +39,5 @@ export {
 	ChatStatus,
 	Agent,
 	Lo,
+	Plugin,
 };

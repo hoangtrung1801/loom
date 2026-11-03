@@ -450,6 +450,26 @@
 		}
 	}
 
+	> .pageSettingsPlugins { display: block; }
+	> .pageSettingsPlugins {
+		.description { @include text-small; color: var(--color-text-secondary); margin: 0px 0px 24px 0px; }
+		.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 0px 0px 24px 0px; }
+		.item .details { min-width: 0; flex-grow: 1; padding-right: 12px; }
+		.item .details {
+			.meta, .text { @include text-small; color: var(--color-text-secondary); margin-top: 4px; }
+			.error { @include text-small; color: var(--color-red); margin-top: 4px; }
+		}
+		.item .controls { display: flex; align-items: center; gap: 0px 12px; flex-shrink: 0; }
+		.item .controls { 
+			.button { margin-right: 0px; }
+		}
+		.pluginItem .name { font-weight: 500; }
+	}
+
+	> .pageSettingsPluginSettings {
+		.description { @include text-small; color: var(--color-text-secondary); margin: 0px 0px 24px 0px; }
+	}
+
     > .pageSettingsDataPublish {
         .items {
             .col.colObject { gap: 0px 8px; }
