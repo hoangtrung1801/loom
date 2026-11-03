@@ -138,6 +138,116 @@ function webUploadPlugin(): Plugin {
 	};
 }
 
+/**
+ * Web mode has no Electron main process, so the AI agent (electron-agent.js, built by
+ * scripts/build-electron.js) runs inside this dev server instead. The browser's electronMock
+ * forwards agent* calls to POST /api/agent and reads agent events from the /api/agent/events
+ * stream. Config and keys live in memory only and are gone when the server stops.
+ */
+function webAgentPlugin(): Plugin {
+	const bundlePath = path.resolve(__dirname, 'electron-agent.js');
+	const clients = new Map<string, Set<any>>();
+	const memory = new Map<string, any>();
+	let service: any = null;
+
+	const getService = () => {
+		if (!service) {
+			if (!fs.existsSync(bundlePath)) {
+				throw new Error('electron-agent.js is missing: run node scripts/build-electron.js');
+			};
+
+			const { AgentService } = require(bundlePath);
+
+			service = new AgentService({
+				store: { get: (key: string) => memory.get(key), set: (key: string, value: any) => { memory.set(key, value); } },
+				secrets: {
+					get: async (key: string) => memory.get(`secret:${key}`) ?? null,
+					set: async (key: string, value: string) => { memory.set(`secret:${key}`, value); },
+					delete: async (key: string) => { memory.delete(`secret:${key}`); },
+				},
+				sendToTab: (tabId: string, channel: string, payload: any) => {
+					const data = `data: ${JSON.stringify({ channel, payload })}\n\n`;
+					clients.get(tabId)?.forEach(res => res.write(data));
+				},
+			});
+		};
+		return service;
+	};
+
+	const calls: Record<string, (s: any, args: any[]) => any> = {
+		agentStatus: (s, [ accountId ]) => s.status(accountId),
+		agentSetConfig: (s, [ patch ]) => s.setConfig(patch),
+		agentSetProviderKey: (s, [ key ]) => s.setProviderKey(key),
+		agentSetLocalKey: (s, [ accountId, key ]) => s.setLocalKey(accountId, key),
+		agentRun: (s, [ tabId, params ]) => s.run(tabId, params),
+		agentStop: (s, [ chatId ]) => s.stop(chatId),
+		agentSteer: (s, [ chatId, text ]) => s.steer(chatId, text),
+		agentApprove: (s, [ chatId, callId, allow ]) => s.approve(chatId, callId, allow),
+		agentAppToolResult: (s, [ id, result ]) => s.appToolResult(id, result),
+		agentReset: (s, [ chatId ]) => s.dispose(chatId),
+	};
+
+	// Only the app's own page may drive the agent: it holds the provider key, and a POST from
+	// any other site open in the browser would otherwise run it
+	const isSameOrigin = (req: any): boolean => {
+		const origin = String(req.headers.origin || '');
+		const host = String(req.headers.host || '');
+		return !!origin && !!host && (origin === `http://${host}`);
+	};
+
+	return {
+		name: 'web-agent',
+		configureServer(server) {
+			server.middlewares.use('/api/agent/events', (req, res) => {
+				const tabId = new URL(req.url || '', 'http://localhost').searchParams.get('tab') || '';
+
+				res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+				res.write(': connected\n\n');
+
+				if (!clients.has(tabId)) {
+					clients.set(tabId, new Set());
+				};
+				clients.get(tabId)!.add(res);
+				req.on('close', () => clients.get(tabId)?.delete(res));
+			});
+
+			server.middlewares.use('/api/agent', (req, res, next) => {
+				if ((req.method !== 'POST') || ((req.url || '/') !== '/')) {
+					return next();
+				};
+
+				const reply = (status: number, body: any) => {
+					res.statusCode = status;
+					res.setHeader('Content-Type', 'application/json');
+					res.end(JSON.stringify(body === undefined ? null : body));
+				};
+
+				if (!isSameOrigin(req) || !String(req.headers['content-type'] || '').startsWith('application/json')) {
+					return reply(403, { error: 'Forbidden' });
+				};
+
+				const chunks: Buffer[] = [];
+
+				req.on('data', (chunk: Buffer) => chunks.push(chunk));
+				req.on('end', async () => {
+					try {
+						const { cmd, args } = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+						const call = calls[cmd];
+
+						if (!call) {
+							return reply(404, { error: `Unknown agent command: ${cmd}` });
+						};
+						reply(200, await call(getService(), Array.isArray(args) ? args : []));
+					} catch (e: any) {
+						console.error('[Web Agent] Error:', e);
+						reply(500, { error: e.message });
+					};
+				});
+			});
+		},
+	};
+}
+
 export default defineConfig(({ mode }) => {
 	const webPort = parseInt(process.env.WEB_PORT || '3030', 10);
 
@@ -285,6 +395,7 @@ export default defineConfig(({ mode }) => {
 			react(),
 			autoObserverPlugin(),
 			webUploadPlugin(),
+			webAgentPlugin(),
 
 			AutoImport({
 				imports: [

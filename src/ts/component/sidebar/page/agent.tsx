@@ -156,13 +156,15 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 				{renderError()}
 			</div>
 
-			<div className="footer">
-				<Textarea
-					ref={inputRef}
-					rows={2}
-					placeholder={translate('agentPlaceholder')}
-					onKeyDown={onKeyDown}
-				/>
+			<div className="composer">
+				<div className="textareaWrap">
+					<Textarea
+						ref={inputRef}
+						rows={2}
+						placeholder={translate('agentPlaceholder')}
+						onKeyDown={onKeyDown}
+					/>
+				</div>
 				<div className="buttons">
 					{isRunning ? <Button text={translate('agentStop')} color="blank" className="c28" onClick={() => S.Agent.stop()} /> : ''}
 					<Button text={translate('agentSend')} color="accent" className="c28" onClick={onSend} />

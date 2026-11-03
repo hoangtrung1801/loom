@@ -5,9 +5,11 @@ name: release
 #   git tag v0.1.0 && git push origin v0.1.0
 #
 # or run it from the Actions tab and give the tag to publish (created on the selected commit).
-# Builds are UNSIGNED and NOT notarized: no signing secrets are used, and nothing is published
-# to an auto-update server. loom-app.yml and loom-cli.yml still publish their own releases
-# on loom-app-v* and loom-v* tags.
+# Builds are UNSIGNED and NOT notarized: no signing secrets are used. The release also carries the
+# update metadata (latest*.yml, *.blockmap), which is the feed installed apps update from
+# (electron-updater, GitHub provider). macOS cannot install an update from an unsigned app, so
+# there the feed is published but unused until the builds are signed. loom-app.yml and
+# loom-cli.yml still publish their own releases on loom-app-v* and loom-v* tags.
 
 on:
   push:
@@ -33,6 +35,8 @@ jobs:
   app:
     name: app
     uses: ./.github/workflows/loom-app.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
 
   cli:
     name: cli
@@ -43,6 +47,12 @@ jobs:
     needs: [app, cli]
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/merge-update-metadata.js
+          sparse-checkout-cone-mode: false
+
       # App installers are named loom-app-<platform>; CLI archives loom-<os>-<arch>.
       - name: Download build outputs
         uses: actions/download-artifact@v4
@@ -51,10 +61,13 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # electron-updater metadata only matters for a published update feed, and the macOS
-      # arm64 and x64 jobs both produce latest-mac.yml, so one would overwrite the other.
-      - name: Drop auto-update metadata
-        run: rm -f dist/latest*.yml
+      # The macOS arm64 and x64 jobs each wrote their own metadata; electron-updater needs one
+      # latest-mac.yml listing both. Fails the release if the two do not describe the same version.
+      - name: Merge macOS update metadata
+        run: |
+          node scripts/merge-update-metadata.js dist/latest-mac.yml dist/latest-mac.arm64.yml dist/latest-mac.x64.yml
+          rm dist/latest-mac.arm64.yml dist/latest-mac.x64.yml
+          cat dist/latest-mac.yml
 
       - name: List release files
         run: ls -alh dist
@@ -73,4 +86,7 @@ jobs:
             Builds are unsigned and not notarized. On macOS, right-click the app and choose Open the first time;
             on Windows, SmartScreen will warn about an unknown publisher.
             Each CLI archive has a `.sha256` file next to it.
+
+            Installed copies of the app update themselves from this release's `latest*.yml` files.
+            On macOS that needs a signed app, so macOS users update by downloading the new version until then.
           files: dist/*

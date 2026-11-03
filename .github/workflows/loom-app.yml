@@ -2,13 +2,20 @@ name: loom app
 
 # Builds the Loom desktop app (Electron + the loom-heart middleware helper) for
 # Linux, macOS and Windows. Builds are UNSIGNED and NOT notarized: no signing
-# secrets are used, and nothing is published to the auto-update servers.
+# secrets are used. The app's version comes from the release tag, and the update metadata
+# (latest*.yml) is kept so installed copies can update from the GitHub release.
 # Push a tag named loom-app-v<version> to attach the installers to a GitHub release.
 
 on:
   workflow_dispatch:
   # Called by release.yml, which builds the app and the CLI for one release.
   workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag (v0.1.2); the app is built as that version'
+        required: false
+        type: string
+        default: ''
   push:
     tags:
       - 'loom-app-v*'
@@ -187,6 +194,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      # The app version drives auto-update: the updater compares it with the version in the release's
+      # latest*.yml, so it has to be the release tag, not whatever package.json says.
+      - name: Set app version from the release tag
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="$TAG"
+          if [ -z "$tag" ] && [[ "$REF_NAME" == loom-app-v* ]]; then
+            tag="${REF_NAME#loom-app-}"
+          fi
+          if [ -z "$tag" ]; then
+            echo "No release tag: keeping the package.json version"
+            exit 0
+          fi
+          version="${tag#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$tag' is not v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          npm pkg set version="$version"
+          echo "App version: $version"
+
       # Same steps as `bun run dist:*`, split so electron-builder can be told not to
       # sign, notarize or publish.
       - name: Build app
@@ -208,6 +239,12 @@ jobs:
         # package.json also lists both mac archs, which electron-builder builds whatever --arm64/--x64
         # says; each job only has its own native helper, so pin the arch (-c.mac.target.arch).
         run: bunx electron-builder ${{ matrix.builder }} --publish never -c.mac.identity=null -c.mac.target.arch=${{ matrix.mac_arch }}
+
+      # The arm64 and x64 jobs both write latest-mac.yml; give each its own name so neither overwrites
+      # the other. release.yml merges them back into one latest-mac.yml.
+      - name: Name macOS update metadata per architecture
+        if: runner.os == 'macOS'
+        run: mv dist/latest-mac.yml dist/latest-mac.${{ matrix.mac_arch }}.yml
 
       - name: Package (Linux, Windows)
         if: runner.os != 'macOS'
@@ -236,6 +273,7 @@ jobs:
             dist/*.exe
             !dist/loomHelper.exe
             !dist/nativeMessagingHost.exe
+            dist/*.blockmap
             dist/latest*.yml
 
   release:
