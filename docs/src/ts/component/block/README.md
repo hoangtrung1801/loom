@@ -42,10 +42,10 @@ Spreadsheet-style tables with `cell.tsx` and `row.tsx`.
 
 ### Chat (`chat/`)
 Messaging interface:
-- `form.tsx` - Message input form (authors multiline code blocks via triple-backtick fences)
+- `form.tsx` - Message input form (authors multiline code blocks via triple-backtick fences; the `@` menu offers Lo first once the agent is set up)
 - `empty.tsx` - Empty state
 - `attachment/index.tsx` - File attachments
-- `message/index.tsx` - Message display (renders `message.blocks`; code blocks via the shared `util/codeBlock` with syntax highlighting + language label, same as discussions)
+- `message/index.tsx` - Message display (renders `message.blocks`; code blocks via the shared `util/codeBlock` with syntax highlighting + language label, same as discussions; messages ending with the Lo marker render with Lo's name and avatar, on the left, without Edit and with a Stop button while Lo is writing)
 - `message/date.tsx` - Date separator
 - `message/reaction.tsx` - Message reactions
 - `message/reply.tsx` - Reply threading

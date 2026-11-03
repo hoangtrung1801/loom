@@ -1,6 +1,7 @@
 import React, { forwardRef, memo } from 'react';
 import { IconObject, Icon, ObjectName } from 'Component';
 import * as I from 'Interface';
+import * as LoLib from 'Lib/lo';
 
 const ChatMessageReply = forwardRef<{}, I.ChatMessageComponent>((props, ref) => {
 
@@ -36,7 +37,7 @@ const ChatMessageReply = forwardRef<{}, I.ChatMessageComponent>((props, ref) => 
 
 	return (
 		<div className={cn.join(' ')} onClick={e => onReplyClick(e, id)}>
-			<ObjectName object={author} />
+			{LoLib.isLoMessage(message) ? <div className="name">{LoLib.AGENT_NAME}</div> : <ObjectName object={author} />}
 			<div className="bubble">
 				{icon}
 				<div className="textWrapper">

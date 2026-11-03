@@ -39,6 +39,8 @@ export interface AgentRunParams {
 	text: string;
 	context: AgentContext;
 	/** Earlier turns, used only to reseed a chat the main process no longer remembers. */
+	/** Chat runs have nobody to approve a change, so tools that change data are refused. */
+	readOnly?: boolean;
 	history?: { role: 'user' | 'assistant'; text: string }[];
 };
 

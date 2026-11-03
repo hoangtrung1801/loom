@@ -316,6 +316,19 @@ class AgentStore {
 		return this.status;
 	};
 
+	/** True when a model is set up, so Lo can answer. Same rules as the main process. */
+	get isConfigured (): boolean {
+		const config = this.status?.config;
+
+		if (!config || this.unsupported || !config.model) {
+			return false;
+		};
+		if (config.provider == 'custom') {
+			return /^https?:\/\//.test(config.baseUrl);
+		};
+		return !!this.status.hasProviderKey;
+	};
+
 	setStatus (status: AgentStatus | null) {
 		this.status = status;
 	};
@@ -348,7 +361,7 @@ class AgentStore {
 	};
 
 	/** Creates the agent's own local API key on first use. It shows up in Settings → API keys. */
-	private ensureLocalKey (): Promise<boolean> {
+	ensureLocalKey (): Promise<boolean> {
 		const accountId = S.Auth.account?.id || '';
 
 		if (this.status?.hasLocalKey && !this.keyStale) {

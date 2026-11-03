@@ -2,10 +2,11 @@ import { Agent, type AgentTool } from '@earendil-works/pi-agent-core';
 import type { ResolvedModel } from './models';
 import { APP_TOOL_READ_ONLY } from './appTools';
 import {
-	MAX_TURNS, SYSTEM_PROMPT, contextSection, historySection, isMutating, trimMessages, truncateText,
+	MAX_TURNS, READ_ONLY_NOTE, SYSTEM_PROMPT, contextSection, historySection, isMutating, trimMessages, truncateText,
 } from './policy';
 import type { AgentConfig, AgentRunParams, AgentUiEvent } from './types';
 
+const READ_ONLY_DENIED = 'This run is read-only. Do not retry; tell the user to ask in the Lo side panel.';
 const DENIED = 'The user declined this change. Do not retry it; ask what they would like instead.';
 
 export interface SessionToolbox {
@@ -36,6 +37,7 @@ export class AgentSession {
 	private runId = '';
 	private turns = 0;
 	private seeded = false;
+	private readOnlyRun = false;
 	private approvals: Map<string, (allow: boolean) => void> = new Map();
 
 	constructor (private deps: SessionDeps) {
@@ -57,7 +59,13 @@ export class AgentSession {
 				const name = toolCall.name;
 				const readOnly = APP_TOOL_READ_ONLY.has(name) || !isMutating(toolbox.readOnly.get(name));
 
-				if (readOnly || !this.deps.config.confirm) {
+				if (readOnly) {
+					return;
+				};
+				if (this.readOnlyRun) {
+					return { block: true, reason: READ_ONLY_DENIED };
+				};
+				if (!this.deps.config.confirm) {
 					return;
 				};
 
@@ -97,6 +105,7 @@ export class AgentSession {
 
 		this.runId = runId;
 		this.turns = 0;
+		this.readOnlyRun = !!params.readOnly;
 		this.deps.emit({ runId, type: 'start' });
 
 		// Sections replace by name, so the newest app context always wins
@@ -105,6 +114,9 @@ export class AgentSession {
 
 		if (ctx) {
 			sections.context = ctx;
+		};
+		if (this.readOnlyRun) {
+			sections.mode = READ_ONLY_NOTE;
 		};
 		if (!this.seeded && history?.length) {
 			sections.history = historySection(history);

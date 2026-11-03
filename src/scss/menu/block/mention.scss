@@ -10,6 +10,7 @@
 			.name {
 				.you { @include text-small; color: var(--color-text-secondary); }
 			}
+			.icon.loIcon { background: url('~img/icon/lo.svg') center / contain no-repeat; border-radius: 50%; }
 		}
 
 		.item.add {

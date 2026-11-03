@@ -16,6 +16,7 @@ import { SparkOnboarding } from './sparkOnboarding';
 import { Presence } from './presence';
 import { ChatStatus } from './chatStatus';
 import { Agent } from './agent';
+import { Lo } from './lo';
 
 export {
 	Common,
@@ -36,4 +37,5 @@ export {
 	Presence,
 	ChatStatus,
 	Agent,
+	Lo,
 };

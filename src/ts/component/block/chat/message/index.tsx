@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useRef, useImperativeHandle, memo } from 'react';
+import React, { forwardRef, useEffect, useRef, useState, useImperativeHandle, memo } from 'react';
 import raf from 'raf';
 import { motion, AnimatePresence, } from 'motion/react';
 import { IconObject, Icon, ObjectName, Label } from 'Component';
@@ -8,6 +8,7 @@ import Reply from './reply';
 import Reaction from './reaction';
 import CodeBlock from 'Component/util/codeBlock';
 import Storage from 'Lib/storage';
+import * as LoLib from 'Lib/lo';
 import * as I from 'Interface';
 
 interface ChatMessageRefProps {
@@ -29,13 +30,22 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 	const attachmentRefs = useRef(new Map<string, any>());
 	const bubbleRef = useRef(null);
 	const message = S.Chat.getMessageById(subId, id);
+	const [ , setRunTick ] = useState(0);
 
 	// Memoized so re-rendering for a non-content reason (reaction / read-status / grouping)
 	// does not re-run Mark.toHtml + sanitize. Hoisted above the null guard to satisfy rules-of-hooks.
 	const text = React.useMemo(() => {
 		const content = message?.content;
-		return content ? U.String.sanitize(U.String.lbBr(Mark.toHtml(content.text, content.marks))).replace(/​/g, '') : '';
+		return content ? U.String.sanitize(U.String.lbBr(Mark.toHtml(LoLib.stripLoMarker(content.text), content.marks))).replace(/​/g, '') : '';
 	}, [ message?.content?.text, message?.content?.marks ]);
+
+	useEffect(() => {
+		// Lo's messages show a Stop button while the answer is being written
+		const onRuns = () => setRunTick(n => n + 1);
+
+		U.Dom.addEvent(window, 'loRunsUpdate', onRuns);
+		return () => U.Dom.removeEvent(window, 'loRunsUpdate', onRuns);
+	}, []);
 
 	useEffect(() => {
 		const resizeObserver = new ResizeObserver((entries) => {
@@ -86,7 +96,7 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 		const { creator, content } = message;
 		const { marks, text } = content;
 		const { account } = S.Auth;
-		const isSelf = creator == account.id;
+		const isSelf = (creator == account.id) && !LoLib.isLoMessage(message);
 		const isReadonly = readonly || !isSelf;
 		const node = nodeRef.current;
 		if (!node) return;
@@ -248,10 +258,12 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 
 	const { creator, content, createdAt, modifiedAt, reactions, isFirst, isLast, replyToMessageId, isReadMessage, isReadMention, isSynced } = message;
 	const author = U.Space.getParticipant(U.Space.getParticipantId(space, creator));
+	const isLo = LoLib.isLoMessage(message);
+	const isLoRunning = isLo && S.Lo.isRunning(id);
 	const attachments = getAttachments();
 	const hasReactions = reactions.length;
 	const hasAttachments = attachments.length;
-	const isSelf = creator == account.id;
+	const isSelf = (creator == account.id) && !isLo;
 	const attachmentsLayout = getAttachmentsLayout();
 	const canAddReactionValue = canAddReaction();
 	const cn = [ 'message' ];
@@ -278,7 +290,7 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 		return <div key={i} className="text" dangerouslySetInnerHTML={{ __html: html }} />;
 	});
 
-	const codeRuns = U.Chat.splitCodeRuns(content.text, content.marks);
+	const codeRuns = U.Chat.splitCodeRuns(LoLib.stripLoMarker(content.text), content.marks);
 	const hasCodeMark = codeRuns.some(r => r.code);
 
 	if (!text && !hasAttachments) {
@@ -349,6 +361,19 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 		};
 	};
 
+	if (isLo) {
+		userpicNode = (
+			<div className="iconObject isParticipant c32 loAvatar">
+				<img src="./img/icon/lo.svg" alt="" />
+			</div>
+		);
+
+		authorNode = (
+			<div className="author">
+				<div className="name">{LoLib.AGENT_NAME}</div>
+			</div>
+		);
+	} else
 	if (!isSelf) {
 		userpicNode = (
 			<IconObject
@@ -422,6 +447,11 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 												dangerouslySetInnerHTML={{ __html: text }}
 											/>
 										))}
+										{isLoRunning ? (
+											<div className="loStop" onClick={() => S.Lo.stop(id)}>
+												<Label text={translate('loStop')} />
+											</div>
+										) : ''}
 										<div className="time">
 											<Icon name="chat/messageStatus/syncing" size={12} className={cns.join(' ')} />
 											{editedLabel} {U.Date.date('H:i', createdAt)}
