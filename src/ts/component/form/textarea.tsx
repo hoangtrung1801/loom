@@ -26,6 +26,7 @@ interface TextareaRefProps {
 	focus(): void;
 	select(): void;
 	getValue(): string;
+	setValue(v: string): void;
 	setError(v: boolean): void;
 	addClass(v: string): void;
 	removeClass(v: string): void;
@@ -143,6 +144,7 @@ const Textarea = forwardRef<TextareaRefProps, Props>(({
 		focus, 
 		select, 
 		getValue: () => value, 
+		setValue, 
 		setError, 
 		addClass, 
 		removeClass 
