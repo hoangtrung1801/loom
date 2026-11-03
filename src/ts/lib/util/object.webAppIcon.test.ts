@@ -19,7 +19,7 @@ describe('UtilObject.webAppIcon', () => {
 					{ id: 'facebook', hosts: [ 'facebook.com' ] },
 				],
 			},
-			Theme: { '': { color: { default: '#252525' } } },
+			Theme: { '': { iconDefault: 'rgba(0,0,0,0.11)' } },
 		};
 		(globalThis as any).S = { Common: { getThemeClass: () => '' } };
 		(globalThis as any).U = {
@@ -38,7 +38,7 @@ describe('UtilObject.webAppIcon', () => {
 		const svg = decode(UtilObject.webAppIcon('https://x.com/callanxai/status/1', 16));
 
 		expect(svg).toContain('data-name="web/x"');
-		expect(svg).toContain('fill="#252525"');
+		expect(svg).toContain('fill="rgba(0,0,0,0.11)"');
 	});
 
 	it('matches subdomains and www', () => {

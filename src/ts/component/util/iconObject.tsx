@@ -90,6 +90,9 @@ const FontSize = {
 	128: 72,
 };
 
+// Sizes with a matching .iconCommon.cN rule in iconObject.scss
+const WebIconSizes = [ 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48, 56, 64, 80 ];
+
 const GhostIcon = getIcon('common/ghost');
 
 const CheckboxTask = {
@@ -392,10 +395,12 @@ const IconObject = forwardRef<IconObjectRefProps, Props>((props, ref) => {
 				icn = icn.concat([ 'iconCommon', `c${iconSize}` ]);
 				icon = <img src={S.Common.imageUrl(iconImage, iconSize * 2)} className={icn.join(' ')} />;
 			} else {
-				const webIcon = U.Object.webAppIcon(object.source, iconSize);
+				// Brand glyphs fill their whole box, so step up one size class to match the visual weight of the default icon
+				const webSize = WebIconSizes.includes(iconSize + 2) ? (iconSize + 2) : iconSize;
+				const webIcon = U.Object.webAppIcon(object.source, webSize);
 
 				if (webIcon) {
-					icn = icn.concat([ 'iconCommon', `c${iconSize}` ]);
+					icn = icn.concat([ 'iconCommon', `c${webSize}` ]);
 					icon = <img src={webIcon} className={icn.join(' ')} />;
 				} else {
 					defaultIcon();

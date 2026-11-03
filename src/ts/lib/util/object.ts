@@ -1352,7 +1352,7 @@ class UtilObject {
 		};
 
 		const theme = S.Common.getThemeClass();
-		const fill = J.Theme[theme].color.default;
+		const fill = J.Theme[theme].iconDefault;
 		const svg = getIconSvg(`web/${id}`, { style: { width: size, height: size } });
 
 		if (!svg) {
