@@ -18,6 +18,7 @@ Reactive state stores using MobX. Each store manages a specific domain. Accessed
 | `notification.ts` | `S.Notification` | Notification management |
 | `progress.ts` | `S.Progress` | Background task progress tracking |
 | `recovery.ts` | `S.Recovery` | Account start-up status: folds `Event.Account.Recovery.Update` (id/runId gating, snapshot re-pull on gaps and stream re-attach, LAN headline from `LocalPeersStateChanged`) and keeps the loading-screen ticker lines |
+| `agent.ts` | `S.Agent` | AI Agent chats, one per account and space: renders the `agentEvent` stream from the main process (text, tool rows, approvals), creates the agent's own "Loom Agent" local API key on first use (listed in Settings → API keys), answers `agentAppToolCall` requests (current context, open object), and keeps the text of recent messages in local storage |
 | `membership.ts` | `S.Membership` | Membership tier and features |
 | `extension.ts` | `S.Extension` | Browser extension state |
 | `sparkOnboarding.ts` | `S.SparkOnboarding` | Onboarding progress tracking |

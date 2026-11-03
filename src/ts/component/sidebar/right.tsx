@@ -2,6 +2,7 @@ import React, { forwardRef, useRef, useLayoutEffect, useImperativeHandle, DragEv
 import { motion, AnimatePresence } from 'motion/react';
 import raf from 'raf';
 
+import PageAgent from './page/agent';
 import PageType from './page/type';
 import PageObjectRelation from './page/object/relation';
 import PageObjectTableOfContents from './page/object/tableOfContents';
@@ -17,6 +18,7 @@ interface SidebarRightRefProps {
 };
 
 const Components = {
+	agent:					 PageAgent,
 	type:					 PageType,
 	objectRelation:			 PageObjectRelation,
 	objectTableOfContents:	 PageObjectTableOfContents,

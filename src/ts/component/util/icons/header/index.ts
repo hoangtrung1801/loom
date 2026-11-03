@@ -1,5 +1,6 @@
 import React from 'react';
 import { registerIcon } from '../registry';
+import Agent from './agent';
 import AnyName from './anyName';
 import Graph from './graph';
 import Language from './language';
@@ -14,6 +15,7 @@ import Widget from './widget';
 
 const PinFilled = (props: React.SVGProps<SVGSVGElement>) => React.createElement(Pin, { ...props, filled: true });
 
+registerIcon('header/agent', Agent);
 registerIcon('header/anyName', AnyName);
 registerIcon('header/graph', Graph);
 registerIcon('header/invite', Invite);

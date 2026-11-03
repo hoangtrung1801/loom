@@ -28,6 +28,7 @@ const HeaderMainObject = forwardRef<{}, I.HeaderComponent>((props, ref) => {
 	const readonly = object.isArchived || isLocked;
 	const hasWidget = !!S.Block.getWidgetsForTarget(rootId).length;
 	const isRelationOpen = (rightSidebar.page == 'object/relation');
+	const isAgentOpen = (rightSidebar.page == 'agent');
 	const isSearchMenuOpen = S.Menu.isOpenList([ 'searchText', 'searchChat' ]);
 	const cnc = [ 'side', 'center' ];
 
@@ -111,6 +112,10 @@ const HeaderMainObject = forwardRef<{}, I.HeaderComponent>((props, ref) => {
 
 	const onRelation = () => {
 		sidebar.rightPanelToggle(isPopup, { page: 'object/relation', rootId, readonly });
+	};
+
+	const onAgent = () => {
+		sidebar.rightPanelToggle(isPopup, { page: 'agent' });
 	};
 
 	const onPin = () => {
@@ -201,6 +206,14 @@ const HeaderMainObject = forwardRef<{}, I.HeaderComponent>((props, ref) => {
 						onDoubleClick={e => e.stopPropagation()}
 					/>
 				) : ''}
+
+				<Icon
+					id="button-header-agent"
+					tooltipParam={{ text: translate('agentTitle'), caption: keyboard.getCaption('agent'), typeY: I.MenuDirection.Bottom }}
+					name="header/agent" className={isAgentOpen ? 'active' : ''} withBackground={true}
+					onClick={onAgent}
+					onDoubleClick={e => e.stopPropagation()}
+				/>
 
 				{showMenu ? (
 					<Icon

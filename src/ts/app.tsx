@@ -189,6 +189,7 @@ const App: FC = () => {
 		unregisterIpcEvents();
 
 		Renderer.on('route', (e: any, route: string) => onRoute(route));
+		S.Agent.init();
 		Renderer.on('popup', onPopup);
 		Renderer.on('update-not-available', onUpdateUnavailable);
 		Renderer.on('update-downloaded', onUpdateDownloaded);

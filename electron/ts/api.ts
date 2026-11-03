@@ -18,6 +18,8 @@ import LinkApprovalManager from './linkApproval';
 import { powerState, PowerSnapshot } from './lib/powerState';
 import DownloadManager, { DownloadRequest } from './download';
 import { AppWindow, TabView, TabData, CreateTabOptions, AppConfig, Bounds } from './types';
+import { AgentService } from './agent';
+import type { AgentConfig, AgentRunParams } from './agent/types';
 
 const KEYTAR_SERVICE = 'Loom';
 
@@ -34,6 +36,28 @@ const LinkApproval = new LinkApprovalManager({
 	spaces: (key, spaces) => WindowManager.updateApprovalSpaces(key, spaces),
 	liveTargets: () => WindowManager.getAppWindowIds(),
 	sendDecision: (id, payload) => WindowManager.sendToWindowTab(id, 'link-approval-decision', payload),
+});
+
+/**
+ * The in-app AI agent. Its events go to the one renderer tab that started the run, found by tab id
+ * across all windows. Secrets (provider key, local API key) live in the OS keychain, never in config.
+ */
+const Agent = new AgentService({
+	store: { get: key => getSafeStorage().get(key), set: (key, value) => getSafeStorage().set(key, value) },
+	secrets: {
+		get: key => keytar.getPassword(KEYTAR_SERVICE, key),
+		set: async (key, value) => { await keytar.setPassword(KEYTAR_SERVICE, key, value); },
+		delete: async key => { await keytar.deletePassword(KEYTAR_SERVICE, key); },
+	},
+	sendToTab: (tabId, channel, payload) => {
+		for (const win of WindowManager.list) {
+			const view = win && !win.isDestroyed() ? Util.getView(win, tabId) : null;
+			if (view?.webContents && !view.webContents.isDestroyed()) {
+				view.webContents.send(channel, payload);
+				return;
+			};
+		};
+	},
 });
 
 class Api {
@@ -401,6 +425,46 @@ class Api {
 
 	keytarDelete (win: AppWindow, key: string): void {
 		keytar.deletePassword(KEYTAR_SERVICE, key);
+	};
+
+	agentStatus (win: AppWindow, accountId: string) {
+		return Agent.status(accountId);
+	};
+
+	agentSetConfig (win: AppWindow, patch: Partial<AgentConfig>) {
+		return Agent.setConfig(patch);
+	};
+
+	agentSetProviderKey (win: AppWindow, key: string) {
+		return Agent.setProviderKey(key);
+	};
+
+	agentSetLocalKey (win: AppWindow, accountId: string, key: string) {
+		return Agent.setLocalKey(accountId, key);
+	};
+
+	agentRun (win: AppWindow, tabId: string, params: AgentRunParams) {
+		return Agent.run(tabId, params);
+	};
+
+	agentStop (win: AppWindow, chatId: string): void {
+		Agent.stop(chatId);
+	};
+
+	agentSteer (win: AppWindow, chatId: string, text: string): void {
+		Agent.steer(chatId, text);
+	};
+
+	agentApprove (win: AppWindow, chatId: string, callId: string, allow: boolean): void {
+		Agent.approve(chatId, callId, allow);
+	};
+
+	agentAppToolResult (win: AppWindow, id: string, result: any): void {
+		Agent.appToolResult(id, result);
+	};
+
+	agentReset (win: AppWindow, chatId: string) {
+		return Agent.dispose(chatId);
 	};
 
 	updateCheck (win: AppWindow): void {
