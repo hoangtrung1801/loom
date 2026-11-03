@@ -9,6 +9,7 @@ import Attachment from './attachment';
 import * as I from 'Interface';
 import * as M from 'Model';
 import Storage from 'Lib/storage';
+import * as LoLib from 'Lib/lo';
 import { presence } from 'Lib/presence';
 
 interface Props extends I.BlockComponent {
@@ -227,7 +228,7 @@ const ChatForm = forwardRef<RefProps, Props>((props, ref) => {
 
 			e.preventDefault();
 
-			const list = getMessages().filter(it => it.creator == account.id);
+			const list = getMessages().filter(it => (it.creator == account.id) && !LoLib.isLoMessage(it));
 
 			if (list.length) {
 				onEdit(list[list.length - 1]);
@@ -1534,6 +1535,30 @@ const ChatForm = forwardRef<RefProps, Props>((props, ref) => {
 		};
 	};
 
+	/** Lo is offered in the mention menu once a model is set up. Its object is created on first use. */
+	const getLoMentionItems = async (): Promise<any[]> => {
+		try {
+			if (!S.Agent.status) {
+				await S.Agent.loadStatus();
+			};
+			if (!S.Agent.isConfigured) {
+				return [];
+			};
+
+			const id = await LoLib.ensureLoObject(S.Common.space);
+
+			return id ? [ {
+				id,
+				name: LoLib.AGENT_NAME,
+				layout: I.ObjectLayout.Page,
+				caption: translate('loCaption'),
+				iconParam: { className: 'loIcon' },
+			} ] : [];
+		} catch (e) {
+			return [];
+		};
+	};
+
 	const onMention = (fromKeyboard?: boolean) => {
 		if (!range) {
 			return;
@@ -1551,7 +1576,9 @@ const ChatForm = forwardRef<RefProps, Props>((props, ref) => {
 
 		const param = caretMenuParam();
 
-		raf(() => {
+		raf(async () => {
+			const extraItems = await getLoMentionItems();
+
 			S.Menu.open('blockMention', {
 				element: `#button-${U.Common.esc(block.id)}-${I.ChatButton.Mention}`,
 				...param,
@@ -1562,6 +1589,7 @@ const ChatForm = forwardRef<RefProps, Props>((props, ref) => {
 					pronounId: U.Space.getMyParticipant()?.id,
 					marks: marks.current,
 					skipIds: [ S.Auth.account.id ],
+					extraItems,
 					filters: [
 						{ relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Participant }
 					],

@@ -1,8 +1,12 @@
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
-import { Label, Icon, Button, Input, Switch, Textarea } from 'Component';
+import { Label, Icon, Button, Input, Switch, Loader } from 'Component';
 import * as I from 'Interface';
 import type { AgentPart, AgentChatMessage } from 'Store/agent';
 import { parseAgentMarkdown, type AgentInline } from 'Lib/agentMarkdown';
+import AgentComposer, { type AgentComposerRef } from './composer';
+import type { AgentCommand } from './commands';
+
+type View = 'chat' | 'history' | 'settings';
 
 /** Upper-cases only the first letter, keeping camelCase keys such as providerKey intact. */
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -42,6 +46,31 @@ const Markdown = ({ text }: { text: string }) => (
 	</div>
 );
 
+/** A user message, with each @-referenced object shown as a link that opens it. */
+const UserText = ({ message }: { message: AgentChatMessage }) => {
+	const text = message.parts.map(it => (it.type == 'text' ? it.text : '')).join('');
+	const mentions = [ ...(message.mentions || []) ].sort((a, b) => a.from - b.from);
+	const out: React.ReactNode[] = [];
+
+	let at = 0;
+	mentions.forEach((it, i) => {
+		if ((it.from < at) || (it.to > text.length)) {
+			return;
+		};
+
+		out.push(text.slice(at, it.from));
+		out.push(
+			<span key={i} className="mention" onClick={() => S.Agent.openObject(it.id)}>
+				{text.slice(it.from, it.to)}
+			</span>
+		);
+		at = it.to;
+	});
+	out.push(text.slice(at));
+
+	return <div className="text">{out}</div>;
+};
+
 const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any) => {
 
 	const { isPopup } = props;
@@ -49,10 +78,10 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 	const chatId = S.Agent.chatId(spaceId);
 	const chat = S.Agent.getChat(chatId);
 	const status = S.Agent.status;
-	const [ isSettings, setIsSettings ] = useState(false);
+	const [ view, setView ] = useState<View>('chat');
 	const [ keyDraft, setKeyDraft ] = useState('');
 	const bodyRef = useRef<HTMLDivElement>(null);
-	const inputRef = useRef(null);
+	const composerRef = useRef<AgentComposerRef>(null);
 	const isRunning = chat.status == 'running';
 	const lastText = chat.messages.length ? JSON.stringify(chat.messages[chat.messages.length - 1].parts) : '';
 
@@ -61,31 +90,40 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 	}, []);
 
 	useEffect(() => {
+		S.Agent.restore(spaceId);
+	}, [ spaceId ]);
+
+	useEffect(() => {
+		if (view == 'history') {
+			S.Agent.loadSessions(spaceId);
+		};
+	}, [ view, spaceId ]);
+
+	useEffect(() => {
 		const node = bodyRef.current;
 		if (node) {
 			node.scrollTop = node.scrollHeight;
 		};
-	}, [ chat.messages.length, lastText, chat.error ]);
+	}, [ chat.messages.length, lastText, chat.error, view ]);
 
-	const onSend = () => {
-		const value = inputRef.current?.getValue() || '';
-		if (!value.trim()) {
-			return;
-		};
-
-		inputRef.current.setValue('');
-		S.Agent.send(value);
+	const onNewChat = () => {
+		S.Agent.newChat(spaceId);
+		setView('chat');
+		window.setTimeout(() => composerRef.current?.focus(), 0);
 	};
 
-	const onKeyDown = (e: any) => {
-		if ((e.key == 'Enter') && !e.shiftKey && !e.nativeEvent?.isComposing) {
-			e.preventDefault();
-			onSend();
+	const onAction = (command: AgentCommand) => {
+		switch (command.id) {
+			case 'new': onNewChat(); break;
+			case 'history': setView('history'); break;
+			case 'settings': setView('settings'); break;
+			case 'stop': S.Agent.stop(); break;
 		};
 	};
 
-	const onReset = () => {
-		S.Agent.reset();
+	const onOpenSession = (objectId: string) => {
+		S.Agent.openSession(spaceId, objectId);
+		setView('chat');
 	};
 
 	const renderTool = (part: Extract<AgentPart, { type: 'tool' }>) => {
@@ -114,14 +152,17 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 	const renderMessage = (message: AgentChatMessage) => {
 		const cn = [ 'message', message.role ];
 
+		if (message.role == 'user') {
+			return (
+				<div key={message.id} className={cn.join(' ')}>
+					<UserText message={message} />
+				</div>
+			);
+		};
+
 		return (
 			<div key={message.id} className={cn.join(' ')}>
-				{message.parts.map((part, i) => {
-					if (part.type == 'tool') {
-						return renderTool(part);
-					};
-					return message.role == 'user' ? <div key={i} className="text">{part.text}</div> : <Markdown key={i} text={part.text} />;
-				})}
+				{message.parts.map((part, i) => (part.type == 'tool') ? renderTool(part) : <Markdown key={i} text={part.text} />)}
 			</div>
 		);
 	};
@@ -136,42 +177,92 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 				<Label text={translate(`agentError${cap(chat.error)}`)} />
 				{chat.errorDetail ? <Label className="detail" text={chat.errorDetail} /> : ''}
 				{[ 'providerKey', 'model', 'baseUrl' ].includes(chat.error) ? (
-					<Button text={translate('agentOpenSettings')} color="blank" className="c28" onClick={() => setIsSettings(true)} />
+					<Button text={translate('agentOpenSettings')} color="blank" className="c28" onClick={() => setView('settings')} />
 				) : ''}
 			</div>
 		);
 	};
 
-	const renderChat = () => (
-		<>
-			<div id="body" className="body" ref={bodyRef}>
-				{!chat.messages.length ? (
-					<div className="empty">
-						<Icon className="sparkle" name="header/agent" />
-						<Label className="title" text={translate('agentEmptyTitle')} />
-						<Label className="text" text={translate('agentEmptyText')} />
-					</div>
-				) : chat.messages.map(renderMessage)}
-				{isRunning ? <Label className="working" text={translate('agentWorking')} /> : ''}
-				{renderError()}
-			</div>
+	const renderChat = () => {
+		let content = null;
 
-			<div className="composer">
-				<div className="textareaWrap">
-					<Textarea
-						ref={inputRef}
-						rows={2}
-						placeholder={translate('agentPlaceholder')}
-						onKeyDown={onKeyDown}
-					/>
+		if (chat.loading) {
+			content = <Loader />;
+		} else
+		if (!chat.messages.length) {
+			content = (
+				<div className="empty">
+					<Icon className="sparkle" name="header/agent" />
+					<Label className="title" text={translate('agentEmptyTitle')} />
+					<Label className="text" text={translate('agentEmptyText')} />
 				</div>
-				<div className="buttons">
-					{isRunning ? <Button text={translate('agentStop')} color="blank" className="c28" onClick={() => S.Agent.stop()} /> : ''}
-					<Button text={translate('agentSend')} color="accent" className="c28" onClick={onSend} />
+			);
+		} else {
+			content = chat.messages.map(renderMessage);
+		};
+
+		return (
+			<>
+				<div id="body" className="body" ref={bodyRef}>
+					{content}
+					{isRunning ? <Label className="working" text={translate('agentWorking')} /> : ''}
+					{renderError()}
 				</div>
-			</div>
-		</>
-	);
+
+				<div className="composer">
+					<div className="textareaWrap">
+						<AgentComposer
+							ref={composerRef}
+							placeholder={translate('agentPlaceholder')}
+							onSend={(text, mentions) => S.Agent.send(text, mentions)}
+							onAction={onAction}
+						/>
+					</div>
+					<div className="buttons">
+						{isRunning ? <Button text={translate('agentStop')} color="blank" className="c28" onClick={() => S.Agent.stop()} /> : ''}
+						<Button text={translate('agentSend')} color="accent" className="c28" onClick={() => composerRef.current?.send()} />
+					</div>
+				</div>
+			</>
+		);
+	};
+
+	const renderHistory = () => {
+		const { sessions, sessionsLoading } = S.Agent;
+
+		let content = null;
+		if (sessionsLoading && !sessions.length) {
+			content = <Loader />;
+		} else
+		if (!sessions.length) {
+			content = <Label className="note" text={translate('agentHistoryEmpty')} />;
+		} else {
+			content = sessions.map(it => {
+				const cn = [ 'session', (it.id == chat.objectId ? 'active' : '') ];
+
+				return (
+					<div key={it.id} className={cn.join(' ')} onClick={() => onOpenSession(it.id)}>
+						<div className="info">
+							<Label className="name" text={it.name || translate('agentUntitled')} />
+							<Label className="date" text={it.lastModifiedDate ? U.Date.timeAgo(it.lastModifiedDate) : ''} />
+						</div>
+						<Icon
+							className="delete"
+							name="common/bin"
+							withBackground={true}
+							tooltipParam={{ text: translate('agentDeleteSession') }}
+							onClick={(e: any) => {
+								e.stopPropagation();
+								S.Agent.deleteSession(spaceId, it.id);
+							}}
+						/>
+					</div>
+				);
+			});
+		};
+
+		return <div id="body" className="body history">{content}</div>;
+	};
 
 	const renderSettings = () => {
 		if (S.Agent.unsupported) {
@@ -195,11 +286,15 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 
 		const choices = (items: any[], value: string, key: string) => (
 			<div className="choices">
-				{items.map(it => (
-					<div key={it.id} className={[ 'choice', (it.id == value ? 'active' : '') ].join(' ')} onClick={() => S.Agent.setConfig({ [key]: it.id })}>
-						{it.name}
-					</div>
-				))}
+				{items.map(it => {
+					const cn = [ 'choice', (it.id == value ? 'active' : '') ];
+
+					return (
+						<div key={it.id} className={cn.join(' ')} onClick={() => S.Agent.setConfig({ [key]: it.id })}>
+							{it.name}
+						</div>
+					);
+				})}
 			</div>
 		);
 
@@ -255,25 +350,45 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 		);
 	};
 
+	const titles: Record<View, string> = {
+		chat: translate('agentTitle'),
+		history: translate('agentHistory'),
+		settings: translate('agentSettingsTitle'),
+	};
+
+	let body = null;
+	switch (view) {
+		case 'history': body = renderHistory(); break;
+		case 'settings': body = renderSettings(); break;
+		default: body = renderChat(); break;
+	};
+
 	return (
 		<>
 			<div id="head" className="head">
 				<div className="side left">
-					<Label text={translate(isSettings ? 'agentSettingsTitle' : 'agentTitle')} />
+					{view != 'chat' ? (
+						<Icon name="common/back" withBackground={true} tooltipParam={{ text: translate('agentBack') }} onClick={() => setView('chat')} />
+					) : ''}
+					<Label text={titles[view]} />
 				</div>
 				<div className="side right">
-					{!isSettings ? (
-						<Icon
-							name="common/edit" withBackground={true}
-							tooltipParam={{ text: translate('agentNewChat') }}
-							onClick={onReset}
-						/>
-					) : ''}
+					<Icon
+						name="common/edit" withBackground={true}
+						tooltipParam={{ text: translate('agentNewChat') }}
+						onClick={onNewChat}
+					/>
+					<Icon
+						name="common/clock" withBackground={true}
+						className={view == 'history' ? 'active' : ''}
+						tooltipParam={{ text: translate('agentHistory') }}
+						onClick={() => setView(view == 'history' ? 'chat' : 'history')}
+					/>
 					<Icon
 						name="header/settings" withBackground={true}
-						className={isSettings ? 'active' : ''}
+						className={view == 'settings' ? 'active' : ''}
 						tooltipParam={{ text: translate('agentSettingsTitle') }}
-						onClick={() => setIsSettings(!isSettings)}
+						onClick={() => setView(view == 'settings' ? 'chat' : 'settings')}
 					/>
 					<Icon
 						name="common/close" withBackground={true}
@@ -282,7 +397,7 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 				</div>
 			</div>
 
-			{isSettings ? renderSettings() : renderChat()}
+			{body}
 		</>
 	);
 

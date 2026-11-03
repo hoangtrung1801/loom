@@ -1,6 +1,7 @@
 import { observable, action, makeObservable, set, autorun } from 'mobx';
 import * as I from 'Interface';
 import * as M from 'Model';
+import * as LoLib from 'Lib/lo';
 import { evictedCount, shouldSuppressLiveAdd, mergeWindowSnapshot } from 'Lib/util/chatWindow';
 
 const MAX_MESSAGES = 500;
@@ -974,13 +975,16 @@ class ChatStore {
 
 		if (withAuthor) {
 			const author = dependencies.get(participantId);
+			if (LoLib.isLoText(text || '')) {
+				ret.push(`${LoLib.AGENT_NAME}:`);
+			} else
 			if (author) {
 				ret.push(`${U.Object.name(author)}:`);
 			};
 		};
 
 		if (text) {
-			let t = Mark.insertEmoji(text, marks);
+			let t = Mark.insertEmoji(LoLib.stripLoMarker(text), marks);
 			t = t.replace(/\n\r?/g, ' ');
 
 			ret.push(t);

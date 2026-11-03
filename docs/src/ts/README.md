@@ -14,7 +14,7 @@ Root of the frontend TypeScript/React codebase for Anytype desktop.
 | `hook/` | Custom React hooks (currently empty barrel) |
 | `docs/` | In-app documentation (What's New content, onboarding) |
 | `workers/` | Web Worker entry points (PixiJS bundle for graph) |
-| `test/` | Test setup (`setup.ts` for test environment) |
+| `test/` | Test setup (`setup.ts`: stand-ins for the `Lib` barrel, also exposed as the auto-imported globals `U`, `J`, `S`, `translate`, `Mark`, `Relation`, since vitest does not run unplugin-auto-import) |
 
 ## Entry Points
 

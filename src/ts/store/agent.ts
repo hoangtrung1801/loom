@@ -1,9 +1,12 @@
 import { observable, action, makeObservable, runInAction } from 'mobx';
 import * as I from 'Interface';
 import Storage from 'Lib/storage';
+import * as Session from 'Lib/agentSession';
 
-const STORAGE_KEY = 'agentChats';
-const STORAGE_MAX_MESSAGES = 60;
+/** Chats from before sessions were stored in the space (one per account and space, text only). */
+const LEGACY_STORAGE_KEY = 'agentChats';
+/** The session each space showed last, so reopening the panel continues it. */
+const LAST_SESSION_KEY = 'agentLastSession';
 const LOCAL_KEY_NAME = 'Loom Agent';
 
 export type AgentToolStatus = 'running' | 'approval' | 'done' | 'error';
@@ -12,15 +15,30 @@ export type AgentPart =
 	{ type: 'text'; text: string } |
 	{ type: 'tool'; callId: string; name: string; label: string; args: any; readOnly: boolean; status: AgentToolStatus; result: string };
 
+/** An object referenced with @, at [from, to) in the message text. */
+export interface AgentMention {
+	id: string;
+	name: string;
+	from: number;
+	to: number;
+	type?: string;
+};
+
 export interface AgentChatMessage {
 	id: string;
 	role: 'user' | 'assistant';
 	parts: AgentPart[];
+	mentions?: AgentMention[];
 };
 
 export interface AgentChat {
+	spaceId: string;
+	/** The session object in the space, empty until the chat is first saved. */
+	objectId: string;
 	messages: AgentChatMessage[];
 	status: 'idle' | 'running';
+	/** True while a stored session is being read. */
+	loading: boolean;
 	/** Translation key suffix of the last failure, empty when none. */
 	error: string;
 	errorDetail: string;
@@ -44,28 +62,39 @@ export interface AgentStatus {
 export const messageText = (message: AgentChatMessage): string => message.parts.map(it => (it.type == 'text' ? it.text : '')).join('');
 
 /**
- * Chats of the AI agent sidebar, one per account and space. The model loop runs in the Electron
- * main process; this store renders its event stream and holds what the panel shows.
+ * Chats of the AI agent sidebar. Each space shows one chat at a time; every chat is saved as an
+ * "AI Chat" object in its space (Lib/agentSession), so past sessions can be reopened. The model
+ * loop runs in the Electron main process; this store renders its event stream.
  */
 class AgentStore {
 
+	/** Chats loaded in this window, by local chat id (also the main process session key). */
 	public chats: Map<string, AgentChat> = new Map();
+	/** The chat each space shows, by space id. */
+	public active: Map<string, string> = new Map();
+	/** Saved sessions of the current space, for the history view. */
+	public sessions: Session.AgentSessionMeta[] = [];
+	public sessionsLoading = false;
 	public status: AgentStatus | null = null;
 	public unsupported = false;
 
 	private runChats: Map<string, string> = new Map();
+	private saving: Map<string, Promise<void>> = new Map();
+	private restored: Set<string> = new Set();
 	private seq = 0;
 	private keyStale = false;
-	private loaded = false;
 
 	constructor () {
 		makeObservable(this, {
 			chats: observable,
+			active: observable,
+			sessions: observable,
+			sessionsLoading: observable,
 			status: observable,
 			unsupported: observable,
 			setStatus: action,
 			pushMessage: action,
-			clear: action,
+			newChat: action,
 		});
 	};
 
@@ -75,17 +104,206 @@ class AgentStore {
 		Renderer.on('agentAppToolCall', (e: any, call: any) => this.onAppToolCall(call));
 	};
 
+	/** Id of the chat the space shows, starting an empty one when there is none. */
 	chatId (spaceId: string): string {
-		return [ S.Auth.account?.id || '', spaceId ].join(':');
+		const id = this.active.get(spaceId);
+		return (id && this.chats.has(id)) ? id : this.newChat(spaceId);
 	};
 
 	getChat (chatId: string): AgentChat {
-		this.load();
+		return this.chats.get(chatId) || this.addChat(S.Common.space, '');
+	};
 
-		if (!this.chats.has(chatId)) {
-			this.chats.set(chatId, observable({ messages: [], status: 'idle', error: '', errorDetail: '' }));
+	/** Shows an empty chat in the space. The chat it replaces stays saved and keeps running if it was. */
+	newChat (spaceId: string): string {
+		const current = this.chats.get(this.active.get(spaceId));
+
+		if (current && !current.messages.length && !current.objectId && !current.loading) {
+			return this.active.get(spaceId);
 		};
-		return this.chats.get(chatId);
+
+		const chatId = this.nextId();
+
+		this.addChat(spaceId, '', chatId);
+		this.active.set(spaceId, chatId);
+		return chatId;
+	};
+
+	private addChat (spaceId: string, objectId: string, chatId?: string): AgentChat {
+		const chat: AgentChat = observable({ spaceId, objectId, messages: [], status: 'idle', loading: false, error: '', errorDetail: '' });
+
+		runInAction(() => this.chats.set(chatId || this.nextId(), chat));
+		return chat;
+	};
+
+	/**
+	 * Called when the panel opens in a space: continues the session the space showed last, or
+	 * moves a chat kept by an older version into a session object.
+	 */
+	async restore (spaceId: string) {
+		if (!spaceId || this.restored.has(spaceId)) {
+			return;
+		};
+		this.restored.add(spaceId);
+
+		const legacy = this.takeLegacyChat(spaceId);
+		if (legacy.length) {
+			const chatId = this.newChat(spaceId);
+
+			runInAction(() => {
+				this.chats.get(chatId).messages = legacy;
+			});
+			this.save(chatId);
+			return;
+		};
+
+		const last = (Storage.get(LAST_SESSION_KEY, true) || {})[spaceId];
+		const current = this.chats.get(this.active.get(spaceId));
+
+		if (last && (!current || !current.messages.length)) {
+			await this.openSession(spaceId, last);
+		};
+	};
+
+	private takeLegacyChat (spaceId: string): AgentChatMessage[] {
+		const stored = Storage.get(LEGACY_STORAGE_KEY, true) || {};
+		const key = [ S.Auth.account?.id || '', spaceId ].join(':');
+		const items = Array.isArray(stored[key]) ? stored[key] : [];
+
+		if (!items.length) {
+			return [];
+		};
+
+		delete stored[key];
+		Storage.set(LEGACY_STORAGE_KEY, stored, true);
+
+		return items
+			.filter((it: any) => [ 'user', 'assistant' ].includes(it?.role) && it.text)
+			.map((it: any) => ({ id: this.nextId(), role: it.role, parts: [ { type: 'text', text: String(it.text) } ] }));
+	};
+
+	private setLastSession (spaceId: string, objectId: string) {
+		const map = Storage.get(LAST_SESSION_KEY, true) || {};
+
+		if (objectId) {
+			map[spaceId] = objectId;
+		} else {
+			delete map[spaceId];
+		};
+		Storage.set(LAST_SESSION_KEY, map, true);
+	};
+
+	/** Reads the saved sessions of the space for the history view. */
+	async loadSessions (spaceId: string) {
+		runInAction(() => this.sessionsLoading = true);
+
+		const list = await Session.listSessions(spaceId).catch(() => []);
+
+		runInAction(() => {
+			this.sessions = list;
+			this.sessionsLoading = false;
+		});
+	};
+
+	/** Shows a saved session, reading it from the space unless it is already loaded. */
+	async openSession (spaceId: string, objectId: string) {
+		for (const [ chatId, chat ] of this.chats) {
+			if (chat.objectId == objectId) {
+				runInAction(() => this.active.set(spaceId, chatId));
+				this.setLastSession(spaceId, objectId);
+				return;
+			};
+		};
+
+		const chatId = this.nextId();
+		const chat = this.addChat(spaceId, objectId, chatId);
+
+		runInAction(() => {
+			chat.loading = true;
+			this.active.set(spaceId, chatId);
+		});
+
+		const stored = await Session.loadSession(spaceId, objectId).catch(() => null);
+
+		runInAction(() => {
+			chat.loading = false;
+
+			if (stored) {
+				chat.messages = Session.parseMessages(stored.messages, () => this.nextId());
+			} else {
+				// Deleted elsewhere: start over instead of saving into a missing object
+				chat.objectId = '';
+			};
+		});
+		this.setLastSession(spaceId, stored ? objectId : '');
+	};
+
+	/** Moves a saved session to the bin. If the space was showing it, an empty chat takes its place. */
+	async deleteSession (spaceId: string, objectId: string) {
+		await Session.deleteSession(objectId).catch(e => console.error('[Agent] delete session:', e));
+
+		for (const [ chatId, chat ] of this.chats) {
+			if (chat.objectId != objectId) {
+				continue;
+			};
+
+			Renderer.send('agentReset', chatId);
+			runInAction(() => {
+				if (this.active.get(spaceId) == chatId) {
+					this.active.delete(spaceId);
+				};
+				this.chats.delete(chatId);
+			});
+		};
+
+		runInAction(() => {
+			this.sessions = this.sessions.filter(it => it.id != objectId);
+		});
+
+		if ((Storage.get(LAST_SESSION_KEY, true) || {})[spaceId] == objectId) {
+			this.setLastSession(spaceId, '');
+		};
+	};
+
+	/**
+	 * Writes the chat to its session object, creating it on the first save. Saves of one chat run
+	 * one after another, so the object is never created twice.
+	 */
+	save (chatId: string): Promise<void> {
+		const previous = this.saving.get(chatId) || Promise.resolve();
+		const next = previous.then(async () => {
+			const chat = this.chats.get(chatId);
+			if (!chat || chat.loading || !chat.messages.length) {
+				return;
+			};
+
+			const name = Session.sessionTitle(chat.messages) || translate('agentUntitled');
+			const messages = Session.serializeMessages(chat.messages);
+
+			try {
+				if (chat.objectId) {
+					await Session.updateSession(chat.objectId, name, messages);
+				} else {
+					const objectId = await Session.createSession(chat.spaceId, name, messages);
+					runInAction(() => chat.objectId = objectId);
+				};
+
+				if (this.active.get(chat.spaceId) == chatId) {
+					this.setLastSession(chat.spaceId, chat.objectId);
+				};
+			} catch (e: any) {
+				console.error('[Agent] save session:', e);
+				runInAction(() => {
+					if (!chat.error) {
+						chat.error = 'save';
+						chat.errorDetail = String(e?.message || e);
+					};
+				});
+			};
+		});
+
+		this.saving.set(chatId, next);
+		return next;
 	};
 
 	async loadStatus (): Promise<AgentStatus | null> {
@@ -96,6 +314,19 @@ class AgentStore {
 			this.setStatus(this.unsupported ? null : status);
 		});
 		return this.status;
+	};
+
+	/** True when a model is set up, so Lo can answer. Same rules as the main process. */
+	get isConfigured (): boolean {
+		const config = this.status?.config;
+
+		if (!config || this.unsupported || !config.model) {
+			return false;
+		};
+		if (config.provider == 'custom') {
+			return /^https?:\/\//.test(config.baseUrl);
+		};
+		return !!this.status.hasProviderKey;
 	};
 
 	setStatus (status: AgentStatus | null) {
@@ -130,7 +361,7 @@ class AgentStore {
 	};
 
 	/** Creates the agent's own local API key on first use. It shows up in Settings → API keys. */
-	private ensureLocalKey (): Promise<boolean> {
+	ensureLocalKey (): Promise<boolean> {
 		const accountId = S.Auth.account?.id || '';
 
 		if (this.status?.hasLocalKey && !this.keyStale) {
@@ -154,22 +385,31 @@ class AgentStore {
 		});
 	};
 
-	async send (text: string): Promise<void> {
-		text = String(text || '').trim();
-		if (!text) {
+	/** Sends a message to the chat the current space shows. Mentions are objects referenced with @. */
+	async send (text: string, mentions: AgentMention[] = []): Promise<void> {
+		const trimmed = String(text || '').trim();
+		if (!trimmed) {
 			return;
 		};
 
-		const context = this.getContext();
+		// Mention ranges point into the text as typed, so they shift by what trimming removed
+		const shift = String(text || '').length - String(text || '').trimStart().length;
+		const kept = mentions
+			.map(it => ({ ...it, from: it.from - shift, to: it.to - shift }))
+			.filter(it => (it.from >= 0) && (it.to <= trimmed.length));
+
+		const base = this.getContext();
+		const context = { ...base, mentions: kept.map(it => ({ id: it.id, name: it.name, type: it.type })) };
 		const chatId = this.chatId(context.spaceId);
 		const chat = this.getChat(chatId);
 		const running = chat.status == 'running';
 
-		this.pushMessage(chatId, { id: this.nextId(), role: 'user', parts: [ { type: 'text', text } ] });
+		this.pushMessage(chatId, { id: this.nextId(), role: 'user', parts: [ { type: 'text', text: trimmed } ], mentions: kept });
+		this.save(chatId);
 
 		// A message sent while the agent works steers the current run
 		if (running) {
-			Renderer.send('agentSteer', chatId, text);
+			Renderer.send('agentSteer', chatId, trimmed);
 			return;
 		};
 
@@ -200,7 +440,7 @@ class AgentStore {
 
 		this.runChats.set(runId, chatId);
 
-		const res = await Renderer.send('agentRun', S.Common.tabId, { chatId, runId, text, context, history });
+		const res = await Renderer.send('agentRun', S.Common.tabId, { chatId, runId, text: trimmed, context, history });
 		if (res?.error) {
 			this.runChats.delete(runId);
 
@@ -223,18 +463,6 @@ class AgentStore {
 
 		this.markTool(chatId, callId, { status: 'running' });
 		Renderer.send('agentApprove', chatId, callId, allow);
-	};
-
-	async reset () {
-		const chatId = this.chatId(S.Common.space);
-
-		await Renderer.send('agentReset', chatId);
-		this.clear(chatId);
-		this.save();
-	};
-
-	clear (chatId: string) {
-		this.chats.delete(chatId);
 	};
 
 	pushMessage (chatId: string, message: AgentChatMessage) {
@@ -260,10 +488,16 @@ class AgentStore {
 		return (last && (last.role == 'assistant')) ? last : null;
 	};
 
+	/**
+	 * Updates a tool row by its call id. Some OpenAI-compatible servers number calls per turn
+	 * (call_0, call_1...), so an id can repeat across turns: the latest row with it is the live one.
+	 */
 	private markTool (chatId: string, callId: string, patch: Partial<Extract<AgentPart, { type: 'tool' }>>) {
 		runInAction(() => {
-			for (const message of this.getChat(chatId).messages) {
-				const part = message.parts.find(it => (it.type == 'tool') && (it.callId == callId)) as any;
+			const messages = this.getChat(chatId).messages;
+
+			for (let i = messages.length - 1; i >= 0; i--) {
+				const part = [ ...messages[i].parts ].reverse().find(it => (it.type == 'tool') && (it.callId == callId)) as any;
 				if (part) {
 					Object.assign(part, patch);
 					return;
@@ -340,7 +574,7 @@ class AgentStore {
 		});
 
 		if (ev.type == 'end') {
-			this.save();
+			this.save(chatId);
 		};
 	};
 
@@ -378,7 +612,7 @@ class AgentStore {
 		};
 	};
 
-	private openObject (id: string): Promise<any> {
+	openObject (id: string): Promise<any> {
 		return new Promise(resolve => {
 			if (!id) {
 				resolve({ error: 'object id is required' });
@@ -398,36 +632,6 @@ class AgentStore {
 			// getById never calls back for an unknown id
 			setTimeout(() => resolve({ error: `object ${id} not found` }), 5000);
 		});
-	};
-
-	private load () {
-		if (this.loaded) {
-			return;
-		};
-		this.loaded = true;
-
-		const stored = Storage.get(STORAGE_KEY, true) || {};
-
-		for (const chatId of Object.keys(stored)) {
-			const messages = (stored[chatId] || []).map((it: any) => ({
-				id: this.nextId(), role: it.role, parts: [ { type: 'text', text: String(it.text || '') } ],
-			}));
-			this.chats.set(chatId, observable({ messages, status: 'idle', error: '', errorDetail: '' }));
-		};
-	};
-
-	/** Keeps the text of the latest messages; tool rows are not stored. */
-	private save () {
-		const out: Record<string, { role: string; text: string }[]> = {};
-
-		this.chats.forEach((chat, chatId) => {
-			const items = chat.messages.map(it => ({ role: it.role, text: messageText(it) })).filter(it => it.text);
-			if (items.length) {
-				out[chatId] = items.slice(-STORAGE_MAX_MESSAGES);
-			};
-		});
-
-		Storage.set(STORAGE_KEY, out, true);
 	};
 
 };

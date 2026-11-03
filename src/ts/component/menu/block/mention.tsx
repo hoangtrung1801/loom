@@ -13,7 +13,7 @@ const MenuBlockMention = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 
 	const { param, getId, getContainer, close, position, setActive } = props;
 	const { data, className, classNameWrap } = param;
-	const { pronounId, withCaption, canAdd, skipIds, onChange } = data;
+	const { pronounId, withCaption, canAdd, skipIds, extraItems, onChange } = data;
 	const { filterText, space } = S.Common;
 	const [ isLoading, setIsLoading ] = useState(false);
 	const [ dummy, setDummy ] = useState(0);
@@ -59,6 +59,13 @@ const MenuBlockMention = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 		const sections: any[] = [];
 		
 		let items = U.Common.objectCopy(itemsRef.current);
+
+		// Fixed entries, such as Lo in a chat, come first while the typed text matches them
+		const extra = (extraItems || []).filter((it: any) => !filter || it.name.toLowerCase().includes(filter.toLowerCase()));
+
+		if (extra.length) {
+			sections.push({ id: 'extra', children: extra });
+		};
 
 		const dates = items.filter(it => U.Object.isDateLayout(it.layout));
 
@@ -266,7 +273,7 @@ const MenuBlockMention = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 		};			
 
 		const type = item.type ? S.Record.getTypeById(item.type) : null;
-		const object = ![ 'add', 'selectDate' ].includes(item.id) ? item : null;
+		const object = (![ 'add', 'selectDate' ].includes(item.id) && !item.iconParam) ? item : null;
 		const withPronoun = pronounId && (pronounId == item.id);
 		const cn = [];
 
@@ -288,10 +295,11 @@ const MenuBlockMention = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 				<MenuItemVertical
 					id={item.id}
 					object={object}
-					name={<ObjectName object={item} withPlural={true} withPronoun={withPronoun} />}
+					name={item.iconParam ? item.name : <ObjectName object={item} withPlural={true} withPronoun={withPronoun} />}
 					onMouseEnter={e => onOver(e, item)} 
 					onClick={e => onClick(e, item)}
-					caption={withCaption && type ? <ObjectType object={type} /> : ''}
+					iconParam={item.iconParam}
+					caption={item.caption || (withCaption && type ? <ObjectType object={type} /> : '')}
 					style={param.style}
 					isDiv={item.isDiv}
 					className={cn.join(' ')}

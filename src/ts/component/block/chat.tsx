@@ -14,6 +14,7 @@ import { chatStatus } from 'Lib/chatStatus';
 import { activityGaps, activityPublisher, chatRowGrouping, ChatRow, ChatRowGrouping } from 'Lib/chatStatus/timeline';
 import { STATUS_TTL } from 'Lib/chatStatus/model';
 import { StatusGroup, StatusFooter, TypingIndicator, activePublishers } from './chat/status';
+import * as LoLib from 'Lib/lo';
 import { reachedEdge, shouldRefetchForward } from 'Lib/util/chatWindow';
 
 interface RefProps {
@@ -1074,11 +1075,13 @@ const BlockChat = forwardRef<RefProps, I.BlockComponent>((props, ref) => {
 								content: item.content,
 							});
 
+							const copyText = LoLib.stripLoMarker(item.content.text);
+
 							U.Common.clipboardCopy({
-								text: Mark.insertEmoji(item.content.text, item.content.marks),
-								html: Mark.toStandardHtml(Mark.toHtml(item.content.text, item.content.marks)),
+								text: Mark.insertEmoji(copyText, item.content.marks),
+								html: Mark.toStandardHtml(Mark.toHtml(copyText, item.content.marks)),
 								loom: {
-									range: { from: 0, to: item.content.text.length },
+									range: { from: 0, to: copyText.length },
 									blocks: [ block ],
 								},
 							});
@@ -1415,8 +1418,10 @@ const BlockChat = forwardRef<RefProps, I.BlockComponent>((props, ref) => {
 
 		if (isSelf) {
 			options.push({ isDiv: true });
-			options.push({ id: 'edit', iconParam: { name: 'common/edit' }, name: translate('commonEdit') });
-			options.push({ isDiv: true });
+			if (!LoLib.isLoMessage(message)) {
+				options.push({ id: 'edit', iconParam: { name: 'common/edit' }, name: translate('commonEdit') });
+				options.push({ isDiv: true });
+			};
 			options.push({ id: 'link', iconParam: { name: 'menu/action/pageLink' }, name: translate('blockChatCopyMessageLink') });
 			options.push({ id: 'delete', iconParam: { name: 'menu/action/remove', color: 'destructive' }, name: translate('commonDelete'), color: 'destructive' });
 		} else {
@@ -1693,7 +1698,7 @@ const BlockChat = forwardRef<RefProps, I.BlockComponent>((props, ref) => {
 		const subId = getSubId();
 		const { creator, content } = message;
 		const author = U.Space.getParticipant(U.Space.getParticipantId(S.Common.space, creator));
-		const title = U.String.sprintf(translate('blockChatReplying'), author?.name);
+		const title = U.String.sprintf(translate('blockChatReplying'), LoLib.isLoMessage(message) ? LoLib.AGENT_NAME : author?.name);
 		const layouts = U.Object.getFileLayouts().concat(I.ObjectLayout.Bookmark);
 		const attachments = (message.attachments || []).map(it => S.Detail.get(subId, it.target)).filter(it => !it._empty_ && !it.isDeleted);
 		const length = attachments.length;
@@ -1704,7 +1709,7 @@ const BlockChat = forwardRef<RefProps, I.BlockComponent>((props, ref) => {
 		let isMultiple: boolean = false;
 
 		if (content.text) {
-			text = U.String.sanitize(Mark.toHtml(content.text, content.marks)).replace(/\u200B/g, '');
+			text = U.String.sanitize(Mark.toHtml(LoLib.stripLoMarker(content.text), content.marks)).replace(/\u200B/g, '');
 			text = text.replace(/\n\r?/g, ' ');
 		};
 

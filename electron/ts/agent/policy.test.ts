@@ -59,6 +59,13 @@ describe('prompt sections', () => {
 		expect(out).toContain('Plan [Page] (id: o1)');
 	});
 
+	test('contextSection lists @-referenced objects with their ids', () => {
+		const out = contextSection({ mentions: [ { id: 'o2', name: 'Roadmap', type: 'Page' }, { id: '', name: 'skipped' }, { id: 'o3', name: '' } ] });
+		expect(out).toContain('- Roadmap [Page] (id: o2)');
+		expect(out).toContain('- Untitled (id: o3)');
+		expect(out).not.toContain('skipped');
+	});
+
 	test('contextSection is empty with nothing open', () => {
 		expect(contextSection({})).toBe('');
 	});

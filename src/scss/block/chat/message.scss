@@ -252,4 +252,12 @@
 			}
 		}
 	}
+
+	.loAvatar { width: 32px; height: 32px; border-radius: 50%; background: url('~img/icon/lo.svg') center / contain no-repeat; }
+
+	.loStop { margin-top: 4px; }
+	.loStop {
+		.label.small { color: var(--color-text-secondary); }
+		.label.small:hover { color: var(--color-text-primary); }
+	}
 }
