@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import * as I from 'Interface';
 import {
-	LO_MARKER, isLoMessage, isLoText, stripLoMarker, withLoMarker, mentionsLo, shouldLoReply, textForLo, buildChatHistory, type ReplyContext,
+	LO_MARKER, isLoMessage, isLoText, stripLoMarker, withLoMarker, mentionsLo, shouldLoReply, textForLo, buildChatHistory, formatLoInline, type ReplyContext,
 } from './lo';
 
 const LO = 'lo-object';
@@ -114,5 +114,30 @@ describe('buildChatHistory', () => {
 	test('works without an author name and for an unknown current id', () => {
 		expect(buildChatHistory([ msg('1', 'a') ], 'zz', () => '')).toEqual([ { role: 'user', text: 'a' } ]);
 		expect(buildChatHistory([], '1', author)).toEqual([]);
+	});
+});
+
+describe('formatLoInline', () => {
+	test('turns inline markdown into marks', () => {
+		const out = formatLoInline('**Open** the `read` tool, see [docs](https://x.io) or *this*.');
+
+		expect(out.text).toBe('Open the read tool, see docs or this.');
+		expect(out.marks).toEqual([
+			{ type: I.MarkType.Bold, param: '', range: { from: 0, to: 4 } },
+			{ type: I.MarkType.Code, param: '', range: { from: 9, to: 13 } },
+			{ type: I.MarkType.Link, param: 'https://x.io', range: { from: 24, to: 28 } },
+			{ type: I.MarkType.Italic, param: '', range: { from: 32, to: 36 } },
+		]);
+	});
+
+	test('makes headings bold and leaves code fences alone', () => {
+		const out = formatLoInline('## Spaces\n```\n**not bold**\n```');
+
+		expect(out.text).toBe('Spaces\n```\n**not bold**\n```');
+		expect(out.marks).toEqual([ { type: I.MarkType.Bold, param: '', range: { from: 0, to: 6 } } ]);
+	});
+
+	test('keeps unfinished markdown while streaming', () => {
+		expect(formatLoInline('a **half').text).toBe('a **half');
 	});
 });

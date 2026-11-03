@@ -253,10 +253,7 @@
 		}
 	}
 
-	.loAvatar { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; }
-	.loAvatar {
-		img { display: block; width: 100%; height: 100%; }
-	}
+	.loAvatar { width: 32px; height: 32px; border-radius: 50%; background: url('~img/icon/lo.svg') center / contain no-repeat; }
 
 	.loStop { margin-top: 4px; }
 	.loStop {

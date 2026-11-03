@@ -270,7 +270,8 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 	const ca = [ 'attachments' ];
 	const ct = [ 'textWrapper' ];
 	const cnBubble = [ 'bubble' ];
-	const editedLabel = modifiedAt ? translate('blockChatMessageEdited') : '';
+	// Lo's answer is streamed in by edits, so it is never shown as edited
+	const editedLabel = (modifiedAt && !isLo) ? translate('blockChatMessageEdited') : '';
 	const hasMore = !!getMessageMenuOptions(message, true).length;
 	const controls = [];
 	const cns = [ 'status', 'syncing' ];
@@ -363,9 +364,7 @@ const ChatMessage = forwardRef<ChatMessageRefProps, I.ChatMessageComponent>((pro
 
 	if (isLo) {
 		userpicNode = (
-			<div className="iconObject isParticipant c32 loAvatar">
-				<img src="./img/icon/lo.svg" alt="" />
-			</div>
+			<div className="iconObject isParticipant c32 loAvatar" />
 		);
 
 		authorNode = (

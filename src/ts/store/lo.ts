@@ -74,6 +74,12 @@ class LoStore {
 			return;
 		};
 
+		// Messages synced in from another device are that device's to answer; a message sent here
+		// arrives unsynced, so only one device ever replies
+		if (message.isSynced) {
+			return;
+		};
+
 		if (!S.Agent.status) {
 			await S.Agent.loadStatus();
 		};
@@ -126,10 +132,14 @@ class LoStore {
 		});
 	};
 
+	/** The chat message for Lo's text: markdown becomes marks, fences code marks, then the marker. */
 	private payload (text: string, replyTo: string) {
+		const inline = LoLib.formatLoInline(LoLib.stripLoMarker(text));
+		const coded = U.Chat.fenceToCodeMarks(inline.text, inline.marks);
+
 		return {
 			replyToMessageId: replyTo,
-			content: { text: LoLib.withLoMarker(text), style: I.TextStyle.Paragraph, marks: [] },
+			content: { text: LoLib.withLoMarker(coded.text), style: I.TextStyle.Paragraph, marks: Mark.checkRanges(coded.text, coded.marks) },
 			attachments: [],
 			reactions: [],
 			blocks: [],

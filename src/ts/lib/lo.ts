@@ -181,3 +181,57 @@ export const ensureLoObject = (spaceId: string): Promise<string> => {
 
 	return loIds.get(spaceId);
 };
+
+/** Inline markdown Lo's answers use: fences (left for U.Chat.fenceToCodeMarks), code, bold, italic, strike, links, headings. */
+const INLINE_MD = /```[\s\S]*?(?:```|(?![\s\S]))|`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|~~([^~\n]+)~~|\[([^\]\n]+)\]\(([^)\s]+)\)|^#{1,6} +([^\n]+)$/gm;
+
+/**
+ * Turns the inline markdown of a model answer into chat marks, so Lo's messages render formatted
+ * instead of showing asterisks. Code fences are kept as they are, for U.Chat.fenceToCodeMarks.
+ */
+export const formatLoInline = (value: string): { text: string; marks: I.Mark[] } => {
+	const source = String(value || '');
+	const marks: I.Mark[] = [];
+
+	let text = '';
+	let last = 0;
+	let match: RegExpExecArray | null;
+
+	INLINE_MD.lastIndex = 0;
+	while ((match = INLINE_MD.exec(source)) !== null) {
+		if (!match[0].length) {
+			INLINE_MD.lastIndex++;
+			continue;
+		};
+
+		text += source.slice(last, match.index);
+		last = match.index + match[0].length;
+
+		const [ all, code, bold, italic, strike, linkText, linkUrl, heading ] = match;
+		const add = (inner: string, type: I.MarkType, param = '') => {
+			marks.push({ type, param, range: { from: text.length, to: text.length + inner.length } });
+			text += inner;
+		};
+
+		if (code) {
+			add(code, I.MarkType.Code);
+		} else
+		if (bold || heading) {
+			add(bold || heading, I.MarkType.Bold);
+		} else
+		if (italic) {
+			add(italic, I.MarkType.Italic);
+		} else
+		if (strike) {
+			add(strike, I.MarkType.Strike);
+		} else
+		if (linkText) {
+			add(linkText, I.MarkType.Link, linkUrl);
+		} else {
+			text += all;
+		};
+	};
+
+	text += source.slice(last);
+	return { text, marks };
+};

@@ -1539,6 +1539,8 @@ class UtilData {
 				!U.Object.isDateLayout(it.recommendedLayout) &&
 				!U.Object.isParticipantLayout(it.recommendedLayout) &&
 				(it.uniqueKey != J.Constant.typeKey.template) &&
+				// Lo's own type (Lib/lo TYPE_KEY) holds the one object @Lo mentions point at
+				(it.uniqueKey != 'ot-loomAgent') &&
 				(
 					allowedTypes.includes(it.uniqueKey) || 
 					(S.Record.getRecordIds(U.Subscription.typeCheckSubId(it.uniqueKey), '').length > 0)
