@@ -230,6 +230,12 @@ class ElectronMock {
 			size: 500 * 1024 * 1024 * 1024,
 		}));
 
+		// AI agent: runs in the web dev server (see webAgentPlugin in vite.web.config.ts)
+		[
+			'agentStatus', 'agentSetConfig', 'agentSetProviderKey', 'agentSetLocalKey', 'agentRun',
+			'agentStop', 'agentSteer', 'agentApprove', 'agentAppToolResult', 'agentReset',
+		].forEach(cmd => handlers.set(cmd, args => this.agentCall(cmd, args)));
+
 		// Notification handler
 		handlers.set('notification', (args) => {
 			if ('Notification' in window && Notification.permission === 'granted') {
@@ -520,6 +526,35 @@ class ElectronMock {
 		if (listeners) {
 			listeners.forEach(cb => cb(null, ...args));
 		}
+	};
+
+	private agentEvents: EventSource | null = null;
+
+	/** Forwards an agent command to the dev server, opening its event stream on first use. */
+	private agentCall = async (cmd: string, args: any[]): Promise<any> => {
+		if (!this.agentEvents) {
+			this.agentEvents = new EventSource(`/api/agent/events?tab=${encodeURIComponent(this.tabId_)}`);
+			this.agentEvents.onmessage = (e: MessageEvent) => {
+				try {
+					const { channel, payload } = JSON.parse(e.data);
+					this.emit(channel, payload);
+				} catch (err) {
+					console.error('[Web] Bad agent event:', err);
+				};
+			};
+		};
+
+		try {
+			const response = await fetch('/api/agent', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ cmd, args }),
+			});
+			return response.ok ? response.json() : null;
+		} catch (e) {
+			console.error('[Web] Agent call failed:', cmd, e);
+			return null;
+		};
 	};
 
 	Api = async (_id: number, cmd: string, args: any[] = []): Promise<any> => {

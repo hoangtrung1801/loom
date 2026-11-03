@@ -75,6 +75,16 @@ In web mode, file uploads work via the dev server middleware:
 5. Real filesystem path returned to app
 6. Backend reads file from that path
 
+## AI Agent
+
+The agent normally runs in Electron's main process. In web mode the dev server runs the same
+`electron-agent.js` bundle instead (`webAgentPlugin` in `vite.web.config.ts`; build it first with
+`node scripts/build-electron.js`):
+
+1. `electronMock` forwards `agent*` API calls to `POST /api/agent` (same-origin JSON only)
+2. Agent events stream back over `GET /api/agent/events?tab=<tabId>` (server-sent events)
+3. Config and keys are kept in the dev server's memory and are lost when it stops
+
 ## Limitations
 
 - Some Electron-specific features are mocked/no-op
