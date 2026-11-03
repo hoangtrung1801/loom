@@ -232,11 +232,11 @@ export default {
 	},
 
 	webAppIcons: [
-		{ id: 'x', hosts: [ 'x.com', 'twitter.com' ] },
-		{ id: 'facebook', hosts: [ 'facebook.com', 'fb.com', 'fb.watch' ] },
-		{ id: 'youtube', hosts: [ 'youtube.com', 'youtu.be' ] },
-		{ id: 'github', hosts: [ 'github.com' ] },
-		{ id: 'linkedin', hosts: [ 'linkedin.com' ] },
+		{ id: 'x', color: '#000000', colorDark: '#e1e1e1', hosts: [ 'x.com', 'twitter.com' ] },
+		{ id: 'facebook', color: '#1877f2', hosts: [ 'facebook.com', 'fb.com', 'fb.watch' ] },
+		{ id: 'youtube', color: '#ff0000', hosts: [ 'youtube.com', 'youtu.be' ] },
+		{ id: 'github', color: '#181717', colorDark: '#e1e1e1', hosts: [ 'github.com' ] },
+		{ id: 'linkedin', color: '#0a66c2', hosts: [ 'linkedin.com' ] },
 	],
 
 	monthDays: {

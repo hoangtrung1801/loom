@@ -1345,15 +1345,15 @@ class UtilObject {
 	 */
 	webAppIcon (url: string, size: number): string {
 		const host = U.String.shortUrl(url).split('/')[0].toLowerCase();
-		const id = J.Constant.webAppIcons.find(it => it.hosts.some(h => (host == h) || host.endsWith(`.${h}`)))?.id;
+		const item = J.Constant.webAppIcons.find(it => it.hosts.some(h => (host == h) || host.endsWith(`.${h}`)));
 
-		if (!id) {
+		if (!item) {
 			return '';
 		};
 
 		const theme = S.Common.getThemeClass();
-		const fill = J.Theme[theme].iconDefault;
-		const svg = getIconSvg(`web/${id}`, { style: { width: size, height: size } });
+		const fill = ((theme == 'dark') && item.colorDark) ? item.colorDark : item.color;
+		const svg = getIconSvg(`web/${item.id}`, { style: { width: size, height: size } });
 
 		if (!svg) {
 			return '';

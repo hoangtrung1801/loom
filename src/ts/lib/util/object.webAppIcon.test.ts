@@ -15,11 +15,10 @@ describe('UtilObject.webAppIcon', () => {
 		(globalThis as any).J = {
 			Constant: {
 				webAppIcons: [
-					{ id: 'x', hosts: [ 'x.com', 'twitter.com' ] },
-					{ id: 'facebook', hosts: [ 'facebook.com' ] },
+					{ id: 'x', color: '#000000', colorDark: '#e1e1e1', hosts: [ 'x.com', 'twitter.com' ] },
+					{ id: 'facebook', color: '#1877f2', hosts: [ 'facebook.com' ] },
 				],
 			},
-			Theme: { '': { iconDefault: 'rgba(0,0,0,0.11)' } },
 		};
 		(globalThis as any).S = { Common: { getThemeClass: () => '' } };
 		(globalThis as any).U = {
@@ -38,7 +37,18 @@ describe('UtilObject.webAppIcon', () => {
 		const svg = decode(UtilObject.webAppIcon('https://x.com/callanxai/status/1', 16));
 
 		expect(svg).toContain('data-name="web/x"');
-		expect(svg).toContain('fill="rgba(0,0,0,0.11)"');
+		expect(svg).toContain('fill="#000000"');
+	});
+
+	it('uses the primary brand colour of the web app', () => {
+		expect(decode(UtilObject.webAppIcon('https://facebook.com/a', 16))).toContain('fill="#1877f2"');
+	});
+
+	it('uses the dark variant only where the brand colour would vanish on dark', () => {
+		(globalThis as any).S.Common.getThemeClass = () => 'dark';
+
+		expect(decode(UtilObject.webAppIcon('https://x.com/a', 16))).toContain('fill="#e1e1e1"');
+		expect(decode(UtilObject.webAppIcon('https://facebook.com/a', 16))).toContain('fill="#1877f2"');
 	});
 
 	it('matches subdomains and www', () => {
