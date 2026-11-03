@@ -1,5 +1,6 @@
 [
 	"electron.js",
+	"electron-agent.js",
 	"electron/js/**/*",
 	"electron/json/*",
 	"electron/env.json",

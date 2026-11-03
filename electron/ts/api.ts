@@ -18,7 +18,7 @@ import LinkApprovalManager from './linkApproval';
 import { powerState, PowerSnapshot } from './lib/powerState';
 import DownloadManager, { DownloadRequest } from './download';
 import { AppWindow, TabView, TabData, CreateTabOptions, AppConfig, Bounds } from './types';
-import { AgentService } from './agent';
+import type { AgentService } from './agent';
 import type { AgentConfig, AgentRunParams } from './agent/types';
 
 const KEYTAR_SERVICE = 'Loom';
@@ -41,24 +41,46 @@ const LinkApproval = new LinkApprovalManager({
 /**
  * The in-app AI agent. Its events go to the one renderer tab that started the run, found by tab id
  * across all windows. Secrets (provider key, local API key) live in the OS keychain, never in config.
+ *
+ * The agent pulls in pi and its provider SDKs (about 1.8 MB). It is built as its own bundle,
+ * electron-agent.js (see scripts/build-electron.js), and required on first use, so nobody pays for it
+ * until the panel is opened. Calls that only act on a running chat (stop, steer, approve...) skip
+ * loading entirely when nothing has been started.
  */
-const Agent = new AgentService({
-	store: { get: key => getSafeStorage().get(key), set: (key, value) => getSafeStorage().set(key, value) },
-	secrets: {
-		get: key => keytar.getPassword(KEYTAR_SERVICE, key),
-		set: async (key, value) => { await keytar.setPassword(KEYTAR_SERVICE, key, value); },
-		delete: async key => { await keytar.deletePassword(KEYTAR_SERVICE, key); },
-	},
-	sendToTab: (tabId, channel, payload) => {
-		for (const win of WindowManager.list) {
-			const view = win && !win.isDestroyed() ? Util.getView(win, tabId) : null;
-			if (view?.webContents && !view.webContents.isDestroyed()) {
-				view.webContents.send(channel, payload);
-				return;
-			};
-		};
-	},
-});
+let agent: AgentService | null = null;
+let agentLoading: Promise<AgentService> | null = null;
+
+const loadAgent = (): Promise<AgentService> => {
+	if (!agentLoading) {
+		agentLoading = Promise.resolve().then(() => {
+			const { AgentService: Service } = require(path.join(__dirname, 'electron-agent.js'));
+
+			agent = new Service({
+				store: { get: key => getSafeStorage().get(key), set: (key, value) => getSafeStorage().set(key, value) },
+				secrets: {
+					get: key => keytar.getPassword(KEYTAR_SERVICE, key),
+					set: async (key, value) => { await keytar.setPassword(KEYTAR_SERVICE, key, value); },
+					delete: async key => { await keytar.deletePassword(KEYTAR_SERVICE, key); },
+				},
+				sendToTab: (tabId, channel, payload) => {
+					for (const win of WindowManager.list) {
+						const view = win && !win.isDestroyed() ? Util.getView(win, tabId) : null;
+						if (view?.webContents && !view.webContents.isDestroyed()) {
+							view.webContents.send(channel, payload);
+							return;
+						};
+					};
+				},
+			});
+			return agent;
+		}).catch(e => {
+			// Let the next call try again instead of caching the failure
+			agentLoading = null;
+			throw e;
+		});
+	};
+	return agentLoading;
+};
 
 class Api {
 
@@ -428,43 +450,43 @@ class Api {
 	};
 
 	agentStatus (win: AppWindow, accountId: string) {
-		return Agent.status(accountId);
+		return loadAgent().then(it => it.status(accountId));
 	};
 
 	agentSetConfig (win: AppWindow, patch: Partial<AgentConfig>) {
-		return Agent.setConfig(patch);
+		return loadAgent().then(it => it.setConfig(patch));
 	};
 
 	agentSetProviderKey (win: AppWindow, key: string) {
-		return Agent.setProviderKey(key);
+		return loadAgent().then(it => it.setProviderKey(key));
 	};
 
 	agentSetLocalKey (win: AppWindow, accountId: string, key: string) {
-		return Agent.setLocalKey(accountId, key);
+		return loadAgent().then(it => it.setLocalKey(accountId, key));
 	};
 
 	agentRun (win: AppWindow, tabId: string, params: AgentRunParams) {
-		return Agent.run(tabId, params);
+		return loadAgent().then(it => it.run(tabId, params));
 	};
 
 	agentStop (win: AppWindow, chatId: string): void {
-		Agent.stop(chatId);
+		agent?.stop(chatId);
 	};
 
 	agentSteer (win: AppWindow, chatId: string, text: string): void {
-		Agent.steer(chatId, text);
+		agent?.steer(chatId, text);
 	};
 
 	agentApprove (win: AppWindow, chatId: string, callId: string, allow: boolean): void {
-		Agent.approve(chatId, callId, allow);
+		agent?.approve(chatId, callId, allow);
 	};
 
 	agentAppToolResult (win: AppWindow, id: string, result: any): void {
-		Agent.appToolResult(id, result);
+		agent?.appToolResult(id, result);
 	};
 
 	agentReset (win: AppWindow, chatId: string) {
-		return Agent.dispose(chatId);
+		return agent?.dispose(chatId);
 	};
 
 	updateCheck (win: AppWindow): void {

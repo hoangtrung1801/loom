@@ -33,13 +33,25 @@ const buildOptions = {
 	logLevel: 'info',
 };
 
+// The AI agent (pi and its provider SDKs, ~2 MB) is a second bundle that electron.js requires on first
+// use, so it costs nothing at startup. A dynamic import() would not do: esbuild hoists the ESM
+// packages it pulls in into the main bundle and still runs them at launch.
+const agentOptions = {
+	...buildOptions,
+	entryPoints: [path.join(__dirname, '..', 'electron', 'ts', 'agent', 'index.ts')],
+	outfile: path.join(__dirname, '..', 'electron-agent.js'),
+	external: [],
+};
+
 async function build() {
 	if (watch) {
-		const ctx = await esbuild.context(buildOptions);
-		await ctx.watch();
+		for (const options of [ buildOptions, agentOptions ]) {
+			const ctx = await esbuild.context(options);
+			await ctx.watch();
+		}
 		console.log('[build-electron] Watching for changes...');
 	} else {
-		await esbuild.build(buildOptions);
+		await Promise.all([ esbuild.build(buildOptions), esbuild.build(agentOptions) ]);
 	}
 }
 
