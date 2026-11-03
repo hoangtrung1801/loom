@@ -45,8 +45,9 @@ vi.mock('@sindresorhus/slugify', () => ({
 	default: (s: string) => s.toLowerCase().replace(/\s+/g, '-'),
 }));
 
-// Mock the Lib barrel export to avoid pulling in protobuf/gRPC/stores
-vi.mock('Lib', () => {
+// Stand-ins for the Lib barrel and the auto-imported globals (U, J, S, translate...), so modules
+// under test don't pull in protobuf/gRPC/stores
+const lib = vi.hoisted(() => {
 	const I = {
 		MarkType: {
 			Strike: 0, Code: 1, Italic: 2, Bold: 3, Underline: 4, Link: 5,
@@ -285,6 +286,11 @@ vi.mock('Lib', () => {
 
 	return { I, U, J, S, M, translate, Mark, Relation };
 });
+
+vi.mock('Lib', () => lib);
+
+// The app gets these from unplugin-auto-import (vite.config.ts), which vitest does not run
+Object.assign(globalThis, { U: lib.U, J: lib.J, S: lib.S, translate: lib.translate, Mark: lib.Mark, Relation: lib.Relation });
 
 // Mock Component/selection/target (imported by common.ts)
 vi.mock('Component/selection/target', () => ({

@@ -1,0 +1,70 @@
+name: test
+
+# Unit tests, typecheck and lint for the app. The protobuf bindings (middleware/) are generated,
+# not committed, so they are built here from loom-heart's .proto files first.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROTOC_VERSION: '23.4'
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 25.2.1
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install protoc
+        run: |
+          set -euo pipefail
+          DEST="$HOME/protoc"
+          mkdir -p "$DEST"
+          curl -fsSL -o "$DEST/protoc.zip" "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          unzip -o "$DEST/protoc.zip" -d "$DEST"
+          echo "$DEST/bin" >> "$GITHUB_PATH"
+
+      # No native rebuild (electron-builder install-app-deps): the tests run in plain Node
+      - name: Install dependencies
+        run: |
+          bun install --ignore-scripts
+          bunx patch-package
+
+      - name: Generate protobuf bindings
+        env:
+          SKIP_HEART_BUILD: '1'
+        run: bash scripts/generate-protos.sh
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
