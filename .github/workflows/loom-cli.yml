@@ -162,6 +162,7 @@ jobs:
         run: |
           go build \
             -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
+            -ldflags="-X main.version=$VERSION" \
             -o loom ./cmd/loom
 
       - name: Smoke test
@@ -169,6 +170,7 @@ jobs:
           file loom
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             ./loom --help
+            ./loom --version
           else
             # The runner is arm64; only check the architecture of the amd64 binary.
             file loom | grep -q x86_64
@@ -235,6 +237,7 @@ jobs:
           CC: x86_64-w64-mingw32-gcc
           CXX: x86_64-w64-mingw32-g++
           GOFLAGS: -buildvcs=false
+          VERSION: ${{ inputs.version || 'dev' }}
         run: |
           go build \
             -tags="nographviz nowatchdog nosigar nomutexdeadlockdetector noheic" \
