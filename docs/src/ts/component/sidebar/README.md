@@ -23,8 +23,9 @@ Context-sensitive detail panel with animation (motion/react):
 - `page/object/tableOfContents.tsx` - Document TOC
 - `page/widget.tsx` - Widget preview
 - `page/agent/` - AI Agent chat (page `agent`), opened from the object header button or the `agent` shortcut (Cmd/Ctrl+Shift+A). State lives in `S.Agent`.
-  - `index.tsx` - three views: chat (markdown replies via `lib/agentMarkdown.ts`, rendered as React elements, never innerHTML; tool rows with Allow/Decline cards; user messages show @mentions as links), history (the space's saved sessions: open, move to bin) and settings (provider, key, model, base URL, tool tier, confirm-before-changes)
-  - `composer.tsx` - the message input: an `Editable` where `@` opens the editor's `blockMention` menu and inserts a mention mark, and `/` at the start opens the command list in the `select` menu. Menus use `classNameWrap: 'fromSidebar'` to sit above the panel
+  - `index.tsx` - three views that crossfade (motion, `reducedMotion="user"`): chat, history (the space's saved sessions: open, move to bin) and settings (provider, key, model, base URL, tool tier, confirm-before-changes). Chat: empty state with prompt suggestions; new messages rise in (not on load or when a session opens, since the list is keyed by chat); the view follows new text only while scrolled to the bottom, with a scroll-down button otherwise; one round button sends, or stops a run when the input is empty
+  - `message.tsx` - message rendering: user bubbles with @mentions as links; Lo's answers with avatar, markdown via `lib/agentMarkdown.ts` (React elements, never innerHTML), a caret while streaming, typing dots before the first text, tool rows with status icons and an animated Allow/Decline card, and a copy button
+  - `composer.tsx` - the message input (reports empty/non-empty, `setText` for suggestions): an `Editable` where `@` opens the editor's `blockMention` menu and inserts a mention mark, and `/` at the start opens the command list in the `select` menu. Menus use `classNameWrap: 'fromSidebar'` to sit above the panel
   - `commands.ts` - the slash commands: actions (`/new`, `/history`, `/settings`, `/stop`) and prompts (`/summarize`, `/tasks`, `/explain`, `/translate`) that fill the input
 
 Registered components: `agent`, `type`, `objectRelation`, `objectTableOfContents`, `widget`.

@@ -1,75 +1,17 @@
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { Label, Icon, Button, Input, Switch, Loader } from 'Component';
 import * as I from 'Interface';
-import type { AgentPart, AgentChatMessage } from 'Store/agent';
-import { parseAgentMarkdown, type AgentInline } from 'Lib/agentMarkdown';
+import type { AgentChatMessage } from 'Store/agent';
 import AgentComposer, { type AgentComposerRef } from './composer';
-import type { AgentCommand } from './commands';
+import { AGENT_COMMANDS, type AgentCommand } from './commands';
+import { AssistantMessage, AgentAuthor, MESSAGE_MOTION, TypingDots, UserMessage, cap } from './message';
 
 type View = 'chat' | 'history' | 'settings';
 
-/** Upper-cases only the first letter, keeping camelCase keys such as providerKey intact. */
-const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-
-const Inline = ({ items }: { items: AgentInline[] }) => (
-	<>
-		{items.map((it, i) => {
-			if (it.type == 'bold') {
-				return <b key={i}>{it.text}</b>;
-			};
-			if (it.type == 'italic') {
-				return <i key={i}>{it.text}</i>;
-			};
-			if (it.type == 'code') {
-				return <code key={i}>{it.text}</code>;
-			};
-			return <React.Fragment key={i}>{it.text}</React.Fragment>;
-		})}
-	</>
-);
-
-const Markdown = ({ text }: { text: string }) => (
-	<div className="markdown">
-		{parseAgentMarkdown(text).map((block, i) => {
-			if (block.type == 'code') {
-				return <pre key={i}><code>{block.text}</code></pre>;
-			};
-			if (block.type == 'heading') {
-				return <div key={i} className="heading"><Inline items={block.inline} /></div>;
-			};
-			if (block.type == 'list') {
-				const Tag = block.ordered ? 'ol' : 'ul';
-				return <Tag key={i}>{block.items.map((item, j) => <li key={j}><Inline items={item} /></li>)}</Tag>;
-			};
-			return <p key={i}><Inline items={block.inline} /></p>;
-		})}
-	</div>
-);
-
-/** A user message, with each @-referenced object shown as a link that opens it. */
-const UserText = ({ message }: { message: AgentChatMessage }) => {
-	const text = message.parts.map(it => (it.type == 'text' ? it.text : '')).join('');
-	const mentions = [ ...(message.mentions || []) ].sort((a, b) => a.from - b.from);
-	const out: React.ReactNode[] = [];
-
-	let at = 0;
-	mentions.forEach((it, i) => {
-		if ((it.from < at) || (it.to > text.length)) {
-			return;
-		};
-
-		out.push(text.slice(at, it.from));
-		out.push(
-			<span key={i} className="mention" onClick={() => S.Agent.openObject(it.id)}>
-				{text.slice(it.from, it.to)}
-			</span>
-		);
-		at = it.to;
-	});
-	out.push(text.slice(at));
-
-	return <div className="text">{out}</div>;
-};
+/** How close to the bottom (px) still counts as "at the bottom": the chat follows new text there. */
+const STICK_DISTANCE = 48;
+const SUGGESTIONS = AGENT_COMMANDS.filter(it => it.kind == 'prompt');
 
 const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any) => {
 
@@ -82,8 +24,13 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 	const [ keyDraft, setKeyDraft ] = useState('');
 	const bodyRef = useRef<HTMLDivElement>(null);
 	const composerRef = useRef<AgentComposerRef>(null);
+	const [ isEmpty, setIsEmpty ] = useState(true);
+	const [ showScrollDown, setShowScrollDown ] = useState(false);
+	const stickRef = useRef(true);
+	const countRef = useRef(0);
 	const isRunning = chat.status == 'running';
-	const lastText = chat.messages.length ? JSON.stringify(chat.messages[chat.messages.length - 1].parts) : '';
+	const lastMessage = chat.messages.length ? chat.messages[chat.messages.length - 1] : null;
+	const lastText = lastMessage ? JSON.stringify(lastMessage.parts) : '';
 
 	useEffect(() => {
 		S.Agent.loadStatus();
@@ -99,12 +46,63 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 		};
 	}, [ view, spaceId ]);
 
+	// A different chat or view starts at the bottom, without animation
 	useEffect(() => {
+		stickRef.current = true;
+		countRef.current = chat.messages.length;
+		setShowScrollDown(false);
+		scrollToBottom(false);
+	}, [ chatId, view, chat.loading ]);
+
+	// New messages glide into view; streamed text follows instantly, so it never lags behind.
+	// Neither happens while the user has scrolled up to read.
+	useEffect(() => {
+		const isNew = chat.messages.length > countRef.current;
+		const isOwn = isNew && (lastMessage?.role == 'user');
+
+		countRef.current = chat.messages.length;
+
+		if (isOwn) {
+			stickRef.current = true;
+		};
+		if (stickRef.current) {
+			scrollToBottom(isNew);
+		};
+	}, [ chat.messages.length, lastText, chat.error, isRunning ]);
+
+	const scrollToBottom = (smooth: boolean) => {
 		const node = bodyRef.current;
 		if (node) {
-			node.scrollTop = node.scrollHeight;
+			node.scrollTo({ top: node.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
 		};
-	}, [ chat.messages.length, lastText, chat.error, view ]);
+	};
+
+	const onScroll = () => {
+		const node = bodyRef.current;
+		if (!node) {
+			return;
+		};
+
+		const atBottom = (node.scrollHeight - node.scrollTop - node.clientHeight) < STICK_DISTANCE;
+
+		stickRef.current = atBottom;
+		setShowScrollDown(!atBottom);
+	};
+
+	const onScrollDown = () => {
+		stickRef.current = true;
+		setShowScrollDown(false);
+		scrollToBottom(true);
+	};
+
+	const onSend = () => {
+		if (isRunning && isEmpty) {
+			S.Agent.stop();
+			return;
+		};
+
+		composerRef.current?.send();
+	};
 
 	const onNewChat = () => {
 		S.Agent.newChat(spaceId);
@@ -126,44 +124,13 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 		setView('chat');
 	};
 
-	const renderTool = (part: Extract<AgentPart, { type: 'tool' }>) => {
-		const cn = [ 'tool', part.status ];
-
-		return (
-			<div key={part.callId} className={cn.join(' ')}>
-				<div className="line">
-					<Label className="name" text={part.label} />
-					<Label className="state" text={translate(`agentTool${cap(part.status)}`)} />
-				</div>
-				{part.status == 'approval' ? (
-					<div className="approval">
-						<pre className="args">{JSON.stringify(part.args, null, 2)}</pre>
-						<div className="buttons">
-							<Button text={translate('agentApprove')} color="blank" className="c28" onClick={() => S.Agent.approve(part.callId, true)} />
-							<Button text={translate('agentDeny')} color="blank" className="c28" onClick={() => S.Agent.approve(part.callId, false)} />
-						</div>
-					</div>
-				) : ''}
-				{(part.status == 'error') && part.result ? <div className="result">{part.result}</div> : ''}
-			</div>
-		);
-	};
-
 	const renderMessage = (message: AgentChatMessage) => {
-		const cn = [ 'message', message.role ];
-
-		if (message.role == 'user') {
-			return (
-				<div key={message.id} className={cn.join(' ')}>
-					<UserText message={message} />
-				</div>
-			);
-		};
+		const isStreaming = isRunning && (message.id == lastMessage?.id);
 
 		return (
-			<div key={message.id} className={cn.join(' ')}>
-				{message.parts.map((part, i) => (part.type == 'tool') ? renderTool(part) : <Markdown key={i} text={part.text} />)}
-			</div>
+			<motion.div key={message.id} className="messageWrap" {...MESSAGE_MOTION}>
+				{(message.role == 'user') ? <UserMessage message={message} /> : <AssistantMessage message={message} isStreaming={isStreaming} />}
+			</motion.div>
 		);
 	};
 
@@ -173,55 +140,123 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 		};
 
 		return (
-			<div className="error">
-				<Label text={translate(`agentError${cap(chat.error)}`)} />
-				{chat.errorDetail ? <Label className="detail" text={chat.errorDetail} /> : ''}
-				{[ 'providerKey', 'model', 'baseUrl' ].includes(chat.error) ? (
-					<Button text={translate('agentOpenSettings')} color="blank" className="c28" onClick={() => setView('settings')} />
-				) : ''}
-			</div>
+			<motion.div key="error" className="error" {...MESSAGE_MOTION}>
+				<Icon className="statusIcon" name="common/alert" />
+				<div className="info">
+					<Label text={translate(`agentError${cap(chat.error)}`)} />
+					{chat.errorDetail ? <Label className="detail" text={chat.errorDetail} /> : ''}
+					{[ 'providerKey', 'model', 'baseUrl' ].includes(chat.error) ? (
+						<Button text={translate('agentOpenSettings')} color="blank" className="c28" onClick={() => setView('settings')} />
+					) : ''}
+				</div>
+			</motion.div>
 		);
 	};
 
-	const renderChat = () => {
-		let content = null;
+	const renderEmpty = () => (
+		<div className="empty">
+			<motion.div className="hero" {...MESSAGE_MOTION}>
+				<div className="loAvatar big" />
+				<Label className="title" text={translate('agentEmptyTitle')} />
+				<Label className="text" text={translate('agentEmptyText')} />
+			</motion.div>
+			<div className="suggestions">
+				{SUGGESTIONS.map((it, i) => (
+					<motion.div
+						key={it.id}
+						className="suggestion"
+						initial={{ opacity: 0, y: 6 }}
+						animate={{ opacity: 1, y: 0 }}
+						transition={{ ...MESSAGE_MOTION.transition, delay: 0.06 + i * 0.04 }}
+						onClick={() => composerRef.current?.setText(translate(it.promptKey))}
+					>
+						<Label text={translate(it.nameKey)} />
+						<Label className="caption" text={`/${it.id}`} />
+					</motion.div>
+				))}
+			</div>
+		</div>
+	);
 
+	const renderChat = () => {
+		const waitingForStart = isRunning && (lastMessage?.role == 'user');
+		const cnSend = [ 'sendButton', (isRunning && isEmpty ? 'isStop' : ''), (!isRunning && isEmpty ? 'isDisabled' : '') ];
+
+		let content = null;
 		if (chat.loading) {
 			content = <Loader />;
 		} else
 		if (!chat.messages.length) {
+			content = renderEmpty();
+		} else {
+			// Keyed by chat, so opening another session shows its messages without replaying the animation
 			content = (
-				<div className="empty">
-					<Icon className="sparkle" name="header/agent" />
-					<Label className="title" text={translate('agentEmptyTitle')} />
-					<Label className="text" text={translate('agentEmptyText')} />
+				<div key={chatId} className="messages">
+					<AnimatePresence initial={false}>
+						{chat.messages.map(renderMessage)}
+						{waitingForStart ? (
+							<motion.div key="waiting" className="messageWrap" {...MESSAGE_MOTION}>
+								<div className="message assistant isStreaming">
+									<AgentAuthor />
+									<div className="content"><TypingDots /></div>
+								</div>
+							</motion.div>
+						) : null}
+						{renderError()}
+					</AnimatePresence>
 				</div>
 			);
-		} else {
-			content = chat.messages.map(renderMessage);
 		};
 
 		return (
 			<>
-				<div id="body" className="body" ref={bodyRef}>
-					{content}
-					{isRunning ? <Label className="working" text={translate('agentWorking')} /> : ''}
-					{renderError()}
+				<div className="chatWrap">
+					<div id="body" className="body" ref={bodyRef} onScroll={onScroll}>
+						{content}
+					</div>
+
+					<AnimatePresence>
+						{showScrollDown ? (
+							<motion.div
+								key="scrollDown"
+								className="scrollDown"
+								initial={{ opacity: 0, scale: 0.8 }}
+								animate={{ opacity: 1, scale: 1 }}
+								exit={{ opacity: 0, scale: 0.8 }}
+								transition={{ duration: 0.15 }}
+								onClick={onScrollDown}
+							>
+								<Icon name="chat/navigation/arrow" tooltipParam={{ text: translate('agentScrollDown') }} />
+							</motion.div>
+						) : null}
+					</AnimatePresence>
 				</div>
 
 				<div className="composer">
-					<div className="textareaWrap">
+					<div className="composerBox">
 						<AgentComposer
 							ref={composerRef}
 							placeholder={translate('agentPlaceholder')}
 							onSend={(text, mentions) => S.Agent.send(text, mentions)}
 							onAction={onAction}
+							onEmptyChange={setIsEmpty}
 						/>
+						<div
+							className={cnSend.join(' ')}
+							onClick={onSend}
+						>
+							<AnimatePresence initial={false} mode="popLayout">
+								{(isRunning && isEmpty) ? (
+									<motion.span key="stop" className="stopSquare" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.4, opacity: 0 }} transition={{ duration: 0.15 }} />
+								) : (
+									<motion.span key="send" className="sendIcon" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.4, opacity: 0 }} transition={{ duration: 0.15 }}>
+										<Icon name="chat/buttons/send" />
+									</motion.span>
+								)}
+							</AnimatePresence>
+						</div>
 					</div>
-					<div className="buttons">
-						{isRunning ? <Button text={translate('agentStop')} color="blank" className="c28" onClick={() => S.Agent.stop()} /> : ''}
-						<Button text={translate('agentSend')} color="accent" className="c28" onClick={() => composerRef.current?.send()} />
-					</div>
+					<Label className="hint" text={translate(isRunning ? 'agentComposerHintRunning' : 'agentComposerHint')} />
 				</div>
 			</>
 		);
@@ -363,6 +398,8 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 		default: body = renderChat(); break;
 	};
 
+	const cnView = [ 'view', view ];
+
 	return (
 		<>
 			<div id="head" className="head">
@@ -397,7 +434,20 @@ const SidebarPageAgent = forwardRef<{}, I.SidebarPageComponent>((props, ref: any
 				</div>
 			</div>
 
-			{body}
+			<MotionConfig reducedMotion="user">
+				<AnimatePresence mode="wait" initial={false}>
+					<motion.div
+						key={view}
+						className={cnView.join(' ')}
+						initial={{ opacity: 0, x: (view == 'chat') ? -8 : 8 }}
+						animate={{ opacity: 1, x: 0 }}
+						exit={{ opacity: 0 }}
+						transition={{ duration: 0.16, ease: 'easeOut' }}
+					>
+						{body}
+					</motion.div>
+				</AnimatePresence>
+			</MotionConfig>
 		</>
 	);
 

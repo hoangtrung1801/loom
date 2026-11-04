@@ -10,11 +10,15 @@ interface Props {
 	onSend: (text: string, mentions: AgentMention[]) => void;
 	/** Runs an action command (/new, /history...). Prompt commands are handled here. */
 	onAction: (command: AgentCommand) => void;
+	/** Called when the input turns empty or non-empty, for the send button's state. */
+	onEmptyChange?: (isEmpty: boolean) => void;
 };
 
 export interface AgentComposerRef {
 	send: () => void;
 	focus: () => void;
+	/** Replaces the input with text (a suggestion), caret at the end. */
+	setText: (text: string) => void;
 };
 
 const ID = 'agentComposer';
@@ -31,13 +35,14 @@ const MENTION_BOUNDARY = [ ' ', '\n', '(', '[', '"', '\'' ];
  */
 const AgentComposer = forwardRef<AgentComposerRef, Props>((props, ref) => {
 
-	const { placeholder, onSend, onAction } = props;
+	const { placeholder, onSend, onAction, onEmptyChange } = props;
 	const editableRef = useRef(null);
 	const range = useRef<I.TextRange>({ from: 0, to: 0 });
 	const marks = useRef<I.Mark[]>([]);
 	/** Type names of mentioned objects, sent to the agent with the mention. */
 	const typeNames = useRef<Map<string, string>>(new Map());
 	const timeoutFilter = useRef(0);
+	const isEmpty = useRef(true);
 
 	const getValue = (): string => String(editableRef.current?.getTextValue() || '');
 
@@ -53,6 +58,16 @@ const AgentComposer = forwardRef<AgentComposerRef, Props>((props, ref) => {
 		editable.setValue(Mark.toHtml(text, marks.current));
 		editable.placeholderCheck();
 		editable.setRange(newRange);
+		checkEmpty(text);
+	};
+
+	const checkEmpty = (text: string) => {
+		const empty = !String(text || '').trim();
+
+		if (empty != isEmpty.current) {
+			isEmpty.current = empty;
+			onEmptyChange?.(empty);
+		};
 	};
 
 	/** Reads text and marks back from the DOM after the user typed. */
@@ -66,6 +81,7 @@ const AgentComposer = forwardRef<AgentComposerRef, Props>((props, ref) => {
 
 		range.current = editable.getRange() || range.current;
 		marks.current = Mark.checkRanges(parsed.text, parsed.marks);
+		checkEmpty(parsed.text);
 	};
 
 	const menuParam = () => ({
@@ -260,6 +276,10 @@ const AgentComposer = forwardRef<AgentComposerRef, Props>((props, ref) => {
 	useImperativeHandle(ref, () => ({
 		send,
 		focus: () => editableRef.current?.setFocus(),
+		setText: (text: string) => {
+			setValue(text, [], { from: text.length, to: text.length });
+			editableRef.current?.setFocus();
+		},
 	}));
 
 	return (

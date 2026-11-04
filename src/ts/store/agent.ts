@@ -100,7 +100,12 @@ class AgentStore {
 
 	/** Starts listening to the main process. Called once at app start. */
 	init () {
-		Renderer.on('agentEvent', (e: any, ev: any) => this.onEvent(ev));
+		// One listener for both: Renderer.on replaces earlier listeners of the event, so Lo (chat
+		// members) cannot register its own without cutting the panel off from its runs
+		Renderer.on('agentEvent', (e: any, ev: any) => {
+			this.onEvent(ev);
+			S.Lo.onEvent(ev);
+		});
 		Renderer.on('agentAppToolCall', (e: any, call: any) => this.onAppToolCall(call));
 	};
 

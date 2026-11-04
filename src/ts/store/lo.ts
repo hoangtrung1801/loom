@@ -30,11 +30,6 @@ class LoStore {
 	private runs: Map<string, LoRun> = new Map();
 	private queues: Map<string, Promise<void>> = new Map();
 
-	/** Starts listening to the main process. Called once at app start. */
-	init () {
-		Renderer.on('agentEvent', (e: any, ev: any) => this.onEvent(ev));
-	};
-
 	/** Whether Lo is writing this message right now. */
 	isRunning (messageId: string): boolean {
 		for (const run of this.runs.values()) {
@@ -221,7 +216,8 @@ class LoStore {
 		return { ...base, mentions };
 	};
 
-	private onEvent (ev: any) {
+	/** An agent event from the main process; S.Agent forwards them all, Lo keeps its own runs. */
+	onEvent (ev: any) {
 		const run = this.runs.get(ev?.runId);
 		if (!run) {
 			return;
