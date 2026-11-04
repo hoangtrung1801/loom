@@ -238,11 +238,15 @@ class UtilObject {
 	};
 
 	/**
-	 * True when the user prefers linked objects in a side panel and the current context can host one:
-	 * the main editor, or an object already shown in the side panel.
+	 * True when the user chose to open objects in a side panel and the current context can host one:
+	 * anywhere except inside a regular popup, where an object already open in the side panel is replaced.
 	 */
 	isSidebarMode (): boolean {
-		return S.Common.linkOpenInSidebar && (keyboard.isMainEditor() || !!U.Dom.get('popupPage')?.classList.contains(SIDEBAR_POPUP_CLASS));
+		if (S.Common.openObjectMode != I.OpenObjectMode.Sidebar) {
+			return false;
+		};
+
+		return !keyboard.isPopup() || !!U.Dom.get('popupPage')?.classList.contains(SIDEBAR_POPUP_CLASS);
 	};
 	
 	async openRoute (object: any, param?: Partial<I.RouteParam>) {

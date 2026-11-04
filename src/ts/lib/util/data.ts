@@ -1270,7 +1270,7 @@ class UtilData {
 						S.Auth.accountSet(message.account);
 						S.Common.configSet(message.account.config, false);
 						S.Common.gridTitleClickSet(true);
-						S.Common.fullscreenObjectSet(true);
+						S.Common.openObjectModeSet(I.OpenObjectMode.Fullscreen);
 						U.Subscription.createGlobal();
 
 						this.onInfo(message.account.info);
