@@ -2912,6 +2912,7 @@
 	"agentToolApproval": "Allow this change?",
 	"agentToolDone": "Done",
 	"agentToolError": "Failed",
+	"agentToolGroup": "%s tool calls",
 	"agentProviderAnthropic": "Anthropic (Claude)",
 	"agentProviderCustom": "OpenAI-compatible",
 	"agentSettingsProvider": "Provider",

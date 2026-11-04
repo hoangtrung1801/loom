@@ -9,6 +9,14 @@ describe('parseInline', () => {
 		]);
 	});
 
+	test('parses markdown and bare links', () => {
+		expect(parseInline('see [docs](https://a.io/x) and https://b.io/y.')).toEqual([
+			{ type: 'text', text: 'see ' }, { type: 'link', text: 'docs', url: 'https://a.io/x' },
+			{ type: 'text', text: ' and ' }, { type: 'link', text: 'https://b.io/y', url: 'https://b.io/y' },
+			{ type: 'text', text: '.' },
+		]);
+	});
+
 	test('keeps html as literal text', () => {
 		expect(parseInline('<img src=x onerror=alert(1)>')).toEqual([ { type: 'text', text: '<img src=x onerror=alert(1)>' } ]);
 	});

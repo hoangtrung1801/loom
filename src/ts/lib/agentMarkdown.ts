@@ -4,14 +4,16 @@
  * that into React elements, so model output never reaches innerHTML.
  */
 
-export type AgentInline = { type: 'text' | 'bold' | 'italic' | 'code'; text: string };
+export type AgentInline =
+	{ type: 'text' | 'bold' | 'italic' | 'code'; text: string } |
+	{ type: 'link'; text: string; url: string };
 
 export type AgentBlock =
 	{ type: 'paragraph' | 'heading'; inline: AgentInline[] } |
 	{ type: 'list'; ordered: boolean; items: AgentInline[][] } |
 	{ type: 'code'; text: string };
 
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\s][^*\n]*\*)/g;
+const INLINE = /(`[^`\n]+`|\[[^\]\n]+\]\([^)\s]+\)|https?:\/\/[^\s<>()]+|\*\*[^*\n]+\*\*|\*[^*\s][^*\n]*\*)/g;
 
 export const parseInline = (text: string): AgentInline[] => {
 	const out: AgentInline[] = [];
@@ -27,6 +29,17 @@ export const parseInline = (text: string): AgentInline[] => {
 
 		if (token.startsWith('`')) {
 			out.push({ type: 'code', text: token.slice(1, -1) });
+		} else
+		if (token.startsWith('[')) {
+			const split = token.lastIndexOf('](');
+			out.push({ type: 'link', text: token.slice(1, split), url: token.slice(split + 2, -1) });
+		} else
+		if (/^https?:/.test(token)) {
+			// Trailing sentence punctuation is not part of a bare URL
+			const url = token.replace(/[.,;:!?'"]+$/, '');
+			out.push({ type: 'link', text: url, url });
+			last = index + url.length;
+			continue;
 		} else
 		if (token.startsWith('**')) {
 			out.push({ type: 'bold', text: token.slice(2, -2) });

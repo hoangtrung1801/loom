@@ -32,6 +32,9 @@ const Inline = ({ items }: { items: AgentInline[] }) => (
 			if (it.type == 'code') {
 				return <code key={i}>{it.text}</code>;
 			};
+			if (it.type == 'link') {
+				return <a key={i} href={it.url} onClick={e => { e.preventDefault(); Action.openUrl(it.url); }}>{it.text}</a>;
+			};
 			return <React.Fragment key={i}>{it.text}</React.Fragment>;
 		})}
 	</>
@@ -148,6 +151,31 @@ const ToolRow = ({ part }: { part: ToolPart }) => {
 	);
 };
 
+/** Consecutive tool calls folded into one row, expandable to the individual calls. */
+const ToolGroup = ({ parts }: { parts: ToolPart[] }) => {
+	const needsAttention = parts.some(it => [ 'approval', 'error' ].includes(it.status));
+	const isRunning = parts.some(it => it.status == 'running');
+	const [ isOpen, setIsOpen ] = React.useState(false);
+	const open = isOpen || needsAttention;
+	const cn = [ 'toolGroup', (open ? 'isOpen' : ''), (isRunning ? 'running' : '') ];
+
+	return (
+		<div className={cn.join(' ')}>
+			<div className="line" onClick={() => setIsOpen(!isOpen)}>
+				{isRunning ? <span className="spinner" /> : <Icon className="statusIcon" name="common/tick" />}
+				<Label className="name" text={U.String.sprintf(translate('agentToolGroup'), parts.length)} />
+				<span className="arrow" />
+			</div>
+
+			{open ? (
+				<div className="items">
+					{parts.map(part => <ToolRow key={part.callId} part={part} />)}
+				</div>
+			) : ''}
+		</div>
+	);
+};
+
 interface AssistantProps {
 	message: AgentChatMessage;
 	/** This is the answer being written: show the caret, or the typing dots before any text. */
@@ -160,6 +188,20 @@ export const AssistantMessage = ({ message, isStreaming }: AssistantProps) => {
 	const lastIsText = lastTextIndex == (message.parts.length - 1);
 	const hasRunningTool = message.parts.some(it => (it.type == 'tool') && (it.status == 'running'));
 	const cn = [ 'message', 'assistant', (isStreaming ? 'isStreaming' : '') ];
+	const groups: ({ type: 'text'; text: string; index: number } | { type: 'tools'; parts: ToolPart[] })[] = [];
+
+	message.parts.forEach((part, index) => {
+		const last = groups[groups.length - 1];
+
+		if (part.type == 'text') {
+			groups.push({ type: 'text', text: part.text, index });
+		} else
+		if (last && (last.type == 'tools')) {
+			last.parts.push(part);
+		} else {
+			groups.push({ type: 'tools', parts: [ part ] });
+		};
+	});
 
 	return (
 		<div className={cn.join(' ')}>
