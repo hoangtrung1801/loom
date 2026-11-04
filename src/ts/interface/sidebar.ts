@@ -56,3 +56,9 @@ export enum SidebarRelationList {
 	Hidden 			= 3,
 	Local 			= 4,
 };
+
+export enum OpenObjectMode {
+	Popup		 = 'popup',
+	Fullscreen	 = 'fullscreen',
+	Sidebar		 = 'sidebar',
+};

@@ -390,6 +390,17 @@ class CommonStore {
 		return this.boolGet('linkOpenInSidebar');
 	};
 
+	/**
+	 * How objects open from links and lists: a centered popup, the full page or a docked side panel.
+	 * Derived from the two stored flags so existing settings keep working.
+	 */
+	get openObjectMode (): I.OpenObjectMode {
+		if (this.linkOpenInSidebar) {
+			return I.OpenObjectMode.Sidebar;
+		};
+		return this.fullscreenObject ? I.OpenObjectMode.Fullscreen : I.OpenObjectMode.Popup;
+	};
+
 	get hideSidebar (): boolean {
 		return this.boolGet('hideSidebar');
 	};
@@ -857,11 +868,12 @@ class CommonStore {
 	};
 
 	/**
-	 * Sets whether linked objects open in a side panel.
-	 * @param {boolean} v - The value.
+	 * Sets how objects are opened.
+	 * @param {I.OpenObjectMode} v - The mode.
 	 */
-	linkOpenInSidebarSet (v: boolean) {
-		this.boolSet('linkOpenInSidebar', v);
+	openObjectModeSet (v: I.OpenObjectMode) {
+		this.boolSet('linkOpenInSidebar', v == I.OpenObjectMode.Sidebar);
+		this.boolSet('fullscreenObject', v != I.OpenObjectMode.Popup);
 	};
 
 	/**

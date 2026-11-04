@@ -9,7 +9,7 @@ enum ChatKey {
 
 const PageMainSettingsPersonal = forwardRef<I.PageRef, I.PageSettingsComponent>((props, ref) => {
 
-	const { config, linkStyle, fileStyle, fullscreenObject, linkOpenInSidebar, hideSidebar, gridTitleClick, notificationSound, hideFileObjectsInTree, unicodeReplace } = S.Common;
+	const { config, linkStyle, fileStyle, openObjectMode, hideSidebar, gridTitleClick, notificationSound, hideFileObjectsInTree, unicodeReplace } = S.Common;
 	const { hideTray, showMenuBar, alwaysShowTabs, hardwareAcceleration } = config;
 	const { theme, chatCmdSend, commentCmdSend, sendTyping } = S.Common;
 	const { networkConfig } = S.Auth;
@@ -67,6 +67,11 @@ const PageMainSettingsPersonal = forwardRef<I.PageRef, I.PageSettingsComponent>(
 		{ id: I.LinkDefaultStyle.Text, name: translate('popupSettingsPersonalLinkStyleText') },
 		{ id: I.LinkDefaultStyle.Card, name: translate('popupSettingsPersonalLinkStyleCard') },
 		{ id: I.LinkDefaultStyle.CardMedium, name: translate('popupSettingsPersonalLinkStyleCardMedium') },
+	];
+	const openObjectModes: I.Option[] = [
+		{ id: I.OpenObjectMode.Popup, name: translate('popupSettingsPersonalOpenObjectsPopup') },
+		{ id: I.OpenObjectMode.Fullscreen, name: translate('popupSettingsPersonalOpenObjectsFullscreen') },
+		{ id: I.OpenObjectMode.Sidebar, name: translate('popupSettingsPersonalOpenObjectsSidebar') },
 	];
 	const fileStyles: I.Option[] = [
 		{ id: I.FileStyle.Embed, name: translate('blockNameEmbed') },
@@ -199,23 +204,18 @@ const PageMainSettingsPersonal = forwardRef<I.PageRef, I.PageSettingsComponent>(
 
 			<div className="actionItems">
 				<div className="item">
-					<Label text={translate('popupSettingsPersonalFullscreen')} />
-					<Switch
-						className="big"
-						value={fullscreenObject}
-						onChange={(e: any, v: boolean) => {
-							S.Common.fullscreenObjectSet(v);
+					<Label text={translate('popupSettingsPersonalOpenObjects')} />
+
+					<Select
+						id="openObjectMode"
+						value={openObjectMode}
+						options={openObjectModes}
+						onChange={v => {
+							S.Common.openObjectModeSet(v);
 							analytics.event('ShowObjectFullscreen', { type: v });
 						}}
-					/>
-				</div>
-
-				<div className="item">
-					<Label text={translate('popupSettingsPersonalLinkOpenInSidebar')} />
-					<Switch
-						className="big"
-						value={linkOpenInSidebar}
-						onChange={(e: any, v: boolean) => S.Common.linkOpenInSidebarSet(v)}
+						arrowClassName="black"
+						menuParam={{ horizontal: I.MenuDirection.Right }}
 					/>
 				</div>
 
