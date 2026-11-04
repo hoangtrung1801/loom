@@ -90,7 +90,7 @@ failed and everything it registered is removed.
 | `theme()` | `'light'` or `'dark'`. |
 | `notice(text)` | Shows a toast. |
 | `space.id()` | Current space id. |
-| `objects.search({ query, filters, sorts, limit })` | Searches objects of the current space, resolves with plain detail objects. |
+| `objects.search({ query, filters, sorts, limit, keys })` | Searches objects of the current space, resolves with plain detail objects. `keys` adds detail keys to the default ones. |
 | `objects.get(id)` | Details already loaded in the app, or `null`. |
 | `objects.getById(id)` | Loads details, resolves `null` after 5 seconds without an answer. |
 | `objects.open(id)` | Opens an object. |
@@ -134,7 +134,9 @@ this.registerView('progress', {
 ```
 
 The view props are `records`, `relations`, `view`, `config`, `readonly`, `hasMore`, `open(id)`, `update(id, key, value)`,
-`create()` and `loadMore()`. Users pick the view in the layout picker of the view settings; the choice is stored in the
+`create(details?)`, `menu(e, id)` and `loadMore()`. `create()` runs the app's usual "new record" flow; `create(details)`
+creates a record of the view's type with those details without opening it and resolves with its details. `menu(e, id)`
+opens the app's object context menu for a record. Users pick the view in the layout picker of the view settings; the choice is stored in the
 dataview block fields (`pluginViews`, `pluginViewConfig`), so it syncs with the object. A device without the plugin
 shows a "This view needs plugin" message instead. A view that throws renders an error box.
 

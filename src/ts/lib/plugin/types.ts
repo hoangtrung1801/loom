@@ -44,7 +44,8 @@ export interface ViewRenderProps {
 	hasMore: boolean;
 	open(id: string): void;
 	update(id: string, key: string, value: any): void;
-	create(details?: any): void;
+	create(details?: any): Promise<any>;
+	menu(e: any, id: string): void;
 	loadMore(): void;
 };
 
@@ -69,6 +70,7 @@ export interface SearchParam {
 	filters?: any[];
 	sorts?: any[];
 	limit?: number;
+	keys?: string[];
 };
 
 export interface LoomApi {

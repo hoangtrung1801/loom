@@ -46,7 +46,13 @@ declare module 'loom' {
 		hasMore: boolean;
 		open(id: string): void;
 		update(id: string, key: string, value: any): void;
-		create(details?: any): void;
+		/**
+		 * Without details: the app's usual "new record" flow. With details: creates a record of the view's type with
+		 * them, without opening it, and resolves with its details.
+		 */
+		create(details?: any): Promise<any>;
+		/** Opens the app's object context menu (open, archive, link to, ...) at the mouse position. */
+		menu(e: any, id: string): void;
 		loadMore(): void;
 	}
 
@@ -73,6 +79,8 @@ declare module 'loom' {
 		filters?: { relationKey: string; condition: number; value: any }[];
 		sorts?: { relationKey: string; type: number }[];
 		limit?: number;
+		/** Extra detail keys to return, on top of the default ones. */
+		keys?: string[];
 	}
 
 	export interface LoomApi {

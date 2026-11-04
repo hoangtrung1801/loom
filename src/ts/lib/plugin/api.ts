@@ -28,6 +28,7 @@ export const createApi = (manifest: PluginManifest): LoomApi => {
 					filters: param.filters || [],
 					sorts: param.sorts || [],
 					limit: Number(param.limit) || 50,
+					keys: U.Common.arrayUnique(J.Relation.default.concat(param.keys || [])),
 				}, (message: any) => resolve(message.error?.code ? [] : (message.records || [])));
 			}),
 

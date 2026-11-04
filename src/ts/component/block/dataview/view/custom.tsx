@@ -7,8 +7,8 @@ import type { ViewRenderProps } from 'Lib/plugin/types';
 const ViewCustom = forwardRef<I.ViewRef, I.ViewComponent>((props, ref) => {
 
 	const {
-		rootId, block, className, readonly, getView, getSubId, getRecords, getRecord, getVisibleRelations, getLimit,
-		loadData, onRecordAdd, onCellChange,
+		rootId, block, className, readonly, isCollection, getView, getSubId, getRecords, getRecord, getVisibleRelations, getLimit,
+		getTarget, getTypeId, loadData, onRecordAdd, onCellChange, onContext,
 	} = props;
 	const view = getView();
 	const subId = getSubId();
@@ -21,6 +21,45 @@ const ViewCustom = forwardRef<I.ViewRef, I.ViewComponent>((props, ref) => {
 	useImperativeHandle(ref, () => ({
 		resize: () => {},
 	}));
+
+	// Creates a record of the view's type with the given details, without opening it, and puts it first in the view
+	const createWithDetails = (details: any): Promise<any> => new Promise((resolve, reject) => {
+		const objectId = getTarget?.()?.id || rootId;
+		const type = S.Record.getTypeById(getTypeId?.());
+
+		if (!type) {
+			reject(new Error('This view has no object type'));
+			return;
+		};
+
+		const base = Dataview.getDetails(rootId, block.id, objectId, view.id);
+
+		if (isCollection) {
+			base.createdInContext = objectId;
+		};
+
+		C.ObjectCreate({ ...base, ...details }, [], type.defaultTemplateId || '', type.uniqueKey, S.Common.space, (message: any) => {
+			if (message.error.code) {
+				reject(new Error(message.error.description));
+				return;
+			};
+
+			const object = message.details;
+			const records = [ ...S.Record.getRecordIds(subId, '') ];
+
+			S.Detail.update(subId, { id: object.id, details: object }, true);
+
+			if (!records.includes(object.id)) {
+				S.Record.recordsSet(subId, '', [ object.id ].concat(records));
+			};
+
+			if (isCollection) {
+				C.ObjectCollectionAdd(objectId, [ object.id ]);
+			};
+
+			resolve(object);
+		});
+	});
 
 	const getProps = (): ViewRenderProps => {
 		const { offset, total } = S.Record.getMeta(subId, '');
@@ -47,7 +86,19 @@ const ViewCustom = forwardRef<I.ViewRef, I.ViewComponent>((props, ref) => {
 			hasMore: (records.length < total),
 			open: (id: string) => U.Object.openConfig(null, getRecord(id)),
 			update: (id: string, relationKey: string, value: any) => onCellChange?.(id, relationKey, value),
-			create: () => onRecordAdd?.({}, 1),
+			create: (details?: any) => {
+				if (details && ('object' == typeof(details))) {
+					return createWithDetails(details);
+				};
+
+				onRecordAdd?.({}, 1);
+				return Promise.resolve(null);
+			},
+			menu: (e: any, id: string) => {
+				if (e && id && onContext) {
+					onContext(e, id);
+				};
+			},
 			loadMore: () => {
 				const next = offset + limit;
 
