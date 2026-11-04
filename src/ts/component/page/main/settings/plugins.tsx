@@ -39,7 +39,8 @@ const PageMainSettingsPlugins = forwardRef<I.PageRef, I.PageSettingsComponent>((
 		onPage('pluginSettings');
 	};
 
-	const Row = (item: any) => {
+	// A render function rather than a component declared in render, so rows are not remounted on every update
+	const renderRow = (item: any) => {
 		const { id, manifest, error, loaded, enabled } = item;
 		const name = manifest?.name || id;
 		const meta = [];
@@ -58,7 +59,7 @@ const PageMainSettingsPlugins = forwardRef<I.PageRef, I.PageSettingsComponent>((
 		};
 
 		return (
-			<div className={cn.join(' ')}>
+			<div key={id} className={cn.join(' ')}>
 				<div className="details">
 					<div className="name" title={name}>{name}</div>
 					{meta.length ? <Label className="meta" text={meta.join(' · ')} /> : ''}
@@ -70,6 +71,7 @@ const PageMainSettingsPlugins = forwardRef<I.PageRef, I.PageSettingsComponent>((
 						<Button size={28} color="blank" text={translate('pluginsOptions')} onClick={() => onOptions(id)} />
 					) : ''}
 					<Switch
+						key={`enabled-${enabled}`}
 						className="big"
 						value={enabled}
 						readonly={!manifest}
@@ -104,7 +106,8 @@ const PageMainSettingsPlugins = forwardRef<I.PageRef, I.PageSettingsComponent>((
 						<Label text={translate('pluginsRestrictedMode')} />
 						<Label className="meta" text={translate('pluginsRestrictedModeText')} />
 					</div>
-					<Switch ref={switchRef} className="big" value={restricted} onChange={(e: any, v: boolean) => onRestricted(v)} />
+					{/* Switch keeps its own state: the key remounts it whenever the store value changes, e.g. after the confirm popup */}
+					<Switch key={`restricted-${restricted}`} ref={switchRef} className="big" value={restricted} onChange={(e: any, v: boolean) => onRestricted(v)} />
 				</div>
 			</div>
 
@@ -116,7 +119,7 @@ const PageMainSettingsPlugins = forwardRef<I.PageRef, I.PageSettingsComponent>((
 
 			{list.length ? (
 				<div className="actionItems pluginList">
-					{list.map(item => <Row key={item.id} {...item} />)}
+					{list.map(item => renderRow(item))}
 				</div>
 			) : (
 				<EmptyState

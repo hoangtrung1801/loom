@@ -49,7 +49,7 @@ module.exports = class SamplePlugin extends Plugin {
 		this.addCommand({
 			id: 'say-hello',
 			name: 'Sample: say hello',
-			hotkey: 'Mod+Alt+H',
+			hotkey: 'Mod+Alt+Y',
 			callback: async () => {
 				const data = await this.loadData();
 				const count = (Number(data.hello) || 0) + 1;
