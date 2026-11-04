@@ -10,6 +10,18 @@
 		}
 
 		.deleteWrapper { position: absolute; }
+
+		/* Linked object shown as a docked side panel instead of a centered modal */
+		&.popupPageSidebar { pointer-events: none; }
+		&.popupPageSidebar {
+			.dimmer { display: none; }
+			.innerWrap {
+				pointer-events: auto; left: auto !important; right: 0px; top: 0px !important; margin: 0px !important;
+				width: 480px; max-width: 100%; height: 100%; border-radius: 0px; transform: translateX(100%);
+			}
+		}
+		&.popupPageSidebar.show { .innerWrap { transform: none; } }
+
 		.innerWrap {
 			> .content { height: 100%; }
 			> .content {

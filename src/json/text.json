@@ -1063,6 +1063,7 @@
 	"popupSettingsPersonalSpellcheckLanguage": "Spellcheck Languages",
 	"popupSettingsPersonalInterfaceLanguage": "Interface Language",
 	"popupSettingsPersonalFullscreen": "Open objects full screen",
+	"popupSettingsPersonalLinkOpenInSidebar": "Open linked objects in side panel",
 	"popupSettingsPersonalNavigationMenu": "Show Quick-Capture menu on",
 	"popupSettingsPersonalNavigationMenuContext": "Right click",
 	"popupSettingsPersonalNavigationMenuClick": "Click",
