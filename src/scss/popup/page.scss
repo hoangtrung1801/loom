@@ -17,7 +17,7 @@
 			.dimmer { display: none; }
 			.innerWrap {
 				pointer-events: auto; left: auto !important; right: 0px; top: 0px !important; margin: 0px !important;
-				width: 480px; max-width: 100%; height: 100%; border-radius: 0px; transform: translateX(100%);
+				width: 520px; max-width: 100%; height: 100%; border-radius: 0px; transform: translateX(100%);
 			}
 		}
 		&.popupPageSidebar.show { .innerWrap { transform: none; } }
