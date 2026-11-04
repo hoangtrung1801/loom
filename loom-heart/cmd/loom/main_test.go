@@ -150,6 +150,14 @@ func TestRunExitCodes(t *testing.T) {
 		}
 	})
 
+	t.Run("--version prints the stamped version", func(t *testing.T) {
+		code, stdout, stderr := runCLI("--version")
+		assert.Equal(t, 0, code)
+		assert.Equal(t, "loom "+version+"\n", stdout)
+		assert.Equal(t, "dev", version, "local builds default to dev")
+		assert.NotContains(t, stderr, "error:")
+	})
+
 	t.Run("verb --help exits 0 without an error line", func(t *testing.T) {
 		code, _, stderr := runCLI("find", "--help")
 		assert.Equal(t, 0, code, "--help is a request, not a mistake")

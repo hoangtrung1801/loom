@@ -43,6 +43,10 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/core/api/wrapper"
 )
 
+// version is stamped at build time by the release workflow:
+// go build -ldflags "-X main.version=v0.3.1". Local builds report "dev".
+var version = "dev"
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
@@ -55,6 +59,10 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if len(argv) == 0 {
 			return 2
 		}
+		return 0
+	}
+	if argv[0] == "--version" || argv[0] == "-version" {
+		fmt.Fprintf(stdout, "loom %s\n", version)
 		return 0
 	}
 	verb := argv[0]
@@ -305,6 +313,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintf(w, "  %-15s %s\n", "serve", "run Loom headless, synced through the any-sync network, and serve the API: serve --new | LOOM_MNEMONIC=… serve")
 	fmt.Fprintf(w, "  %-15s %s\n", "skill", "install the loom skill for a coding agent: skill install [--agent claude,codex] [--project] [--dir DIR] | uninstall | print")
 	fmt.Fprintf(w, "  %-15s %s\n", "tools", "print the machine-readable tool manifest (JSON); --tier small|large|full")
+	fmt.Fprintf(w, "  %-15s %s\n", "--version", "print the loom version")
 	fmt.Fprintf(w, "  %-15s %s\n", "mcp", "serve the tools over MCP stdio for AI agents; --tier small|large|full")
 	fmt.Fprintln(w, "\ncross-verb flags: --json, --dry-run, --if-match <etag>, --create-missing")
 	fmt.Fprintln(w, "environment: LOOM_API_URL (default "+wrapper.DefaultBaseURL+"), LOOM_API_KEY (or loom auth), LOOM_CONFIG, LOOM_SESSION")
