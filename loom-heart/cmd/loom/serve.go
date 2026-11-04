@@ -386,11 +386,23 @@ func keyAccepted(ctx context.Context, baseURL, key string) bool {
 	return key != "" && authCall(ctx, baseURL, http.MethodGet, "/v2/auth/whoami", key, nil, &who) == nil
 }
 
+// keyReachesAllSpaces is keyAccepted plus a check that the key is not limited
+// to a list of spaces. serve reuses the key saved in the CLI config, which may
+// have been granted only some spaces; a backup run with it would silently skip
+// every other space.
+func keyReachesAllSpaces(ctx context.Context, baseURL, key string) bool {
+	var who v2model.WhoamiResponse
+	if key == "" || authCall(ctx, baseURL, http.MethodGet, "/v2/auth/whoami", key, nil, &who) != nil {
+		return false
+	}
+	return !who.Grant.Restricted
+}
+
 // ensureAPIKey leaves the CLI config pointing at this server with a key it
 // accepts: the saved one if it still works, otherwise a freshly minted one.
 func ensureAPIKey(ctx context.Context, mw serveMiddleware, baseURL string) (key string, minted bool, err error) {
 	cfg := loadConfig()
-	if cfg.ApiUrl == baseURL && keyAccepted(ctx, baseURL, cfg.ApiKey) {
+	if cfg.ApiUrl == baseURL && keyReachesAllSpaces(ctx, baseURL, cfg.ApiKey) {
 		return cfg.ApiKey, false, nil
 	}
 	resp := mw.AccountLocalLinkCreateApp(ctx, &pb.RpcAccountLocalLinkCreateAppRequest{
