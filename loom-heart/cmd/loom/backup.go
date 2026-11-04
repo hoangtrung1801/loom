@@ -60,13 +60,18 @@ type backupSpace struct {
 }
 
 // spaceListing returns the spaces the API key can see, with full ids.
-func listBackupSpaces(ctx context.Context, baseURL, key string) ([]backupSpace, error) {
+func listBackupSpaces(ctx context.Context, baseURL, key string, log io.Writer) ([]backupSpace, error) {
 	var out []backupSpace
+	warned := false
 	for offset := 0; ; {
 		var page v2model.ListSpacesResponse
 		path := fmt.Sprintf("/v2/spaces?ids=full&limit=100&offset=%d", offset)
 		if err := authCall(ctx, baseURL, http.MethodGet, path, key, nil, &page); err != nil {
 			return nil, fmt.Errorf("list spaces: %w", err)
+		}
+		if page.HasNotGrantedSpaces && !warned {
+			warned = true
+			fmt.Fprintln(log, "backup: warning: the API key is not granted every space, so some spaces are not backed up")
 		}
 		for _, s := range page.Data {
 			out = append(out, backupSpace{id: s.Id, name: s.Name})
@@ -328,7 +333,7 @@ func backupLoop(ctx context.Context, mw backupExporter, baseURL, key string, opt
 			return
 		case <-time.After(delay):
 		}
-		spaces, err := listBackupSpaces(ctx, baseURL, key)
+		spaces, err := listBackupSpaces(ctx, baseURL, key, log)
 		if err == nil {
 			err = runBackup(ctx, mw, spaces, opt, runGit, time.Now(), log)
 		}

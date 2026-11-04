@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -223,7 +224,7 @@ func TestListBackupSpaces(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := listBackupSpaces(context.Background(), srv.URL, "k")
+	got, err := listBackupSpaces(context.Background(), srv.URL, "k", io.Discard)
 
 	require.NoError(t, err)
 	assert.Equal(t, []backupSpace{{id: "full-1", name: "One"}, {id: "full-2", name: "Two"}}, got)
