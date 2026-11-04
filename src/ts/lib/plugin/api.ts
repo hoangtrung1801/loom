@@ -61,6 +61,14 @@ export const createApi = (manifest: PluginManifest): LoomApi => {
 				});
 			}),
 
+			archive: (ids: string[]) => new Promise<void>((resolve, reject) => {
+				ids = (Array.isArray(ids) ? ids : [ ids ]).filter(it => it);
+
+				C.ObjectListSetIsArchived(ids, true, false, (message: any) => {
+					message.error?.code ? reject(new Error(message.error.description)) : resolve();
+				});
+			}),
+
 			create: (details?: any, typeKey?: string) => new Promise<any>((resolve, reject) => {
 				const type = typeKey ? S.Record.getTypeByKey(typeKey) : S.Record.getTypeById(S.Common.type);
 				const key = typeKey || type?.uniqueKey || '';

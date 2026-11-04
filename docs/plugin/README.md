@@ -95,6 +95,7 @@ failed and everything it registered is removed.
 | `objects.getById(id)` | Loads details, resolves `null` after 5 seconds without an answer. |
 | `objects.open(id)` | Opens an object. |
 | `objects.update(id, key, value)` | Sets one detail (property) of an object. |
+| `objects.archive(ids)` | Moves objects to the Bin. |
 | `objects.create(details, typeKey)` | Creates an object, resolves with its details. |
 | `ui.openPopup(id, param)` | Opens one of the app popups. |
 | `ui.confirm(title, text)` | Confirm popup, resolves with the answer. |

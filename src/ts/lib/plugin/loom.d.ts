@@ -97,6 +97,8 @@ declare module 'loom' {
 			getById(id: string): Promise<any>;
 			open(id: string): void;
 			update(id: string, key: string, value: any): Promise<void>;
+			/** Moves objects to the Bin. */
+			archive(ids: string[]): Promise<void>;
 			create(details?: any, typeKey?: string): Promise<any>;
 		};
 		ui: {

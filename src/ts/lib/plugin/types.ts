@@ -86,6 +86,7 @@ export interface LoomApi {
 		getById(id: string): Promise<any>;
 		open(id: string): void;
 		update(id: string, key: string, value: any): Promise<void>;
+		archive(ids: string[]): Promise<void>;
 		create(details?: any, typeKey?: string): Promise<any>;
 	};
 	ui: {
