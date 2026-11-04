@@ -58,6 +58,7 @@
 		code { font-family: monospace; font-size: 0.92em; padding: 1px 4px; border-radius: 4px; background: var(--color-shape-highlight-medium); }
 		pre { overflow-x: auto; padding: 10px 12px; border-radius: 10px; background: var(--color-shape-highlight-light); }
 		pre code { padding: 0px; background: none; }
+		a { color: var(--color-control-accent); text-decoration: underline; word-break: break-word; }
 	}
 
 	/* Caret at the end of the text Lo is writing */
@@ -90,6 +91,18 @@
 	}
 	.tool.done .statusIcon { color: var(--color-control-accent); }
 	.tool.error .statusIcon, .tool.error .state { color: var(--color-red); }
+
+	.toolGroup { display: flex; flex-direction: column; padding: 6px 10px; border-radius: 10px; background: var(--color-shape-highlight-light); }
+	.toolGroup {
+		.line { display: flex; align-items: center; gap: 0px 8px; min-height: 20px; }
+		.name { @include text-small; font-weight: 500; color: var(--color-text-primary); @include text-overflow-nw; flex-grow: 1; min-width: 0; }
+		.spinner { flex-shrink: 0; width: 12px; height: 12px; margin: 0px 2px; border-radius: 50%; border: 1.5px solid var(--color-shape-secondary); border-top-color: var(--color-control-accent); animation: rotate 0.8s linear infinite; }
+		.statusIcon { flex-shrink: 0; width: 16px; height: 16px; color: var(--color-control-accent); }
+		.arrow { flex-shrink: 0; width: 6px; height: 6px; margin: 0px 4px 3px 4px; border: solid var(--color-text-secondary); border-width: 0px 1.5px 1.5px 0px; transform: rotate(45deg); }
+		.items { display: flex; flex-direction: column; gap: 2px 0px; margin-top: 4px; }
+		.items .tool { padding: 4px 0px; background: none; }
+	}
+	.toolGroup.isOpen .arrow { margin-bottom: 0px; margin-top: 3px; transform: rotate(-135deg); }
 
 	.error { display: flex; align-items: flex-start; gap: 0px 8px; padding: 10px 12px; border-radius: 12px; background: var(--color-shape-highlight-light); }
 	.error {
