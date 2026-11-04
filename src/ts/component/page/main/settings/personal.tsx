@@ -9,7 +9,7 @@ enum ChatKey {
 
 const PageMainSettingsPersonal = forwardRef<I.PageRef, I.PageSettingsComponent>((props, ref) => {
 
-	const { config, linkStyle, fileStyle, fullscreenObject, hideSidebar, gridTitleClick, notificationSound, hideFileObjectsInTree, unicodeReplace } = S.Common;
+	const { config, linkStyle, fileStyle, fullscreenObject, linkOpenInSidebar, hideSidebar, gridTitleClick, notificationSound, hideFileObjectsInTree, unicodeReplace } = S.Common;
 	const { hideTray, showMenuBar, alwaysShowTabs, hardwareAcceleration } = config;
 	const { theme, chatCmdSend, commentCmdSend, sendTyping } = S.Common;
 	const { networkConfig } = S.Auth;
@@ -207,6 +207,15 @@ const PageMainSettingsPersonal = forwardRef<I.PageRef, I.PageSettingsComponent>(
 							S.Common.fullscreenObjectSet(v);
 							analytics.event('ShowObjectFullscreen', { type: v });
 						}}
+					/>
+				</div>
+
+				<div className="item">
+					<Label text={translate('popupSettingsPersonalLinkOpenInSidebar')} />
+					<Switch
+						className="big"
+						value={linkOpenInSidebar}
+						onChange={(e: any, v: boolean) => S.Common.linkOpenInSidebarSet(v)}
 					/>
 				</div>
 

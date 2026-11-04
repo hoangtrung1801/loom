@@ -68,6 +68,7 @@ class CommonStore {
 	public treeShowBookmarksValue: boolean = null;
 	public sidebarViewValue: I.SidebarView = null;
 	public hideSidebarValue = null;
+	public linkOpenInSidebarValue = null;
 	public hideFileObjectsInTreeValue = null;
 	public autoDownloadValue = null;
 	public notificationSoundValue = null;
@@ -168,6 +169,7 @@ class CommonStore {
 			hasCleanupSuggestionsValue: observable,
 			hasTreeSectionValue: observable,
 			hideSidebarValue: observable,
+			linkOpenInSidebarValue: observable,
 			hideFileObjectsInTreeValue: observable,
 			autoDownloadValue: observable,
 			spaceId: observable,
@@ -382,6 +384,10 @@ class CommonStore {
 			ret = true;
 		};
 		return ret;
+	};
+
+	get linkOpenInSidebar (): boolean {
+		return this.boolGet('linkOpenInSidebar');
 	};
 
 	get hideSidebar (): boolean {
@@ -848,6 +854,14 @@ class CommonStore {
 	 */
 	fullscreenObjectSet (v: boolean) {
 		this.boolSet('fullscreenObject', v);
+	};
+
+	/**
+	 * Sets whether linked objects open in a side panel.
+	 * @param {boolean} v - The value.
+	 */
+	linkOpenInSidebarSet (v: boolean) {
+		this.boolSet('linkOpenInSidebar', v);
 	};
 
 	/**

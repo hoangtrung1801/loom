@@ -2,6 +2,8 @@ import { history as historyPopup } from 'Lib/history';
 import { getIconSvg } from 'Component/util/icons';
 import * as I from 'Interface';
 
+const SIDEBAR_POPUP_CLASS = 'popupPageSidebar';
+
 export type CreatedInContextRefKind = 'root' | 'block' | 'relation' | 'message';
 
 
@@ -194,7 +196,7 @@ class UtilObject {
 		if ((e.shiftKey && (e.metaKey || e.ctrlKey))) {
 			this.openWindow(object);
 		} else
-		if (e.shiftKey || keyboard.isPopup()) {
+		if (e.shiftKey || keyboard.isPopup() || this.isSidebarMode()) {
 			this.openPopup(object, param);
 		} else
 		if ((e.metaKey || e.ctrlKey) || (e.button == 1)) {
@@ -232,7 +234,15 @@ class UtilObject {
 			return;
 		};
 
-		keyboard.isPopup() ? this.openPopup(object, param) : this.openRoute(object, param);
+		(keyboard.isPopup() || this.isSidebarMode()) ? this.openPopup(object, param) : this.openRoute(object, param);
+	};
+
+	/**
+	 * True when the user prefers linked objects in a side panel and the current context can host one:
+	 * the main editor, or an object already shown in the side panel.
+	 */
+	isSidebarMode (): boolean {
+		return S.Common.linkOpenInSidebar && (keyboard.isMainEditor() || !!U.Dom.get('popupPage')?.classList.contains(SIDEBAR_POPUP_CLASS));
 	};
 	
 	async openRoute (object: any, param?: Partial<I.RouteParam>) {
@@ -348,6 +358,10 @@ class UtilObject {
 
 		if (object._routeParam_) {
 			param.data.matchPopup.params = { ...param.data.matchPopup.params, ...object._routeParam_ };
+		};
+
+		if (this.isSidebarMode()) {
+			param.className = SIDEBAR_POPUP_CLASS;
 		};
 
 		sidebar.rightPanelClose(true, false);
