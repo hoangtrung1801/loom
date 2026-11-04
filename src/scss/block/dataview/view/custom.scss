@@ -1,0 +1,12 @@
+@import "~scss/_mixins";
+
+.blocks {
+	.block.blockDataview {
+		.viewContent.viewCustom { padding: 8px 0px 0px 0px; min-height: 40px; }
+		.viewContent.viewCustom {
+			.pluginViewNode { width: 100%; }
+		}
+	}
+}
+
+.pluginError { @include text-small; color: var(--color-red); padding: 12px 16px; border: 1px solid var(--color-shape-secondary); border-radius: 8px; }

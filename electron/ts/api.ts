@@ -15,6 +15,7 @@ import Server from './server';
 import Util from './util';
 import { getSafeStorage } from './safeStorage';
 import LinkApprovalManager from './linkApproval';
+import PluginManager from './plugin';
 import { powerState, PowerSnapshot } from './lib/powerState';
 import DownloadManager, { DownloadRequest } from './download';
 import { AppWindow, TabView, TabData, CreateTabOptions, AppConfig, Bounds } from './types';
@@ -141,6 +142,30 @@ class Api {
 	 */
 	powerStateDelivered (win: AppWindow, seq: number): void {
 		powerState.ack(seq);
+	};
+
+	pluginList (win: AppWindow) {
+		return PluginManager.list();
+	};
+
+	pluginRead (win: AppWindow, id: string) {
+		return PluginManager.read(id);
+	};
+
+	pluginDataLoad (win: AppWindow, id: string) {
+		return PluginManager.dataLoad(id);
+	};
+
+	pluginDataSave (win: AppWindow, id: string, data: any): void {
+		PluginManager.dataSave(id, data);
+	};
+
+	pluginOpenFolder (win: AppWindow): void {
+		PluginManager.openFolder();
+	};
+
+	pluginWatch (win: AppWindow): void {
+		PluginManager.watch(win);
 	};
 
 	/**

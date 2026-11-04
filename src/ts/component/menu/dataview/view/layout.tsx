@@ -1,6 +1,7 @@
 import React, { forwardRef, useRef, useEffect, useImperativeHandle, useState } from 'react';
 import { Label, Icon, MenuItemVertical } from 'Component';
 import * as I from 'Interface';
+import { getBinding, getBindingName, setBinding, clearBinding, getConfig, setConfig } from 'Lib/plugin/viewBinding';
 
 const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 
@@ -16,6 +17,7 @@ const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 	const { type } = saveParam.current;
 	const [ dummy, setDummy ] = useState(0);
 	const isUnmountedRef = useRef(false);
+	const binding = getBinding(rootId, blockId, view.id);
 
 	useEffect(() => {
 		saveParam.current = U.Common.objectCopy(data.view.get());
@@ -114,6 +116,62 @@ const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 		setDummy(dummy + 1);
 	};
 
+	const getPluginSettings = () => {
+		const item = S.Plugin.getView(getBinding(rootId, blockId, view.id));
+		const config: Record<string, any> = {};
+
+		(item?.def.settings || []).forEach(it => config[it.id] = it.default);
+		Object.assign(config, getConfig(rootId, blockId, view.id));
+
+		return (item?.def.settings || []).map(it => {
+			const id = `pluginSetting-${it.id}`;
+			const value = config[it.id];
+
+			switch (it.type) {
+				case 'switch': {
+					return { id, name: it.name, withSwitch: true, switchValue: !!value, onSwitch: (e: any, v: boolean) => onPluginSetting(it.id, v) };
+				};
+
+				case 'select': {
+					return { id, name: it.name, withSelect: true, selectValue: String(value ?? ''), options: it.options || [], onSelect: (v: string) => onPluginSetting(it.id, v) };
+				};
+
+				default: {
+					return { id, pluginSettingId: it.id, name: it.name, caption: String(value ?? ''), pluginSettingValue: String(value ?? '') };
+				};
+			};
+		});
+	};
+
+	const onPluginSetting = (key: string, value: any) => {
+		if (isReadonly) {
+			return;
+		};
+
+		setConfig(rootId, blockId, view.id, { ...getConfig(rootId, blockId, view.id), [key]: value });
+		setDummy(dummy + 1);
+	};
+
+	const onPluginText = (item: any) => {
+		S.Menu.open('dataviewText', {
+			className,
+			classNameWrap,
+			element: `#${getId()} #item-${U.Common.esc(item.id)}`,
+			offsetX: getSize().width,
+			vertical: I.MenuDirection.Center,
+			isSub: true,
+			rebind,
+			parentId: props.id,
+			data: {
+				value: item.pluginSettingValue,
+				placeholder: item.name,
+				canEdit: true,
+				noResize: true,
+				onChange: (v: string) => onPluginSetting(item.pluginSettingId, v),
+			},
+		});
+	};
+
 	const getSections = () => {
 		const { type, coverRelationKey, cardSize, listSize, coverFit, wrapContent, groupRelationKey, endRelationKey, groupBackgroundColors, hideIcon, pageLimit } = saveParam.current;
 		const isGrid = type == I.ViewType.Grid;
@@ -123,6 +181,7 @@ const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 		const isCalendar = type == I.ViewType.Calendar;
 		const isGraph = type == I.ViewType.Graph;
 		const isTimeline = type == I.ViewType.Timeline;
+		const isCustom = type == I.ViewType.Custom;
 		const coverOption = Relation.getCoverOptions(rootId, blockId).find(it => it.id == coverRelationKey);
 
 		let settings: any[] = [];
@@ -197,6 +256,9 @@ const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 			});
 		};
 
+		if (isCustom) {
+			settings = settings.concat(getPluginSettings());
+		} else
 		if (!isGraph) {
 			settings.push({
 				id: 'hideIcon', name: translate('menuDataviewViewEditShowIcon'), withSwitch: true, switchValue: !hideIcon,
@@ -419,12 +481,32 @@ const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 			return;
 		};
 
+		if (item.pluginSettingId) {
+			onPluginText(item);
+			return;
+		};
+
 		if (item.sectionId == 'type') {
+			// The view still has a default name if it matches any name its current type could have given it. A plugin
+			// view that is not loaded (restricted mode, error) is matched by the name remembered when it was bound.
+			const prevNames = [ Dataview.defaultViewName(saveParam.current.type) ];
+
+			if (saveParam.current.type == I.ViewType.Custom) {
+				prevNames.push(S.Plugin.getView(binding)?.def.name, getBindingName(rootId, blockId, view.id));
+			};
+
 			let withName = false;
 
-			if (saveParam.current.name == Dataview.defaultViewName(saveParam.current.type)) {
-				saveParam.current.name = Dataview.defaultViewName(item.id);
+			if (prevNames.filter(it => it).includes(saveParam.current.name)) {
+				saveParam.current.name = item.name;
 				withName = true;
+			};
+
+			if (item.pluginViewKey) {
+				setBinding(rootId, blockId, view.id, item.pluginViewKey, item.name);
+			} else
+			if (binding) {
+				clearBinding(rootId, blockId, view.id);
 			};
 
 			saveParam.current.type = item.id;
@@ -463,14 +545,14 @@ const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 
 	const layouts = U.Menu.getViews().map((it: any) => {
 		it.sectionId = 'type';
-		it.icon = viewIconMap[it.id] || `view c${it.id}`;
+		it.icon = it.pluginViewKey ? (it.pluginIcon || 'dataview/view/list') : (viewIconMap[it.id] || `view c${it.id}`);
 		return it;
 	});
 
 	const Layout = (item: any) => {
 		const cn = [ 'layout' ];
 
-		if (type == item.id) {
+		if ((type == item.id) && (!item.pluginViewKey || (item.pluginViewKey == binding))) {
 			cn.push('active');
 		};
 		if (isReadonly) {

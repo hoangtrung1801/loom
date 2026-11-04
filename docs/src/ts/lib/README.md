@@ -8,6 +8,7 @@ Application infrastructure: API communication, constants, services, utilities, a
 |-----------|---------|
 | `api/` | gRPC communication layer (commands, dispatcher, mapper, service client, struct encoding) |
 | `constant/` | Application constants (spark onboarding configuration) |
+| `plugin/` | Obsidian-style plugin system: loader, registry, `loom` API, custom view bindings (see [`plugin/README.md`](plugin/README.md)) |
 | `service/` | Singleton services (spark onboarding event bus) |
 | `util/` | ~17 utility classes (common, data, object, router, space, menu, dom, etc.) |
 | `web/` | Browser-only mode support (Electron mock, route sync) |

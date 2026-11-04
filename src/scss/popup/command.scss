@@ -1,0 +1,23 @@
+@import "~scss/_mixins";
+
+.popups {
+	.popup.popupCommand {
+		.innerWrap { width: 560px; max-height: 60vh; display: flex; flex-direction: column; overflow: hidden; }
+		.content { display: flex; flex-direction: column; min-height: 0px; }
+
+		.head { flex-shrink: 0; padding: 12px; }
+
+		.body { overflow-y: auto; padding: 0px 12px 12px 12px; max-height: calc(60vh - 64px); }
+		.body {
+			.item { display: flex; align-items: center; gap: 0px 8px; padding: 8px; border-radius: 8px; @include text-paragraph; }
+			.item.active { background: var(--color-shape-highlight-medium); }
+			.item {
+				.icon { flex-shrink: 0; }
+				.name { flex-grow: 1; min-width: 0; @include text-overflow-nw; }
+				.plugin, .caption { flex-shrink: 0; @include text-small; color: var(--color-text-secondary); }
+			}
+
+			.empty { padding: 16px 8px; color: var(--color-text-secondary); }
+		}
+	}
+}

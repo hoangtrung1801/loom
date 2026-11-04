@@ -493,6 +493,8 @@ class UtilData {
 	 * Handles one-time authentication tasks after login.
 	 */
 	onAuthOnce() {
+		S.Plugin.init();
+
 		C.NotificationList(false, J.Constant.limit.notification, (message: any) => {
 			if (!message.error.code) {
 				S.Notification.set(message.list);

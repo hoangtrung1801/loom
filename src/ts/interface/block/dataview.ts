@@ -37,6 +37,7 @@ export enum ViewType {
 	Calendar		 = 4,
 	Graph			 = 5,
 	Timeline		 = 6,
+	Custom			 = 7,
 };
 
 export enum SortType { 

@@ -2,6 +2,7 @@ import { action, computed, makeObservable, observable, set } from 'mobx';
 import { setReactionsPaused } from 'Lib/reactionScheduler';
 import * as I from 'Interface';
 import Storage from 'Lib/storage';
+import { emitPluginEvent } from 'Lib/plugin/events';
 
 interface Filter {
 	from: number;
@@ -967,6 +968,7 @@ class CommonStore {
 	themeSet (v: string) {
 		this.themeId = String(v || '');
 		this.setThemeClass();
+		emitPluginEvent('theme-change', this.getThemeClass() == 'dark' ? 'dark' : 'light');
 	};
 
 	/**

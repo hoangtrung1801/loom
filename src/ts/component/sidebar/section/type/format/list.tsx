@@ -10,7 +10,7 @@ const SidebarSectionTypeLayoutFormatList = forwardRef<{}, Props>((props, ref) =>
 
 	const viewRef = useRef(null);
 	const { object, onChange, readonly } = props;
-	const defaultViewOptions = U.Menu.getViews().filter(it => it.id != I.ViewType.Graph);
+	const defaultViewOptions = U.Menu.getViews().filter(it => (it.id != I.ViewType.Graph) && !it.pluginViewKey);
 	const type = S.Record.getTypeById(object.defaultTypeId);
 
 	const onType = () => {
