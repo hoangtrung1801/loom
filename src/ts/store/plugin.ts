@@ -16,7 +16,7 @@ export const Plugin: PluginRegistry = new PluginRegistry({
 	dataSave: (id: string, obj: any) => call('pluginDataSave', id, obj),
 	openFolder: () => call('pluginOpenFolder'),
 	watch: () => call('pluginWatch'),
-	onChanged: (cb: () => void) => Renderer.on('plugins-changed', cb),
+	onChanged: cb => Renderer.on('plugins-changed', (e: any, ids: string[] | null) => cb(Array.isArray(ids) ? ids : null)),
 	makeApp: manifest => createApi(manifest),
 	storage: {
 		get: (key: string) => Storage.get(key),

@@ -4,6 +4,7 @@ import path from 'path';
 import Util from './util';
 import { AppWindow } from './types';
 import { isValidPluginId, validateManifest, PluginManifest } from './lib/pluginManifest';
+import { PluginChangeSet } from './lib/pluginWatch';
 
 const WATCH_DELAY = 300;
 const MAX_FILE_SIZE = 16 * 1024 * 1024;
@@ -17,8 +18,10 @@ export interface PluginInfo {
 };
 
 interface Watcher {
-	watcher: fs.FSWatcher;
+	watcher: fs.FSWatcher | null;
+	children: Map<string, fs.FSWatcher>;
 	timer: NodeJS.Timeout | null;
+	changes: PluginChangeSet;
 };
 
 /**
@@ -139,23 +142,37 @@ class PluginManager {
 			return;
 		};
 
-		const item: Watcher = { watcher: null, timer: null };
+		const root = this.dir();
+		const item: Watcher = { watcher: null, children: new Map(), timer: null, changes: new PluginChangeSet() };
+
+		// Sends the ids of the plugins that changed, or null when the whole folder has to be rescanned
+		const onChange = (name: string | Buffer | null, pluginId?: string) => {
+			if (!item.changes.add(name, pluginId)) {
+				return;
+			};
+
+			clearTimeout(item.timer);
+			item.timer = setTimeout(() => Util.sendToAllTabs(win, 'plugins-changed', item.changes.flush()), WATCH_DELAY);
+		};
+
+		const onError = (err: any) => Util.log('error', '[Plugin] watch', err);
 
 		try {
-			item.watcher = fs.watch(this.dir(), { recursive: true }, (event, name) => {
-				// Plugin data is written by the plugins themselves, reloading on it would loop
-				if (name && /(^|[\\/])data\.json(\.tmp)?$/.test(String(name))) {
-					return;
-				};
-
-				clearTimeout(item.timer);
-				item.timer = setTimeout(() => Util.sendToAllTabs(win, 'plugins-changed'), WATCH_DELAY);
-			});
-
-			item.watcher.on('error', err => Util.log('error', '[Plugin] watch', err));
+			item.watcher = fs.watch(root, { recursive: true }, (event, name) => onChange(name));
+			item.watcher.on('error', onError);
 		} catch (e) {
-			Util.log('error', '[Plugin] watch failed', e);
-			return;
+			// Recursive watching is not available everywhere (older Node on Linux): watch the root and each plugin folder instead
+			try {
+				item.watcher = fs.watch(root, (event, name) => {
+					this.syncChildWatchers(root, item, onChange, onError);
+					onChange(name);
+				});
+				item.watcher.on('error', onError);
+				this.syncChildWatchers(root, item, onChange, onError);
+			} catch (e) {
+				Util.log('error', '[Plugin] watch failed', e);
+				return;
+			};
 		};
 
 		const id = win.id;
@@ -164,12 +181,49 @@ class PluginManager {
 		win.once('closed', () => this.unwatch(id));
 	};
 
+	/**
+	 * Non-recursive fallback: keeps one watcher per plugin folder, in step with the folders that exist.
+	 */
+	private syncChildWatchers (root: string, item: Watcher, onChange: (name: string | Buffer | null, pluginId?: string) => void, onError: (err: any) => void): void {
+		let ids: string[] = [];
+
+		try {
+			ids = fs.readdirSync(root, { withFileTypes: true }).filter(it => it.isDirectory() || it.isSymbolicLink()).map(it => it.name).filter(isValidPluginId);
+		} catch (e) {
+			return;
+		};
+
+		item.children.forEach((watcher, id) => {
+			if (!ids.includes(id)) {
+				watcher.close();
+				item.children.delete(id);
+			};
+		});
+
+		ids.forEach(id => {
+			if (item.children.has(id)) {
+				return;
+			};
+
+			try {
+				const watcher = fs.watch(path.join(root, id), (event, name) => onChange(name, id));
+
+				watcher.on('error', onError);
+				item.children.set(id, watcher);
+			} catch (e) {
+				onError(e);
+			};
+		});
+	};
+
 	unwatch (id: number): void {
 		const item = this.watchers.get(id);
 
 		if (item) {
 			clearTimeout(item.timer);
 			item.watcher?.close();
+			item.children.forEach(watcher => watcher.close());
+			item.children.clear();
 			this.watchers.delete(id);
 		};
 	};

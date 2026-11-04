@@ -28,7 +28,8 @@ export interface RegistryDeps {
 	dataSave(id: string, obj: any): Promise<void>;
 	openFolder(): void;
 	watch(): void;
-	onChanged(cb: () => void): void;
+	/** cb gets the ids of the plugins whose files changed, or null when the whole folder has to be rescanned */
+	onChanged(cb: (ids: string[] | null) => void): void;
 	makeApp(manifest: PluginManifest): LoomApi;
 	storage: { get(key: string): any; set(key: string, value: any): void };
 	style(id: string, css: string): () => void;
@@ -86,7 +87,7 @@ export class PluginRegistry {
 			this.state.ready = true;
 		});
 
-		this.deps.onChanged(() => this.reloadAll());
+		this.deps.onChanged(ids => this.onFolderChange(ids));
 		this.deps.watch();
 
 		await this.reloadAll();
@@ -94,21 +95,50 @@ export class PluginRegistry {
 
 	/**
 	 * Unloads everything, rescans the plugins folder and loads the enabled plugins again.
+	 * @param clearErrors - also retry plugins that failed at runtime (the user asked for a reload); a rescan triggered
+	 * by the file watcher keeps them off, so an unrelated edit does not bring a broken plugin back
 	 */
-	async reloadAll (): Promise<void> {
+	async reloadAll (clearErrors = true): Promise<void> {
 		if (!this.isSupported) {
 			return;
 		};
 
 		this.unloadAll();
-		await this.refresh();
+		await this.refresh(clearErrors ? null : new Set());
 
 		if (!this.restricted) {
 			await Promise.all(Array.from(this.plugins.keys()).map(id => this.load(id)));
 		};
 	};
 
-	async refresh (): Promise<void> {
+	/**
+	 * Reacts to the file watcher. Only the plugins whose files changed are reloaded (and get a fresh chance after an
+	 * error); when the scope is unknown everything is rescanned, keeping runtime errors.
+	 */
+	async onFolderChange (ids: string[] | null): Promise<void> {
+		if (!Array.isArray(ids)) {
+			await this.reloadAll(false);
+			return;
+		};
+
+		if (!ids.length) {
+			return;
+		};
+
+		ids.forEach(id => this.unload(id));
+		await this.refresh(new Set(ids));
+
+		if (!this.restricted) {
+			await Promise.all(ids.map(id => this.load(id)));
+		};
+	};
+
+	/**
+	 * Rescans the plugins folder.
+	 * @param clear - ids whose runtime error is dropped; null drops every error. Errors found while scanning
+	 * (bad manifest) always replace the previous ones.
+	 */
+	async refresh (clear: Set<string> | null = new Set()): Promise<void> {
 		let list: PluginInfo[] = [];
 
 		try {
@@ -122,11 +152,15 @@ export class PluginRegistry {
 
 			Array.from(this.plugins.keys()).forEach(id => {
 				if (!ids.has(id)) {
+					this.unload(id);
 					this.plugins.delete(id);
 				};
 			});
 
 			list.forEach(info => {
+				const prev = this.plugins.get(info.id);
+				const keep = (prev && prev.manifest && (clear !== null) && !clear.has(info.id)) ? prev.error : '';
+
 				this.plugins.set(info.id, {
 					id: info.id,
 					manifest: info.manifest,
@@ -134,7 +168,7 @@ export class PluginRegistry {
 					hasStyles: info.hasStyles,
 					enabled: this.enabledIds.has(info.id),
 					loaded: this.instances.has(info.id),
-					error: info.error || '',
+					error: info.error || keep || '',
 				});
 			});
 		});
@@ -181,7 +215,7 @@ export class PluginRegistry {
 
 	async reload (id: string): Promise<void> {
 		this.unload(id);
-		await this.refresh();
+		await this.refresh(new Set([ id ]));
 
 		if (!this.restricted) {
 			await this.load(id);

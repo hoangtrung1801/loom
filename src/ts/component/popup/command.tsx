@@ -55,8 +55,10 @@ const PopupCommand = forwardRef<{}, I.Popup>((props, ref) => {
 		U.Dom.select('.item.active', bodyRef.current)?.scrollIntoView({ block: 'nearest' });
 	}, [ index ]);
 
-	const Item = (item: any) => {
-		const { command, pluginId, idx } = item;
+	// A plain render function, not a component declared in render: a new component type each render would remount
+	// every row, losing clicks that land while hover re-renders the list
+	const renderItem = (item: any, idx: number) => {
+		const { key, command, pluginId } = item;
 		const cn = [ 'item' ];
 
 		if (idx == index) {
@@ -64,7 +66,7 @@ const PopupCommand = forwardRef<{}, I.Popup>((props, ref) => {
 		};
 
 		return (
-			<div className={cn.join(' ')} onClick={() => onRun(item)} onMouseEnter={() => setIndex(idx)}>
+			<div key={key} className={cn.join(' ')} onClick={() => onRun(item)} onMouseEnter={() => setIndex(idx)}>
 				{command.icon ? <Icon name={command.icon} /> : ''}
 				<div className="name">{command.name}</div>
 				<div className="plugin">{S.Plugin.get(pluginId)?.manifest?.name || pluginId}</div>
@@ -87,7 +89,7 @@ const PopupCommand = forwardRef<{}, I.Popup>((props, ref) => {
 
 			<div ref={bodyRef} className="body customScrollbar">
 				{items.length ? (
-					items.map((item, i) => <Item key={item.key} {...item} idx={i} />)
+					items.map((item, i) => renderItem(item, i))
 				) : (
 					<Label className="empty" text={translate('popupCommandEmpty')} />
 				)}

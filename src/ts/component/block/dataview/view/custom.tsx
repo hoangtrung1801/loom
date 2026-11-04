@@ -102,13 +102,13 @@ const ViewCustom = forwardRef<I.ViewRef, I.ViewComponent>((props, ref) => {
 
 	if (PluginView) {
 		content = (
-			<PluginErrorBoundary pluginId={pluginId}>
+			<PluginErrorBoundary key={key} pluginId={pluginId}>
 				<PluginView {...viewProps} />
 			</PluginErrorBoundary>
 		);
 	} else
 	if (item.def.render) {
-		content = <div ref={nodeRef} className="pluginViewNode" />;
+		content = <div key={key} ref={nodeRef} className="pluginViewNode" />;
 	} else {
 		content = <EmptyState text={translate('pluginViewNoRender')} />;
 	};

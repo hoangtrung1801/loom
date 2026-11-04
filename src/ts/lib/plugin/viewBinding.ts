@@ -4,11 +4,15 @@
  *
  *   fields.pluginViews      = { [viewId]: 'pluginId:viewType' }
  *   fields.pluginViewConfig = { [viewId]: { ...plugin view settings } }
+ *   fields.pluginViewNames  = { [viewId]: 'name of the plugin view when it was bound' }
+ *
+ * The name is kept so the view can still be told apart from a renamed one when the plugin is not loaded.
  *
  * Every write merges into the current fields so keys that belong to other features are never clobbered.
  */
 export const FIELD_VIEWS = 'pluginViews';
 export const FIELD_CONFIG = 'pluginViewConfig';
+export const FIELD_NAMES = 'pluginViewNames';
 
 export interface BindingDeps {
 	getFields(rootId: string, blockId: string): Record<string, any>;
@@ -52,8 +56,30 @@ export const getBinding = (rootId: string, blockId: string, viewId: string, deps
 	return isObject(map) ? String(map[viewId] || '') : '';
 };
 
-export const setBinding = (rootId: string, blockId: string, viewId: string, key: string, callBack?: (message: any) => void, deps: BindingDeps = defaultDeps): void => {
-	deps.setFields(rootId, blockId, mergeField(deps.getFields(rootId, blockId), FIELD_VIEWS, viewId, key), callBack);
+/**
+ * Binds a view to a plugin view. Settings of a different plugin view do not carry over: they would mean nothing to it.
+ * @param name - the plugin view's name, remembered for getBindingName
+ */
+export const setBinding = (rootId: string, blockId: string, viewId: string, key: string, name?: string, callBack?: (message: any) => void, deps: BindingDeps = defaultDeps): void => {
+	const prev = getBinding(rootId, blockId, viewId, deps);
+
+	let fields = mergeField(deps.getFields(rootId, blockId), FIELD_VIEWS, viewId, key);
+
+	if (prev && (prev != key)) {
+		fields = mergeField(fields, FIELD_CONFIG, viewId, undefined);
+	};
+
+	fields = mergeField(fields, FIELD_NAMES, viewId, name ? String(name) : undefined);
+	deps.setFields(rootId, blockId, fields, callBack);
+};
+
+/**
+ * The name the bound plugin view had when it was bound, or '' when unknown.
+ */
+export const getBindingName = (rootId: string, blockId: string, viewId: string, deps: BindingDeps = defaultDeps): string => {
+	const map = deps.getFields(rootId, blockId)?.[FIELD_NAMES];
+
+	return isObject(map) ? String(map[viewId] || '') : '';
 };
 
 /**
@@ -64,14 +90,16 @@ export const clearBinding = (rootId: string, blockId: string, viewId: string, ca
 
 	const hasView = isObject(fields[FIELD_VIEWS]) && (viewId in fields[FIELD_VIEWS]);
 	const hasConfig = isObject(fields[FIELD_CONFIG]) && (viewId in fields[FIELD_CONFIG]);
+	const hasName = isObject(fields[FIELD_NAMES]) && (viewId in fields[FIELD_NAMES]);
 
-	if (!hasView && !hasConfig) {
+	if (!hasView && !hasConfig && !hasName) {
 		callBack?.({ error: { code: 0 } });
 		return;
 	};
 
 	let next = mergeField(fields, FIELD_VIEWS, viewId, undefined);
 	next = mergeField(next, FIELD_CONFIG, viewId, undefined);
+	next = mergeField(next, FIELD_NAMES, viewId, undefined);
 
 	deps.setFields(rootId, blockId, next, callBack);
 };
@@ -99,8 +127,14 @@ export const copyBinding = (rootId: string, blockId: string, fromViewId: string,
 	let fields = mergeField(deps.getFields(rootId, blockId), FIELD_VIEWS, toViewId, key);
 	const config = getConfig(rootId, blockId, fromViewId, deps);
 
+	const name = getBindingName(rootId, blockId, fromViewId, deps);
+
 	if (Object.keys(config).length) {
 		fields = mergeField(fields, FIELD_CONFIG, toViewId, { ...config });
+	};
+
+	if (name) {
+		fields = mergeField(fields, FIELD_NAMES, toViewId, name);
 	};
 
 	deps.setFields(rootId, blockId, fields);

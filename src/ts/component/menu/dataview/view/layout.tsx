@@ -1,7 +1,7 @@
 import React, { forwardRef, useRef, useEffect, useImperativeHandle, useState } from 'react';
 import { Label, Icon, MenuItemVertical } from 'Component';
 import * as I from 'Interface';
-import { getBinding, setBinding, clearBinding, getConfig, setConfig } from 'Lib/plugin/viewBinding';
+import { getBinding, getBindingName, setBinding, clearBinding, getConfig, setConfig } from 'Lib/plugin/viewBinding';
 
 const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 
@@ -487,18 +487,23 @@ const MenuViewLayout = forwardRef<I.MenuRef, I.Menu>((props, ref) => {
 		};
 
 		if (item.sectionId == 'type') {
-			const prevItem = S.Plugin.getView(binding);
-			const prevName = (saveParam.current.type == I.ViewType.Custom) && prevItem ? prevItem.def.name : Dataview.defaultViewName(saveParam.current.type);
+			// The view still has a default name if it matches any name its current type could have given it. A plugin
+			// view that is not loaded (restricted mode, error) is matched by the name remembered when it was bound.
+			const prevNames = [ Dataview.defaultViewName(saveParam.current.type) ];
+
+			if (saveParam.current.type == I.ViewType.Custom) {
+				prevNames.push(S.Plugin.getView(binding)?.def.name, getBindingName(rootId, blockId, view.id));
+			};
 
 			let withName = false;
 
-			if (saveParam.current.name == prevName) {
+			if (prevNames.filter(it => it).includes(saveParam.current.name)) {
 				saveParam.current.name = item.name;
 				withName = true;
 			};
 
 			if (item.pluginViewKey) {
-				setBinding(rootId, blockId, view.id, item.pluginViewKey);
+				setBinding(rootId, blockId, view.id, item.pluginViewKey, item.name);
 			} else
 			if (binding) {
 				clearBinding(rootId, blockId, view.id);

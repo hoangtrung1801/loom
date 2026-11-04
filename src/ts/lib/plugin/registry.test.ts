@@ -43,7 +43,7 @@ const info = (id: string, error?: string) => ({
 const setup = (code: Record<string, string>, storage: Record<string, any> = {}) => {
 	const listeners: Record<string, ((...args: any[]) => void)[]> = {};
 	const styles: Set<string> = new Set();
-	const changed: (() => void)[] = [];
+	const changed: ((ids: string[] | null) => void)[] = [];
 	const deps: RegistryDeps = {
 		list: vi.fn(async () => Object.keys(code).map(id => info(id))),
 		read: vi.fn(async (id: string) => ({ main: code[id], styles: '' })),
@@ -142,15 +142,80 @@ describe('PluginRegistry', () => {
 		expect(registry.get('hello').loaded).toBe(true);
 	});
 
-	it('reloads everything when the plugins folder changes', async () => {
+	it('reloads everything when the scope of a folder change is unknown', async () => {
 		const { registry, changed, deps } = setup({ hello: HELLO }, { [STORAGE_RESTRICTED]: false, [STORAGE_ENABLED]: [ 'hello' ] });
 
 		await registry.init();
-		changed.forEach(cb => cb());
+		changed.forEach(cb => cb(null));
 		await new Promise(resolve => setTimeout(resolve, 0));
 
 		expect(deps.list).toHaveBeenCalledTimes(2);
 		expect((globalThis as any).__log.filter((it: string) => it == 'load').length).toBe(2);
+	});
+
+	it('reloads only the plugins whose files changed', async () => {
+		const code = { hello: HELLO, other: HELLO.replace(/'load'/, "'load other'").replace(/'unload'/, "'unload other'") };
+		const { registry, changed } = setup(code, { [STORAGE_RESTRICTED]: false, [STORAGE_ENABLED]: [ 'hello', 'other' ] });
+
+		await registry.init();
+		(globalThis as any).__log = [];
+
+		changed.forEach(cb => cb([ 'other' ]));
+		await new Promise(resolve => setTimeout(resolve, 0));
+
+		expect((globalThis as any).__log).toEqual([ 'unload other', 'load other' ]);
+		expect(registry.get('hello').loaded).toBe(true);
+		expect(registry.get('other').loaded).toBe(true);
+	});
+
+	it('keeps a runtime error through an unrelated change, retries after its own change or a manual reload', async () => {
+		const code = { hello: HELLO, broken: BROKEN };
+		const { registry, changed } = setup(code, { [STORAGE_RESTRICTED]: false, [STORAGE_ENABLED]: [ 'hello', 'broken' ] });
+		const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+
+		await registry.init();
+		expect(registry.get('broken').error).toBe('boom in onload');
+
+		// An edit of another plugin, or a change of unknown scope, does not retry it
+		changed.forEach(cb => cb([ 'hello' ]));
+		await flush();
+		expect(registry.get('broken').error).toBe('boom in onload');
+
+		changed.forEach(cb => cb(null));
+		await flush();
+		expect(registry.get('broken').error).toBe('boom in onload');
+		expect(registry.get('hello').loaded).toBe(true);
+
+		// Fixing the plugin's own file retries it
+		code.broken = HELLO;
+		changed.forEach(cb => cb([ 'broken' ]));
+		await flush();
+		expect(registry.get('broken').error).toBe('');
+		expect(registry.get('broken').loaded).toBe(true);
+
+		// The Reload button retries everything
+		code.broken = BROKEN;
+		changed.forEach(cb => cb([ 'broken' ]));
+		await flush();
+		expect(registry.get('broken').error).toBe('boom in onload');
+
+		code.broken = HELLO;
+		await registry.reloadAll();
+		expect(registry.get('broken').loaded).toBe(true);
+	});
+
+	it('unloads a plugin whose folder disappeared', async () => {
+		const code: Record<string, string> = { hello: HELLO };
+		const { registry, changed } = setup(code, { [STORAGE_RESTRICTED]: false, [STORAGE_ENABLED]: [ 'hello' ] });
+
+		await registry.init();
+		delete code.hello;
+		changed.forEach(cb => cb(null));
+		await new Promise(resolve => setTimeout(resolve, 0));
+
+		expect(registry.get('hello')).toBeUndefined();
+		expect(registry.getViews()).toEqual([]);
+		expect((globalThis as any).__log).toEqual([ 'load', 'unload' ]);
 	});
 
 	it('turning restricted mode on unloads plugins, turning it off loads them', async () => {

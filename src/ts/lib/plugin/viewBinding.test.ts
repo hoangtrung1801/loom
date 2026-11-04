@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-	getBinding, setBinding, clearBinding, getConfig, setConfig, copyBinding, mergeField, parseKey, BindingDeps,
+	getBinding, getBindingName, setBinding, clearBinding, getConfig, setConfig, copyBinding, mergeField, parseKey, BindingDeps,
 } from './viewBinding';
 
 const makeDeps = (initial: Record<string, any>) => {
@@ -21,7 +21,7 @@ describe('viewBinding', () => {
 	it('writes a binding without clobbering other block fields', () => {
 		const { state, deps } = makeDeps({ isLocked: true, other: { a: 1 } });
 
-		setBinding('root', 'block', 'v1', 'sample:progress', undefined, deps);
+		setBinding('root', 'block', 'v1', 'sample:progress', undefined, undefined, deps);
 
 		expect(state.fields).toEqual({ isLocked: true, other: { a: 1 }, pluginViews: { v1: 'sample:progress' } });
 		expect(getBinding('root', 'block', 'v1', deps)).toBe('sample:progress');
@@ -30,7 +30,7 @@ describe('viewBinding', () => {
 	it('keeps the bindings of other views', () => {
 		const { state, deps } = makeDeps({ pluginViews: { v1: 'a:x' } });
 
-		setBinding('root', 'block', 'v2', 'b:y', undefined, deps);
+		setBinding('root', 'block', 'v2', 'b:y', undefined, undefined, deps);
 
 		expect(state.fields.pluginViews).toEqual({ v1: 'a:x', v2: 'b:y' });
 	});
@@ -39,7 +39,7 @@ describe('viewBinding', () => {
 		const fields = { pluginViews: { v1: 'a:x' } };
 		const { deps } = makeDeps(fields);
 
-		setBinding('root', 'block', 'v2', 'b:y', undefined, deps);
+		setBinding('root', 'block', 'v2', 'b:y', undefined, undefined, deps);
 
 		expect(fields).toEqual({ pluginViews: { v1: 'a:x' } });
 	});
@@ -97,6 +97,34 @@ describe('viewBinding', () => {
 		expect(getBinding('root', 'block', 'v1', deps)).toBe('');
 		expect(getConfig('root', 'block', 'v1', deps)).toEqual({});
 		expect(mergeField({ pluginViews: 'oops' }, 'pluginViews', 'v1', 'a:x')).toEqual({ pluginViews: { v1: 'a:x' } });
+	});
+
+	it('drops the settings when the view switches to another plugin view, keeps them on the same one', () => {
+		const { state, deps } = makeDeps({ pluginViews: { v1: 'a:x' }, pluginViewConfig: { v1: { n: 1 } } });
+
+		setBinding('root', 'block', 'v1', 'a:x', 'X', undefined, deps);
+		expect(state.fields.pluginViewConfig).toEqual({ v1: { n: 1 } });
+
+		setBinding('root', 'block', 'v1', 'b:y', 'Y', undefined, deps);
+		expect(state.fields.pluginViews).toEqual({ v1: 'b:y' });
+		expect(state.fields.pluginViewConfig).toBeUndefined();
+	});
+
+	it('remembers the plugin view name, clears and copies it with the binding', () => {
+		const { state, deps } = makeDeps({});
+
+		setBinding('root', 'block', 'v1', 'a:x', 'Progress', undefined, deps);
+		expect(getBindingName('root', 'block', 'v1', deps)).toBe('Progress');
+
+		copyBinding('root', 'block', 'v1', 'v2', deps);
+		expect(getBindingName('root', 'block', 'v2', deps)).toBe('Progress');
+
+		clearBinding('root', 'block', 'v1', undefined, deps);
+		expect(getBindingName('root', 'block', 'v1', deps)).toBe('');
+		expect(state.fields.pluginViewNames).toEqual({ v2: 'Progress' });
+
+		setBinding('root', 'block', 'v2', 'b:y', undefined, undefined, deps);
+		expect(state.fields.pluginViewNames).toBeUndefined();
 	});
 
 	it('splits a key at the first colon', () => {
