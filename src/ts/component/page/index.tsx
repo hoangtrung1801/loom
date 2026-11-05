@@ -26,6 +26,7 @@ import PageMainOneToOne from './main/oneToOne';
 import PageMainMembership from './main/membership';
 import PageMainObject from './main/object';
 import PageMainChat from './main/chat';
+import PageMainCanvas from './main/canvas';
 import PageMainDate from './main/date';
 import PageMainSettings from './main/settings';
 import PageMainQuickSearch from './main/quickSearch';
@@ -59,6 +60,7 @@ const Components = {
 	'main/membership':		 PageMainMembership,
 	'main/object':			 PageMainObject,
 	'main/chat':			 PageMainChat,
+	'main/canvas':			 PageMainCanvas,
 	'main/void':			 PageMainVoid,
 	'main/date':			 PageMainDate,
 	'main/settings':		 PageMainSettings,

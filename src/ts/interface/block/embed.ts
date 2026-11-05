@@ -29,6 +29,7 @@ export enum EmbedProcessor {
 	Bandcamp		 = 25,
 	AppleMusic 		 = 26,
 	LoomMiniApp	 = 27,
+	CanvasElement	 = 28,
 };
 
 export interface ContentEmbed {

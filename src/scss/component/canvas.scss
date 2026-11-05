@@ -1,0 +1,46 @@
+@import "~scss/_mixins";
+
+.canvasWrap { position: absolute; left: 0px; top: 0px; width: 100%; height: 100%; outline: none; overflow: hidden; user-select: none; }
+.canvasWrap {
+	.canvasSurface { display: block; width: 100%; height: 100%; touch-action: none; }
+
+	.canvasTextEditor { 
+		position: absolute; margin: 0px; border: 0px; background: transparent; resize: none; outline: none; overflow: hidden; z-index: 3; 
+		font-family: inherit; transform-origin: center; box-sizing: border-box;
+	}
+
+	.canvasLimit { 
+		@include text-small; position: absolute; left: 50%; top: 12px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; 
+		background: var(--color-bg-primary); color: var(--color-text-secondary); box-shadow: 0px 0px 0px 1px var(--color-shape-secondary); z-index: 4; 
+	}
+
+	.canvasToolbar,
+	.canvasZoom,
+	.canvasStylebar { 
+		position: absolute; display: flex; flex-direction: row; align-items: center; gap: 2px; padding: 4px; border-radius: 10px; z-index: 4;
+		background: var(--color-bg-primary); box-shadow: 0px 0px 0px 1px var(--color-shape-secondary), 0px 4px 12px rgba(0, 0, 0, 0.08);
+	}
+	.canvasToolbar { left: 50%; bottom: 16px; transform: translateX(-50%); }
+	.canvasZoom { left: 16px; bottom: 16px; }
+	.canvasStylebar { left: 50%; top: 12px; transform: translateX(-50%); gap: 12px; padding: 4px 8px; max-width: calc(100% - 32px); flex-wrap: wrap; justify-content: center; }
+	.canvasStylebar {
+		.group { display: flex; flex-direction: row; align-items: center; gap: 4px; }
+		.group + .group { border-left: 1px solid var(--color-shape-secondary); padding-left: 12px; }
+	}
+
+	.canvasButton { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--color-text-primary); }
+	.canvasButton:hover { background: var(--color-shape-highlight-medium); }
+	.canvasButton.active { background: var(--color-shape-highlight-dark); }
+	.canvasButton.disabled { opacity: 0.3; pointer-events: none; }
+	.canvasDivider { width: 1px; height: 20px; margin: 0px 4px; background: var(--color-shape-secondary); }
+	.canvasZoomValue { @include text-small; min-width: 44px; text-align: center; color: var(--color-text-secondary); }
+
+	.canvasSwatch { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0px 0px 0px 1px var(--color-shape-highlight-dark); }
+	.canvasSwatch.active { box-shadow: 0px 0px 0px 2px var(--color-bg-primary), 0px 0px 0px 4px var(--color-system-accent-100); }
+	.canvasSwatch.none { background: var(--color-bg-primary); }
+
+	.canvasOption { @include text-small; min-width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--color-text-primary); }
+	.canvasOption:hover { background: var(--color-shape-highlight-medium); }
+	.canvasOption.active { background: var(--color-shape-highlight-dark); }
+	.canvasOption span { display: block; width: 16px; background: var(--color-text-primary); border-radius: 1px; }
+}

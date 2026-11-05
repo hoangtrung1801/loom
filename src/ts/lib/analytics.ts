@@ -774,6 +774,7 @@ class Analytics {
 			'main/media':					 'ScreenMedia',
 			'main/history':					 'ScreenHistory',
 			'main/date':					 'ScreenDate',
+			'main/canvas':					 'ScreenCanvas',
 
 			'main/settings/account':		 'ScreenSettingsAccount',
 			'main/settings/index':			 'ScreenSettingsAccount',

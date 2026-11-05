@@ -1,0 +1,75 @@
+import { CanvasElement, ElementType } from './types';
+import { newNonce } from './scene';
+
+/** Value of the CanvasElement embed processor in loom-heart (BlockContentLatexProcessor). */
+export const ELEMENT_PROCESSOR = 28;
+
+const TYPES = Object.values(ElementType) as string[];
+
+export const encodeElement = (el: CanvasElement): string => {
+	const data: any = {};
+
+	Object.keys(el).forEach(key => {
+		const value = (el as any)[key];
+		if ((value !== undefined) && (value !== null) && (value !== '') && (value !== false)) {
+			data[key] = value;
+		};
+	});
+
+	return JSON.stringify(data);
+};
+
+export const decodeElement = (text: string): CanvasElement | null => {
+	if (!text) {
+		return null;
+	};
+
+	let data: any = null;
+	try {
+		data = JSON.parse(text);
+	} catch (e) {
+		return null;
+	};
+
+	if (!data || (typeof data != 'object') || !data.id || !TYPES.includes(data.type)) {
+		return null;
+	};
+
+	const num = (v: any, d = 0) => Number.isFinite(Number(v)) ? Number(v) : d;
+
+	return {
+		...data,
+		x: num(data.x),
+		y: num(data.y),
+		w: num(data.w),
+		h: num(data.h),
+		angle: num(data.angle),
+		z: String(data.z || 'i'),
+		v: num(data.v, 1),
+		nonce: num(data.nonce, 0),
+		deleted: !!data.deleted,
+	};
+};
+
+export const defaultElement = (type: ElementType, id: string, z: string, param: Partial<CanvasElement> = {}): CanvasElement => {
+	return {
+		id,
+		type,
+		x: 0,
+		y: 0,
+		w: 0,
+		h: 0,
+		angle: 0,
+		z,
+		v: 0,
+		nonce: newNonce(),
+		...param,
+	};
+};
+
+let counter = 0;
+
+export const newElementId = (): string => {
+	counter++;
+	return `${Date.now().toString(36)}${counter.toString(36)}${Math.floor(Math.random() * 1679616).toString(36)}`;
+};

@@ -90,7 +90,7 @@ var (
 )
 
 var editableSystemTypes = map[domain.TypeKey]struct{}{
-	bundle.TypeKeyPage: {}, bundle.TypeKeyBookmark: {}, // pages
+	bundle.TypeKeyPage: {}, bundle.TypeKeyBookmark: {}, bundle.TypeKeyCanvas: {}, // pages
 	bundle.TypeKeySet: {}, bundle.TypeKeyCollection: {}, // lists
 	bundle.TypeKeyFile: {}, bundle.TypeKeyAudio: {}, bundle.TypeKeyVideo: {}, bundle.TypeKeyImage: {}, // files
 }

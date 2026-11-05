@@ -88,5 +88,9 @@
   {
     "id": "discussion",
     "name": "Discussion"
+  },
+  {
+    "id": "canvas",
+    "name": "Canvas"
   }
 ]

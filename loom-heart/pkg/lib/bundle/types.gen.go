@@ -9,7 +9,7 @@ import (
 	"github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
 )
 
-const TypeChecksum = "71f6229d94c4bdf847dcab52efd4f85affaff2648d2a9b671cab46141b5c2902"
+const TypeChecksum = "fedf87b9cd1a238153347f299e758320b1a1115fa6f797308aa944fcdb05c9ac"
 const (
 	TypePrefix = "_ot"
 )
@@ -43,6 +43,7 @@ const (
 	TypeKeyProject        domain.TypeKey = "project"
 	TypeKeyChatDerived    domain.TypeKey = "chatDerived"
 	TypeKeyDiscussion     domain.TypeKey = "discussion"
+	TypeKeyCanvas         domain.TypeKey = "canvas"
 )
 
 var (
@@ -89,6 +90,20 @@ var (
 			Revision:      3,
 			Types:         []model.SmartBlockType{model.SmartBlockType_Page},
 			Url:           TypePrefix + "bookmark",
+		},
+		TypeKeyCanvas: {
+
+			Description:   "",
+			IconColor:     7,
+			IconName:      "easel",
+			Layout:        model.ObjectType_canvas,
+			Name:          "Canvas",
+			PluralName:    "Canvases",
+			Readonly:      true,
+			RelationLinks: []*model.RelationLink{MustGetRelationLink(RelationKeyTag)},
+			Revision:      1,
+			Types:         []model.SmartBlockType{model.SmartBlockType_Page},
+			Url:           TypePrefix + "canvas",
 		},
 		TypeKeyChatDerived: {
 

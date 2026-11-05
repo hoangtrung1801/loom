@@ -66,6 +66,7 @@ class UtilObject {
 			case I.ObjectLayout.Chat:
 			case I.ObjectLayout.Discussion:	 r = 'chat'; break;
 			case I.ObjectLayout.Date:		 r = 'date'; break;
+			case I.ObjectLayout.Canvas:		 r = 'canvas'; break;
 		};
 		return r;
 	};
@@ -713,11 +714,11 @@ class UtilObject {
 	};
 
 	getLayoutsForTypeSelection () {
-		return this.getPageLayouts().concat(this.getSetLayouts()).concat(this.getFileLayouts()).concat(I.ObjectLayout.Chat).filter(it => !this.isTypeLayout(it));
+		return this.getPageLayouts().concat(this.getSetLayouts()).concat(this.getFileLayouts()).concat([ I.ObjectLayout.Chat, I.ObjectLayout.Canvas ]).filter(it => !this.isTypeLayout(it));
 	};
 
 	getLayoutsWithoutTemplates (): I.ObjectLayout[] {
-		return [].concat(this.getFileAndSystemLayouts()).concat([ I.ObjectLayout.Chat, I.ObjectLayout.Discussion, I.ObjectLayout.Participant, I.ObjectLayout.Date ]);
+		return [].concat(this.getFileAndSystemLayouts()).concat([ I.ObjectLayout.Chat, I.ObjectLayout.Discussion, I.ObjectLayout.Participant, I.ObjectLayout.Date, I.ObjectLayout.Canvas ]);
 	};
 
 	getFileAndSystemLayouts (): I.ObjectLayout[] {

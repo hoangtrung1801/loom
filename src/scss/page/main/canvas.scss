@@ -1,0 +1,7 @@
+@import "~scss/_mixins";
+
+.pageMainCanvas { display: flex; flex-direction: column; height: 100%; }
+.pageMainCanvas {
+	.canvasPage { position: relative; flex-grow: 1; min-height: 0px; overflow: hidden; }
+	.canvasPage > #loader { position: absolute; }
+}

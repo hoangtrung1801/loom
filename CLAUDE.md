@@ -270,10 +270,12 @@ Detailed documentation is available in `docs/` for deeper context on each module
 - [`docs/src/ts/component/preview/README.md`](docs/src/ts/component/preview/README.md) - Preview cards and tooltips
 - [`docs/src/ts/component/selection/README.md`](docs/src/ts/component/selection/README.md) - Block and text selection handling
 - [`docs/src/ts/component/util/README.md`](docs/src/ts/component/util/README.md) - ~48 reusable utility components
+- [`docs/src/ts/component/canvas/README.md`](docs/src/ts/component/canvas/README.md) - Canvas (whiteboard) UI: PixiJS renderer, block adapter, toolbars
 - [`docs/src/ts/component/comment/README.md`](docs/src/ts/component/comment/README.md) - Comment system: threaded discussions with Lexical editor, rich content parts, reactions
 
 ### Libraries
 - [`docs/src/ts/lib/README.md`](docs/src/ts/lib/README.md) - Core libraries overview (api, util, services, keyboard, storage)
+- [`docs/src/ts/lib/canvas/README.md`](docs/src/ts/lib/canvas/README.md) - Canvas engine: scene, controller, sync conflict rules, element data model
 - [`docs/src/ts/lib/api/README.md`](docs/src/ts/lib/api/README.md) - gRPC communication: dispatcher, 100+ commands, protobuf mapping
 - [`docs/src/ts/lib/util/README.md`](docs/src/ts/lib/util/README.md) - ~20 utility modules (common, data, menu, object, router, string, etc.)
 - [`docs/src/ts/lib/constant/README.md`](docs/src/ts/lib/constant/README.md) - Application constants and static configuration
