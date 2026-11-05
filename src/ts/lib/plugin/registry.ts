@@ -240,14 +240,15 @@ export class PluginRegistry {
 
 	/**
 	 * Hotkeys of the registered commands. Built-in shortcuts always win and the first plugin to claim a combo keeps it;
-	 * each conflict is logged once.
+	 * each conflict is logged once. `overrides` maps a command key to the keys the user picked in settings.
 	 */
-	getHotkeys (mod: string, shortcuts: Record<string, { keys?: string[] }>): { combo: string; key: string }[] {
+	getHotkeys (mod: string, shortcuts: Record<string, { keys?: string[] }>, overrides: Record<string, string[]> = {}): { combo: string; key: string }[] {
 		const ret: { combo: string; key: string }[] = [];
 		const used: Map<string, string> = new Map();
 
 		this.commands.forEach(item => {
-			const keys = parseHotkey(item.command.hotkey, mod);
+			// A user override replaces the hotkey the plugin declared; an empty one disables it
+			const keys = overrides[item.key] ? overrides[item.key].map(it => it.toLowerCase()) : parseHotkey(item.command.hotkey, mod);
 
 			if (!keys.length) {
 				return;

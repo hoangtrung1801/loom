@@ -466,6 +466,26 @@
 		.pluginItem .name { font-weight: 500; }
 	}
 
+	> .pageSettingsShortcuts { display: block; }
+	> .pageSettingsShortcuts {
+		.description { @include text-small; color: var(--color-text-secondary); margin: 0px 0px 16px 0px; }
+		.toolbar { display: flex; align-items: center; gap: 0px 12px; margin: 0px 0px 16px 0px; }
+		.toolbar .filter { flex-grow: 1; }
+		.item .details { min-width: 0; flex-grow: 1; padding-right: 12px; }
+		.item .details {
+			.meta { @include text-small; color: var(--color-text-secondary); margin-top: 4px; }
+		}
+		.item .controls { display: flex; align-items: center; gap: 0px 8px; flex-shrink: 0; }
+		.item .controls {
+			.button { margin-right: 0px; }
+			.keys { display: flex; align-items: center; min-width: 60px; justify-content: flex-end; }
+			.symbols { display: flex; gap: 0px 4px; }
+			.symbols .label { @include text-small; }
+			.label.hint { @include text-small; color: var(--color-text-tertiary); }
+		}
+		.item.hasError { background: var(--color-very-light-red); }
+	}
+
 	> .pageSettingsPluginSettings {
 		.description { @include text-small; color: var(--color-text-secondary); margin: 0px 0px 24px 0px; }
 	}

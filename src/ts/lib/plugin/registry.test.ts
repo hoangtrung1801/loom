@@ -316,6 +316,15 @@ describe('PluginRegistry', () => {
 		expect(warn).toHaveBeenCalledTimes(1);
 	});
 
+	it('applies user hotkey overrides and lets an empty one disable the command hotkey', async () => {
+		const { registry } = setup({ hello: HELLO }, { [STORAGE_RESTRICTED]: false, [STORAGE_ENABLED]: [ 'hello' ] });
+
+		await registry.init();
+
+		expect(registry.getHotkeys('cmd', {}, { 'hello:hello': [ 'cmd', 'alt', 'j' ] })).toEqual([ { combo: 'cmd+alt+j', key: 'hello:hello' } ]);
+		expect(registry.getHotkeys('cmd', {}, { 'hello:hello': [] })).toEqual([]);
+	});
+
 	it('does nothing where plugins are not supported', async () => {
 		const { registry, deps } = setup({ hello: HELLO });
 
