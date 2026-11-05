@@ -4,4 +4,6 @@
 .pageMainCanvas {
 	.canvasPage { position: relative; flex-grow: 1; min-height: 0px; overflow: hidden; }
 	.canvasPage > #loader { position: absolute; }
+	.canvasPage > .canvasTitle { @include text-paragraph; position: absolute; left: 16px; top: 12px; z-index: 3; width: 240px; max-width: calc(50% - 32px); padding: 4px 8px; border: 0px; border-radius: 6px; background: transparent; color: var(--color-text-primary); font-weight: 600; }
+	.canvasPage > .canvasTitle:hover, .canvasPage > .canvasTitle:focus { background: var(--color-shape-highlight-medium); }
 }

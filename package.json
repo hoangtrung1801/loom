@@ -156,6 +156,7 @@
 		"inputmask": "^5.0.5",
 		"katex": "^0.16.22",
 		"keytar": "7.9.0",
+		"konva": "^10.9.1",
 		"lazy-val": "^1.0.4",
 		"lexical": "^0.40.0",
 		"libphonenumber-js": "^1.12.31",

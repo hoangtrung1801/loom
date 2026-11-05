@@ -59,7 +59,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 }, ref) => {
 
 	const nodeRef = useRef<HTMLDivElement>(null);
-	const canvasRef = useRef<HTMLCanvasElement>(null);
+	const canvasRef = useRef<HTMLDivElement>(null);
 	const controllerRef = useRef<CanvasController | null>(null);
 	const rendererRef = useRef<CanvasRenderer | null>(null);
 	const adapterRef = useRef<CanvasAdapter | null>(null);
@@ -330,11 +330,12 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		});
 
 		// Changes from other clients arrive through the block store
+		// Delayed so that a burst of block events (paste, import, remote bulk edit) is merged once, not per event
 		const unsubStore = reaction(() => adapter.signature(), () => {
 			adapter.pull();
 			setOverLimit(scene.count() > SOFT_ELEMENT_LIMIT);
 			loadObjects();
-		});
+		}, { delay: 60 });
 
 		// Colors come from the theme, so rebuild the views when it changes
 		const unsubTheme = reaction(() => S.Common.getThemeClass(), () => renderer.setTheme(getTheme()));
@@ -442,7 +443,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			onDragOver={onDragOver}
 			onDrop={onDrop}
 		>
-			<canvas
+			<div
 				ref={canvasRef}
 				className="canvasSurface"
 				onPointerDown={onPointerDown}

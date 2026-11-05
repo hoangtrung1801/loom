@@ -1,4 +1,4 @@
-import { Application, CanvasTextMetrics, Container, Graphics, Text, TextStyle } from 'pixi.js';
+import Konva from 'konva';
 import { CanvasController, CanvasElement, ElementType, elementBounds, isLinear, visibleRect, expandRect, worldPoints, center } from 'Lib/canvas';
 
 export interface RendererTheme {
@@ -23,35 +23,47 @@ export interface ObjectInfo {
 };
 
 interface View {
-	node: Container;
+	node: Konva.Group;
+	texts: Konva.Text[];
 	key: string;
-};
-
-const color = (hex: string): number => {
-	const v = String(hex || '').replace('#', '');
-	if (v.length == 3) {
-		return parseInt(v.split('').map(c => c + c).join(''), 16);
-	};
-	return parseInt(v.slice(0, 6) || '000000', 16);
 };
 
 const FRAME_TITLE = 12;
 const ARROW_HEAD = 14;
+const LINE_HEIGHT = 1.3;
+const KEEP_VIEWS = 1500;
+
+const rgba = (hex: string, alpha: number): string => {
+	let v = String(hex || '').replace('#', '');
+
+	if (v.length == 3) {
+		v = v.split('').map(c => c + c).join('');
+	};
+
+	const n = parseInt(v.slice(0, 6) || '000000', 16);
+
+	return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+};
 
 /**
- * PixiJS (WebGL) renderer for a canvas scene. It only draws what is visible, keeps one display
- * object per element and rebuilds a view only when the element (or its object info) changed.
+ * Konva (Canvas 2D) renderer for a canvas scene. It only draws what is visible, keeps one Konva group
+ * per element and rebuilds a group only when the element (or its object info) changed.
+ * Interaction is handled by the controller, so no Konva node listens to events.
  */
 export class CanvasRenderer {
 
-	private app: Application | null = null;
-	private world = new Container();
-	private elementsLayer = new Container();
-	private draftLayer = new Container();
-	private grid = new Graphics();
-	private overlay = new Graphics();
+	private stage: Konva.Stage | null = null;
+	private bgLayer: Konva.Layer | null = null;
+	private worldLayer: Konva.Layer | null = null;
+	private overlayLayer: Konva.Layer | null = null;
+	private world = new Konva.Group({ listening: false });
+	private elementsGroup = new Konva.Group({ listening: false });
+	private draftGroup = new Konva.Group({ listening: false });
+	private observer: ResizeObserver | null = null;
 	private views = new Map<string, View>();
-	private draftView: View | null = null;
+	private attached: Konva.Group[] = [];
+	private draftNode: Konva.Group | null = null;
+	private bgKey = '';
 	private frame = 0;
 	private destroyed = false;
 	private hiddenId = '';
@@ -64,40 +76,47 @@ export class CanvasRenderer {
 		private getObject: (id: string) => ObjectInfo,
 	) {};
 
-	async init (canvas: HTMLCanvasElement, resizeTo: HTMLElement) {
-		const app = new Application();
-
-		await app.init({
-			canvas,
-			resizeTo,
-			antialias: true,
-			autoDensity: true,
-			resolution: window.devicePixelRatio || 1,
-			background: color(this.theme.bg),
-			preference: 'webgl',
-		});
-
+	async init (container: HTMLElement, resizeTo: HTMLElement) {
 		if (this.destroyed) {
-			app.destroy(false, { children: true });
 			return;
 		};
 
-		this.app = app;
-		this.world.addChild(this.elementsLayer, this.draftLayer);
-		app.stage.addChild(this.grid, this.world, this.overlay);
-		this.ready = true;
+		const rect = resizeTo.getBoundingClientRect();
+		const stage = new Konva.Stage({ container: container as HTMLDivElement, width: Math.max(1, rect.width), height: Math.max(1, rect.height), listening: false });
 
+		this.stage = stage;
+		this.bgLayer = new Konva.Layer({ listening: false });
+		this.worldLayer = new Konva.Layer({ listening: false });
+		this.overlayLayer = new Konva.Layer({ listening: false });
+
+		this.bgLayer.add(new Konva.Shape({ listening: false, sceneFunc: ctx => this.paintBackground((ctx as any)._context) }));
+		this.world.add(this.elementsGroup, this.draftGroup);
+		this.worldLayer.add(this.world);
+		this.overlayLayer.add(new Konva.Shape({ listening: false, sceneFunc: ctx => this.paintOverlay((ctx as any)._context) }));
+		stage.add(this.bgLayer, this.worldLayer, this.overlayLayer);
+
+		this.observer = new ResizeObserver(() => {
+			const r = resizeTo.getBoundingClientRect();
+
+			if (this.stage && ((r.width != this.stage.width()) || (r.height != this.stage.height()))) {
+				this.stage.size({ width: Math.max(1, r.width), height: Math.max(1, r.height) });
+				this.bgKey = '';
+				this.requestRender();
+			};
+		});
+		this.observer.observe(resizeTo);
+
+		this.ready = true;
 		this.controller.measureText = (text, width, fontSize) => this.measure(text, width, fontSize);
 		this.requestRender();
 	};
 
 	setTheme (theme: RendererTheme) {
 		this.theme = theme;
-		if (this.app) {
-			this.app.renderer.background.color = color(theme.bg);
-		};
-		this.views.forEach(view => view.node.destroy({ children: true }));
+		this.bgKey = '';
+		this.views.forEach(view => view.node.destroy());
 		this.views.clear();
+		this.attached = [];
 		this.requestRender();
 	};
 
@@ -126,38 +145,39 @@ export class CanvasRenderer {
 	destroy () {
 		this.destroyed = true;
 		cancelAnimationFrame(this.frame);
+		this.observer?.disconnect();
+		this.observer = null;
 
-		if (this.app && this.ready) {
-			this.app.destroy(false, { children: true });
+		if (this.stage) {
+			this.stage.destroy();
 		};
-		this.app = null;
+		this.stage = null;
 		this.ready = false;
 		this.views.clear();
+		this.attached = [];
 	};
 
-	private style (el: CanvasElement, width: number): TextStyle {
-		return new TextStyle({
+	private text (value: string, fontSize: number, width: number, fill: string, extra: Partial<Konva.TextConfig> = {}): Konva.Text {
+		return new Konva.Text({
+			text: value,
 			fontFamily: this.theme.fontFamily,
-			fontSize: el.fontSize || 16,
-			fill: color(el.fill ? this.theme.onFill : (this.theme.textColor[el.color || 'default'] || this.theme.text)),
-			wordWrap: true,
-			wordWrapWidth: Math.max(10, width),
-			breakWords: true,
-			lineHeight: Math.round((el.fontSize || 16) * 1.3),
+			fontSize,
+			fill,
+			width,
+			wrap: 'word',
+			lineHeight: Math.round(fontSize * LINE_HEIGHT) / fontSize,
+			listening: false,
+			perfectDrawEnabled: false,
+			...extra,
 		});
 	};
 
 	private measure (text: string, width: number, fontSize: number): number {
-		const style = new TextStyle({
-			fontFamily: this.theme.fontFamily,
-			fontSize,
-			wordWrap: true,
-			wordWrapWidth: Math.max(10, width),
-			breakWords: true,
-			lineHeight: Math.round(fontSize * 1.3),
-		});
+		const node = this.text(text || ' ', fontSize, Math.max(10, width), '#000');
+		const height = Math.ceil(node.height());
 
-		return Math.ceil(CanvasTextMetrics.measureText(text || ' ', style).height);
+		node.destroy();
+		return height;
 	};
 
 	// --------------------------------------------------------- //
@@ -168,52 +188,40 @@ export class CanvasRenderer {
 		return [ el.v, el.nonce, this.objectVersion, info ? `${info.name}|${info.type}` : '', (el.id == this.hiddenId) ? 'h' : '' ].join(':');
 	};
 
-	private stroke (el: CanvasElement): number {
-		return color(this.theme.stroke[el.color || 'default'] || this.theme.text);
+	private stroke (el: CanvasElement): string {
+		return this.theme.stroke[el.color || 'default'] || this.theme.text;
 	};
 
-	private fillColor (el: CanvasElement): number | null {
+	private fillColor (el: CanvasElement): string | undefined {
 		if (!el.fill) {
-			return null;
+			return undefined;
 		};
-		return color(this.theme.fill[el.fill] || this.theme.fill.yellow);
+		return this.theme.fill[el.fill] || this.theme.fill.yellow;
 	};
 
-	private build (el: CanvasElement): Container {
-		const node = new Container();
-		const g = new Graphics();
+	private build (el: CanvasElement): View {
+		const node = new Konva.Group({ listening: false });
+		const texts: Konva.Text[] = [];
 		const sw = el.strokeWidth || 2;
 		const stroke = this.stroke(el);
 		const fill = this.fillColor(el);
 		const hidden = el.id == this.hiddenId;
-
-		node.addChild(g);
+		const base = { listening: false, perfectDrawEnabled: false, shadowForStrokeEnabled: false };
 
 		switch (el.type) {
 			case ElementType.Rect:
 			case ElementType.Sticky: {
-				g.rect(0, 0, el.w, el.h);
-				if (fill !== null) {
-					g.fill({ color: fill });
-				};
-				if (el.type == ElementType.Rect) {
-					g.stroke({ width: sw, color: stroke });
-				};
+				node.add(new Konva.Rect({ ...base, width: el.w, height: el.h, fill, stroke: (el.type == ElementType.Rect) ? stroke : undefined, strokeWidth: sw }));
 				break;
 			};
 
 			case ElementType.Ellipse: {
-				g.ellipse(el.w / 2, el.h / 2, el.w / 2, el.h / 2);
-				if (fill !== null) {
-					g.fill({ color: fill });
-				};
-				g.stroke({ width: sw, color: stroke });
+				node.add(new Konva.Ellipse({ ...base, x: el.w / 2, y: el.h / 2, radiusX: el.w / 2, radiusY: el.h / 2, fill, stroke, strokeWidth: sw }));
 				break;
 			};
 
 			case ElementType.Frame: {
-				g.rect(0, 0, el.w, el.h).fill({ color: color(this.theme.fill.grey || this.theme.bg), alpha: 0.12 });
-				g.rect(0, 0, el.w, el.h).stroke({ width: 1, color: color(this.theme.muted) });
+				node.add(new Konva.Rect({ ...base, width: el.w, height: el.h, fill: rgba(this.theme.fill.grey || this.theme.bg, 0.12), stroke: this.theme.muted, strokeWidth: 1 }));
 				break;
 			};
 
@@ -222,12 +230,8 @@ export class CanvasRenderer {
 			case ElementType.Freehand: {
 				const pts = el.points || [];
 
-				if (pts.length) {
-					g.moveTo(pts[0][0], pts[0][1]);
-					for (let i = 1; i < pts.length; i++) {
-						g.lineTo(pts[i][0], pts[i][1]);
-					};
-					g.stroke({ width: sw, color: stroke, cap: 'round', join: 'round' });
+				if (pts.length > 1) {
+					node.add(new Konva.Line({ ...base, points: pts.reduce((acc, p) => acc.concat(p), [] as number[]), stroke, strokeWidth: sw, lineCap: 'round', lineJoin: 'round' }));
 				};
 
 				if ((el.type == ElementType.Arrow) && (pts.length > 1)) {
@@ -236,10 +240,18 @@ export class CanvasRenderer {
 					const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
 					const len = ARROW_HEAD + sw;
 
-					g.moveTo(b[0] - (Math.cos(angle - 0.45) * len), b[1] - (Math.sin(angle - 0.45) * len));
-					g.lineTo(b[0], b[1]);
-					g.lineTo(b[0] - (Math.cos(angle + 0.45) * len), b[1] - (Math.sin(angle + 0.45) * len));
-					g.stroke({ width: sw, color: stroke, cap: 'round', join: 'round' });
+					node.add(new Konva.Line({
+						...base,
+						points: [
+							b[0] - (Math.cos(angle - 0.45) * len), b[1] - (Math.sin(angle - 0.45) * len),
+							b[0], b[1],
+							b[0] - (Math.cos(angle + 0.45) * len), b[1] - (Math.sin(angle + 0.45) * len),
+						],
+						stroke,
+						strokeWidth: sw,
+						lineCap: 'round',
+						lineJoin: 'round',
+					}));
 				};
 				break;
 			};
@@ -247,33 +259,19 @@ export class CanvasRenderer {
 			case ElementType.Object: {
 				const info = this.getObject(el.targetObjectId);
 
-				g.roundRect(0, 0, el.w, el.h, 8).fill({ color: color(this.theme.card) });
-				g.roundRect(0, 0, el.w, el.h, 8).stroke({ width: 1, color: color(this.theme.cardBorder) });
+				node.add(new Konva.Rect({ ...base, width: el.w, height: el.h, cornerRadius: 8, fill: this.theme.card, stroke: this.theme.cardBorder, strokeWidth: 1 }));
 
-				const name = new Text({
-					text: (info?.name || '').slice(0, 120),
-					style: new TextStyle({
-						fontFamily: this.theme.fontFamily,
-						fontSize: 15,
-						fontWeight: '600',
-						fill: color(this.theme.text),
-						wordWrap: true,
-						wordWrapWidth: el.w - 24,
-						breakWords: true,
-					}),
-				});
-				name.position.set(12, 12);
-				name.label = 'text';
-				node.addChild(name);
+				const name = this.text((info?.name || '').slice(0, 120), 15, el.w - 24, this.theme.text, { x: 12, y: 12, fontStyle: '600', wrap: 'word' });
+
+				node.add(name);
+				texts.push(name);
 
 				if (info?.type) {
-					const type = new Text({
-						text: info.type,
-						style: new TextStyle({ fontFamily: this.theme.fontFamily, fontSize: 12, fill: color(this.theme.muted) }),
-					});
-					type.position.set(12, el.h - 12 - type.height);
-					type.label = 'text';
-					node.addChild(type);
+					const type = this.text(info.type, 12, undefined, this.theme.muted, { wrap: 'none' });
+
+					type.position({ x: 12, y: el.h - 12 - type.height() });
+					node.add(type);
+					texts.push(type);
 				};
 				break;
 			};
@@ -281,125 +279,135 @@ export class CanvasRenderer {
 
 		// Text content for text, sticky, frame title and shape labels
 		if (el.text && !hidden && (el.type != ElementType.Object) && !isLinear(el)) {
+			let label: Konva.Text = null;
+
 			if (el.type == ElementType.Frame) {
-				const title = new Text({
-					text: el.text,
-					style: new TextStyle({ fontFamily: this.theme.fontFamily, fontSize: FRAME_TITLE, fill: color(this.theme.muted) }),
-				});
-				title.position.set(0, -title.height - 4);
-				title.label = 'text';
-				node.addChild(title);
+				label = this.text(el.text, FRAME_TITLE, undefined, this.theme.muted, { wrap: 'none' });
+				label.position({ x: 0, y: -label.height() - 4 });
 			} else {
-				const padded = (el.type != ElementType.Text);
-				const pad = padded ? 12 : 0;
-				const text = new Text({ text: el.text, style: this.style(el, el.w - (pad * 2)) });
+				const fontSize = el.fontSize || 16;
+				const fillText = el.fill ? this.theme.onFill : (this.theme.textColor[el.color || 'default'] || this.theme.text);
+				const pad = (el.type != ElementType.Text) ? 12 : 0;
 
 				if ((el.type == ElementType.Rect) || (el.type == ElementType.Ellipse)) {
-					text.anchor.set(0.5);
-					text.position.set(el.w / 2, el.h / 2);
+					label = this.text(el.text, fontSize, Math.max(10, el.w - (pad * 2)), fillText, { x: pad, y: pad, height: Math.max(10, el.h - (pad * 2)), align: 'center', verticalAlign: 'middle', wrap: 'word' });
 				} else {
-					text.position.set(pad, pad);
+					label = this.text(el.text, fontSize, Math.max(10, el.w - (pad * 2)), fillText, { x: pad, y: pad, wrap: 'word' });
 				};
-				text.label = 'text';
-				node.addChild(text);
 			};
+
+			node.add(label);
+			texts.push(label);
 		};
 
-		node.pivot.set(el.w / 2, el.h / 2);
-		node.position.set(el.x + (el.w / 2), el.y + (el.h / 2));
-		node.rotation = el.angle || 0;
+		node.offset({ x: el.w / 2, y: el.h / 2 });
+		node.position({ x: el.x + (el.w / 2), y: el.y + (el.h / 2) });
+		node.rotation(((el.angle || 0) * 180) / Math.PI);
 
-		return node;
+		return { node, texts, key: '' };
 	};
 
 	// --------------------------------------------------------- //
 
 	private render () {
-		if (!this.app || this.destroyed) {
+		if (!this.stage || this.destroyed) {
 			return;
 		};
 
 		const { viewport, scene } = this.controller;
-		const width = this.app.screen.width;
-		const height = this.app.screen.height;
+		const width = this.stage.width();
+		const height = this.stage.height();
 
 		this.controller.width = width;
 		this.controller.height = height;
 
-		this.world.position.set(viewport.x, viewport.y);
-		this.world.scale.set(viewport.zoom);
+		this.world.position({ x: viewport.x, y: viewport.y });
+		this.world.scale({ x: viewport.zoom, y: viewport.zoom });
 
-		this.renderGrid(width, height);
-
-		// Only elements near the screen get a display object
+		// Only elements near the screen get a node. The query is already sorted by z order.
 		const area = expandRect(visibleRect(viewport, width, height), 64 / viewport.zoom);
-		const visible = new Set<string>();
+		const visible = scene.query(area);
+		const ids = new Set<string>();
+		const nodes: Konva.Group[] = [];
+		const showText = viewport.zoom >= 0.2;
 
-		scene.query(area).forEach(el => {
-			visible.add(el.id);
+		visible.forEach(el => {
+			ids.add(el.id);
 
 			const key = this.elementKey(el);
 			let view = this.views.get(el.id);
 
 			if (!view || (view.key != key)) {
-				view?.node.destroy({ children: true });
-				view = { node: this.build(el), key };
+				view?.node.destroy();
+				view = this.build(el);
+				view.key = key;
 				this.views.set(el.id, view);
-				this.elementsLayer.addChild(view.node);
 			};
 
-			view.node.visible = true;
-			view.node.children.forEach(child => {
-				if (child.label == 'text') {
-					child.visible = viewport.zoom >= 0.2;
-				};
-			});
+			view.texts.forEach(t => t.visible(showText));
+			nodes.push(view.node);
 		});
 
 		this.views.forEach((view, id) => {
 			const el = scene.get(id);
 
-			if (!el || el.deleted) {
-				view.node.destroy({ children: true });
+			if (!el || el.deleted || ((this.views.size > KEEP_VIEWS) && !ids.has(id))) {
+				view.node.destroy();
 				this.views.delete(id);
-			} else
-			if (!visible.has(id)) {
-				view.node.visible = false;
 			};
 		});
 
-		this.orderViews(visible);
-		this.renderDraft();
-		this.renderOverlay();
-		this.app.render();
+		this.syncNodes(nodes);
+		this.syncDraft();
+
+		const bgKey = [ width, height, viewport.x, viewport.y, viewport.zoom, this.theme.bg, this.theme.grid ].join(':');
+
+		if (bgKey != this.bgKey) {
+			this.bgKey = bgKey;
+			this.bgLayer.draw();
+		};
+
+		this.worldLayer.draw();
+		this.overlayLayer.draw();
 	};
 
-	private lastOrder = '';
+	/** Attach exactly the visible nodes in z order, touching the group only when something changed. */
+	private syncNodes (nodes: Konva.Group[]) {
+		const same = (nodes.length == this.attached.length) && nodes.every((n, i) => n === this.attached[i]);
 
-	/** Keep display order equal to z order, but only touch the stage when the order changed. */
-	private orderViews (visible: Set<string>) {
-		const ids = this.controller.scene.list().filter(el => visible.has(el.id)).map(el => el.id);
-		const sig = ids.join(',');
-
-		if (sig == this.lastOrder) {
+		if (same) {
 			return;
 		};
-		this.lastOrder = sig;
 
-		ids.forEach((id, index) => {
-			const view = this.views.get(id);
-			if (view) {
-				this.elementsLayer.setChildIndex(view.node, Math.min(index, this.elementsLayer.children.length - 1));
-			};
-		});
+		this.elementsGroup.removeChildren();
+		nodes.forEach(n => this.elementsGroup.add(n));
+		this.attached = nodes;
 	};
 
-	private renderGrid (width: number, height: number) {
+	private syncDraft () {
+		const { draft } = this.controller;
+
+		if (this.draftNode) {
+			this.draftNode.destroy();
+			this.draftNode = null;
+		};
+
+		if (!draft) {
+			return;
+		};
+
+		this.draftNode = this.build(draft).node;
+		this.draftGroup.add(this.draftNode);
+	};
+
+	private paintBackground (c: CanvasRenderingContext2D) {
 		const { viewport } = this.controller;
-		const g = this.grid;
+		const width = this.stage.width();
+		const height = this.stage.height();
 		let step = 24 * viewport.zoom;
 
-		g.clear();
+		c.fillStyle = this.theme.bg;
+		c.fillRect(0, 0, width, height);
 
 		while (step < 12) {
 			step *= 2;
@@ -413,112 +421,138 @@ export class CanvasRenderer {
 		const oy = ((viewport.y % step) + step) % step;
 		const size = Math.max(0.75, Math.min(1.5, viewport.zoom));
 
+		c.fillStyle = this.theme.grid;
+
 		for (let x = ox; x < width; x += step) {
 			for (let y = oy; y < height; y += step) {
-				g.rect(x - (size / 2), y - (size / 2), size, size);
+				c.fillRect(x - (size / 2), y - (size / 2), size, size);
 			};
 		};
-		g.fill({ color: color(this.theme.grid) });
 	};
 
-	private renderDraft () {
-		const { draft } = this.controller;
-
-		if (this.draftView) {
-			this.draftView.node.destroy({ children: true });
-			this.draftView = null;
-		};
-
-		if (!draft) {
-			return;
-		};
-
-		this.draftView = { node: this.build(draft), key: '' };
-		this.draftLayer.addChild(this.draftView.node);
-	};
-
-	private renderOverlay () {
+	private paintOverlay (c: CanvasRenderingContext2D) {
 		const { controller } = this;
 		const { viewport, scene } = controller;
-		const g = this.overlay;
-		const selected = color(this.theme.selected);
+		const selected = this.theme.selected;
 		const sx = (v: number) => (v * viewport.zoom) + viewport.x;
 		const sy = (v: number) => (v * viewport.zoom) + viewport.y;
 
-		g.clear();
+		const line = (x1: number, y1: number, x2: number, y2: number, width: number, style: string, alpha = 1) => {
+			c.globalAlpha = alpha;
+			c.lineWidth = width;
+			c.strokeStyle = style;
+			c.beginPath();
+			c.moveTo(x1, y1);
+			c.lineTo(x2, y2);
+			c.stroke();
+			c.globalAlpha = 1;
+		};
+
+		const box = (x: number, y: number, w: number, h: number, width: number, style: string, alpha = 1) => {
+			c.globalAlpha = alpha;
+			c.lineWidth = width;
+			c.strokeStyle = style;
+			c.strokeRect(x, y, w, h);
+			c.globalAlpha = 1;
+		};
 
 		const outline = (el: CanvasElement, width: number, alpha = 1) => {
 			if (!el.angle || isLinear(el)) {
 				const b = elementBounds(el);
-				g.rect(sx(b.x), sy(b.y), b.w * viewport.zoom, b.h * viewport.zoom);
-			} else {
-				const c = center(el);
-				const corners = [ [ el.x, el.y ], [ el.x + el.w, el.y ], [ el.x + el.w, el.y + el.h ], [ el.x, el.y + el.h ] ].map(([ x, y ]) => {
-					const cos = Math.cos(el.angle);
-					const sin = Math.sin(el.angle);
-					return [ c.x + ((x - c.x) * cos) - ((y - c.y) * sin), c.y + ((x - c.x) * sin) + ((y - c.y) * cos) ];
-				});
 
-				g.moveTo(sx(corners[0][0]), sy(corners[0][1]));
-				corners.slice(1).forEach(p => g.lineTo(sx(p[0]), sy(p[1])));
-				g.closePath();
+				box(sx(b.x), sy(b.y), b.w * viewport.zoom, b.h * viewport.zoom, width, selected, alpha);
+			} else {
+				const o = center(el);
+				const cos = Math.cos(el.angle);
+				const sin = Math.sin(el.angle);
+				const corners = [ [ el.x, el.y ], [ el.x + el.w, el.y ], [ el.x + el.w, el.y + el.h ], [ el.x, el.y + el.h ] ].map(([ x, y ]) => [
+					o.x + ((x - o.x) * cos) - ((y - o.y) * sin),
+					o.y + ((x - o.x) * sin) + ((y - o.y) * cos),
+				]);
+
+				c.globalAlpha = alpha;
+				c.lineWidth = width;
+				c.strokeStyle = selected;
+				c.beginPath();
+				corners.forEach((p, i) => i ? c.lineTo(sx(p[0]), sy(p[1])) : c.moveTo(sx(p[0]), sy(p[1])));
+				c.closePath();
+				c.stroke();
+				c.globalAlpha = 1;
 			};
-			g.stroke({ width, color: selected, alpha });
 		};
 
 		if (controller.hoverId && !scene.selection.has(controller.hoverId)) {
 			const el = scene.get(controller.hoverId);
+
 			if (el && !el.deleted) {
 				outline(el, 1, 0.6);
 			};
 		};
 
-		scene.selected().forEach(el => outline(el, 1.5));
+		const sel = scene.selected();
+
+		sel.forEach(el => outline(el, 1.5));
 
 		if (scene.selection.size > 1) {
 			const b = controller.selectionBounds();
+
 			if (b) {
-				g.rect(sx(b.x), sy(b.y), b.w * viewport.zoom, b.h * viewport.zoom).stroke({ width: 1, color: selected, alpha: 0.5 });
+				box(sx(b.x), sy(b.y), b.w * viewport.zoom, b.h * viewport.zoom, 1, selected, 0.5);
 			};
 		};
 
 		const handles = controller.handles();
-		const sel = scene.selected();
 
 		if (sel.length == 1) {
 			const top = handles.find(h => h.id == 'n');
 			const rot = handles.find(h => h.id == 'rotate');
 
 			if (top && rot) {
-				g.moveTo(sx(top.point.x), sy(top.point.y)).lineTo(sx(rot.point.x), sy(rot.point.y)).stroke({ width: 1, color: selected });
+				line(sx(top.point.x), sy(top.point.y), sx(rot.point.x), sy(rot.point.y), 1, selected);
 			};
 		};
 
 		handles.forEach(h => {
-			if ((h.id == 'rotate')) {
-				g.circle(sx(h.point.x), sy(h.point.y), 5).fill({ color: color(this.theme.bg) }).stroke({ width: 1.5, color: selected });
+			c.fillStyle = this.theme.bg;
+			c.strokeStyle = selected;
+			c.lineWidth = 1.5;
+			c.beginPath();
+
+			if (h.id == 'rotate') {
+				c.arc(sx(h.point.x), sy(h.point.y), 5, 0, Math.PI * 2);
 			} else {
-				g.rect(sx(h.point.x) - 4, sy(h.point.y) - 4, 8, 8).fill({ color: color(this.theme.bg) }).stroke({ width: 1.5, color: selected });
+				c.rect(sx(h.point.x) - 4, sy(h.point.y) - 4, 8, 8);
 			};
+
+			c.fill();
+			c.stroke();
 		});
 
 		if (controller.marquee) {
 			const m = controller.marquee;
-			g.rect(sx(m.x), sy(m.y), m.w * viewport.zoom, m.h * viewport.zoom).fill({ color: selected, alpha: 0.08 }).stroke({ width: 1, color: selected, alpha: 0.8 });
+
+			c.globalAlpha = 0.08;
+			c.fillStyle = selected;
+			c.fillRect(sx(m.x), sy(m.y), m.w * viewport.zoom, m.h * viewport.zoom);
+			box(sx(m.x), sy(m.y), m.w * viewport.zoom, m.h * viewport.zoom, 1, selected, 0.8);
 		};
 
 		controller.guides.forEach(guide => {
 			if (guide.axis == 'x') {
-				g.moveTo(sx(guide.value), sy(guide.from)).lineTo(sx(guide.value), sy(guide.to));
+				line(sx(guide.value), sy(guide.from), sx(guide.value), sy(guide.to), 1, this.theme.highlight);
 			} else {
-				g.moveTo(sx(guide.from), sy(guide.value)).lineTo(sx(guide.to), sy(guide.value));
+				line(sx(guide.from), sy(guide.value), sx(guide.to), sy(guide.value), 1, this.theme.highlight);
 			};
-			g.stroke({ width: 1, color: color(this.theme.highlight) });
 		});
 
 		// Keep line endpoints visible when a single line is selected
 		if ((sel.length == 1) && [ ElementType.Line, ElementType.Arrow ].includes(sel[0].type)) {
-			worldPoints(sel[0]).forEach(p => g.circle(sx(p.x), sy(p.y), 3.5).fill({ color: selected }));
+			c.fillStyle = selected;
+			worldPoints(sel[0]).forEach(p => {
+				c.beginPath();
+				c.arc(sx(p.x), sy(p.y), 3.5, 0, Math.PI * 2);
+				c.fill();
+			});
 		};
 	};
 

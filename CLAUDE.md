@@ -270,7 +270,7 @@ Detailed documentation is available in `docs/` for deeper context on each module
 - [`docs/src/ts/component/preview/README.md`](docs/src/ts/component/preview/README.md) - Preview cards and tooltips
 - [`docs/src/ts/component/selection/README.md`](docs/src/ts/component/selection/README.md) - Block and text selection handling
 - [`docs/src/ts/component/util/README.md`](docs/src/ts/component/util/README.md) - ~48 reusable utility components
-- [`docs/src/ts/component/canvas/README.md`](docs/src/ts/component/canvas/README.md) - Canvas (whiteboard) UI: PixiJS renderer, block adapter, toolbars
+- [`docs/src/ts/component/canvas/README.md`](docs/src/ts/component/canvas/README.md) - Canvas (whiteboard) UI: Konva renderer, block adapter, toolbars
 - [`docs/src/ts/component/comment/README.md`](docs/src/ts/component/comment/README.md) - Comment system: threaded discussions with Lexical editor, rich content parts, reactions
 
 ### Libraries

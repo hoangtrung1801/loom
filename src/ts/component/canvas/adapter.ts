@@ -3,6 +3,10 @@ import { CanvasController, CanvasElement, ELEMENT_PROCESSOR, decodeElement, enco
 
 const FLUSH_DELAY = 120;
 const TOMBSTONE_TTL = 60 * 1000;
+const BATCH_MIN = 8;
+const BATCH_SIZE = 400;
+const RESOLVE_ATTEMPTS = 40;
+const RESOLVE_DELAY = 100;
 
 /**
  * Bridges the scene and loom-heart: every element lives in its own embed block
@@ -11,6 +15,8 @@ const TOMBSTONE_TTL = 60 * 1000;
 export class CanvasAdapter {
 
 	private blockIds = new Map<string, string>();
+	/** Elements whose block has been seen in the store at least once; only those can be removed remotely. */
+	private seen = new Set<string>();
 	private dirty = new Map<string, CanvasElement>();
 	private creating = new Set<string>();
 	private timer = 0;
@@ -23,15 +29,24 @@ export class CanvasAdapter {
 		return !!block && (block.type == I.BlockType.Embed) && ((block.content as any).processor == ELEMENT_PROCESSOR);
 	};
 
+	/**
+	 * Every element block of the object. The middleware may nest new blocks below other blocks
+	 * (e.g. when many are created in a row), so the whole block map is scanned, not only the root's children.
+	 */
+	private getBlocks (): I.Block[] {
+		return S.Block.getBlocks(this.rootId, it => this.isElementBlock(it));
+	};
+
 	/** Reads every element block of the object. Also learns which block holds which element. */
 	read (): CanvasElement[] {
 		const list: CanvasElement[] = [];
 
-		S.Block.getChildren(this.rootId, this.rootId, it => this.isElementBlock(it)).forEach(block => {
+		this.getBlocks().forEach(block => {
 			const el = decodeElement((block.content as any).text);
 
 			if (el) {
 				this.blockIds.set(el.id, block.id);
+				this.seen.add(el.id);
 				list.push(el);
 			};
 		});
@@ -40,7 +55,7 @@ export class CanvasAdapter {
 
 	/** Signature of everything that can change remotely, used to cheaply detect store updates. */
 	signature (): string {
-		return S.Block.getChildren(this.rootId, this.rootId, it => this.isElementBlock(it)).map(it => `${it.id}${(it.content as any).text}`).join('\n');
+		return this.getBlocks().map(it => `${it.id}${(it.content as any).text}`).join('\n');
 	};
 
 	/** Merge what the store has now into the scene (remote changes and our own echoes). */
@@ -52,8 +67,9 @@ export class CanvasAdapter {
 
 		// Blocks deleted remotely (compaction on another client) disappear from the scene too
 		this.controller.scene.elements.forEach((el, id) => {
-			if (!known.has(id) && !this.dirty.has(id) && !this.creating.has(id) && this.blockIds.has(id)) {
+			if (!known.has(id) && !this.dirty.has(id) && !this.creating.has(id) && this.seen.has(id)) {
 				this.blockIds.delete(id);
+				this.seen.delete(id);
 				this.controller.scene.compact([ id ]);
 				this.controller.scene.elements.delete(id);
 				this.controller.scene.index.delete(id);
@@ -72,13 +88,16 @@ export class CanvasAdapter {
 		window.clearTimeout(this.timer);
 
 		const list = Array.from(this.dirty.values());
+		const created: CanvasElement[] = [];
+
 		this.dirty.clear();
 
 		list.forEach(el => {
 			const blockId = this.blockIds.get(el.id);
-			const text = encodeElement(el);
 
 			if (blockId) {
+				const text = encodeElement(el);
+
 				// The middleware does not echo this change back to us, so keep the local store in step
 				C.BlockLatexSetText(this.rootId, blockId, text);
 				S.Block.updateContent(this.rootId, blockId, { text });
@@ -96,27 +115,98 @@ export class CanvasAdapter {
 				return;
 			};
 
-			this.creating.add(el.id);
-			C.BlockCreate(this.rootId, this.rootId, I.BlockPosition.Inner, {
-				type: I.BlockType.Embed,
-				content: { text, processor: ELEMENT_PROCESSOR },
-			}, (message: any) => {
-				this.creating.delete(el.id);
-
-				if (this.destroyed) {
-					return;
-				};
-
-				if (!message.error.code && message.blockId) {
-					this.blockIds.set(el.id, message.blockId);
-				};
-
-				if (this.dirty.has(el.id)) {
-					window.clearTimeout(this.timer);
-					this.timer = window.setTimeout(() => this.flush(), FLUSH_DELAY);
-				};
-			});
+			created.push(el);
 		});
+
+		if (created.length >= BATCH_MIN) {
+			for (let i = 0; i < created.length; i += BATCH_SIZE) {
+				this.createBatch(created.slice(i, i + BATCH_SIZE));
+			};
+		} else {
+			created.forEach(el => this.createOne(el));
+		};
+	};
+
+	private scheduleFlush () {
+		window.clearTimeout(this.timer);
+		this.timer = window.setTimeout(() => this.flush(), FLUSH_DELAY);
+	};
+
+	private createOne (el: CanvasElement) {
+		this.creating.add(el.id);
+		C.BlockCreate(this.rootId, this.rootId, I.BlockPosition.Inner, {
+			type: I.BlockType.Embed,
+			content: { text: encodeElement(el), processor: ELEMENT_PROCESSOR },
+		}, (message: any) => {
+			this.creating.delete(el.id);
+
+			if (this.destroyed) {
+				return;
+			};
+
+			if (!message.error.code && message.blockId) {
+				this.blockIds.set(el.id, message.blockId);
+			};
+
+			if (this.dirty.has(el.id)) {
+				this.scheduleFlush();
+			};
+		});
+	};
+
+	/**
+	 * Many new elements (paste, import, duplicate) are created by a single paste call: one change instead of
+	 * one per element, which is orders of magnitude faster in the middleware.
+	 */
+	private createBatch (list: CanvasElement[]) {
+		list.forEach(el => this.creating.add(el.id));
+
+		const blocks = list.map((el, i) => ({
+			id: `canvas${i}`,
+			type: I.BlockType.Embed,
+			childrenIds: [],
+			fields: {},
+			content: { text: encodeElement(el), processor: ELEMENT_PROCESSOR },
+		}));
+
+		C.BlockPaste(this.rootId, '', { from: 0, to: 0 }, [], false, { loom: blocks, text: '', html: '' }, '', (message: any) => {
+			if (this.destroyed) {
+				return;
+			};
+
+			if (message.error.code) {
+				// Fall back to one by one
+				list.forEach(el => {
+					this.creating.delete(el.id);
+					this.createOne(el);
+				});
+				return;
+			};
+
+			this.resolveCreated(list, 0);
+		});
+	};
+
+	/** The pasted blocks get new ids, so learn them from the store (by element id) before allowing edits. */
+	private resolveCreated (list: CanvasElement[], attempt: number) {
+		this.read();
+
+		const pending = list.filter(el => !this.blockIds.has(el.id));
+
+		list.forEach(el => {
+			if (this.blockIds.has(el.id) || (attempt >= RESOLVE_ATTEMPTS)) {
+				this.creating.delete(el.id);
+			};
+		});
+
+		if (pending.length && (attempt < RESOLVE_ATTEMPTS)) {
+			window.setTimeout(() => !this.destroyed && this.resolveCreated(pending, attempt + 1), RESOLVE_DELAY);
+			return;
+		};
+
+		if (list.some(el => this.dirty.has(el.id))) {
+			this.scheduleFlush();
+		};
 	};
 
 	/**
@@ -159,6 +249,7 @@ export class CanvasAdapter {
 				ids.push(id);
 				this.tombstones.delete(id);
 				this.blockIds.delete(id);
+				this.seen.delete(id);
 			};
 		});
 
