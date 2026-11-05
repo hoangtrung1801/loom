@@ -41,6 +41,8 @@ jobs:
   cli:
     name: cli
     uses: ./.github/workflows/loom-cli.yml
+    with:
+      version: ${{ inputs.tag || github.ref_name }}
 
   release:
     name: release
