@@ -120,3 +120,14 @@ Editing rules (from the `loom` skill): use `edit-text` for small changes, `add-b
 ## 5. Using it from the app's AI Agent panel
 
 The panel's agent talks to the same API over MCP, so the same workflow works there: the user opens the panel, mentions the task with `@`, and asks e.g. "investigate this task and write a plan into it". Do "Set up" from a coding agent with the CLI (or `loom mcp --tier full`); it is not verified that the panel's tool set can create types and queries.
+
+## 6. Helper script
+
+`scripts/loom-pm.sh [-n|--dry-run] <command>` (inside this skill's folder, e.g. `~/.claude/skills/loom-project-management/scripts/loom-pm.sh` once installed) wraps the long `loom find --filter ...` lines for the `projects` space (override with `LOOM_PM_SPACE`, name or id). It prints the space it writes to, and a write only runs when the `<query>` resolves to exactly one task.
+
+- Lists: `open`, `active`, `blocked`, `review`, `high`, `overdue`, `search <words>`, `summary` (counts per Status, overdue, high open), `next` (triage, max 5), `show <query>`.
+- Writes (preview with `-n`): `move <query> <status>`, `start <query>`, `done <query>`, `prio <query> high|medium|low`, `due <query> <date>`, `new "<name>" [-p prio] [-s status] [-d date] [-b "<markdown>"]`.
+
+Note: in the live `projects` space the filter keys are lowercase snake_case (`status`, `task_priority`, `due_date`, `assignee`, `linked_projects`), and the Status options are `To Do`, `In Progress`, `In Review`, `On Hold`, `Blocked`, `Done`.
+Priority options are `high`, `medium`, `low`. The names used earlier in this skill (`Backlog`, `Urgent`, `Project`, ...) differ; the live space wins.
+Run `loom describe --space SP --type Task` to confirm before relying on either.
