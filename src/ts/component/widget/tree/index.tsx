@@ -311,7 +311,7 @@ const WidgetTree = forwardRef<WidgetTreeRefProps, Props>((props, ref) => {
 		e.preventDefault();
 		e.stopPropagation();
 
-		U.Object.openConfig(e, item);
+		U.Object.openEvent(e, item, { fullPage: true });
 		analytics.event('OpenSidebarObject');
 	};
 

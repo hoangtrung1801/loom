@@ -47,7 +47,7 @@ const WidgetGalleryItem = forwardRef<{}, Props>(({
 		e.preventDefault();
 		e.stopPropagation();
 
-		U.Object.openEvent(e, object);
+		U.Object.openEvent(e, object, { fullPage: true });
 		analytics.event('OpenSidebarObject');
 	};
 

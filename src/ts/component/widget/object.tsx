@@ -63,8 +63,8 @@ const WidgetObjectItem = (props: WidgetObjectItemProps) => {
 			{...attributes}
 			{...listeners}
 			style={style}
-			onClick={e => U.Object.openEvent(e, item)}
-			onAuxClick={e => U.Object.openEvent(e, item)}
+			onClick={e => U.Object.openEvent(e, item, { fullPage: true })}
+			onAuxClick={e => U.Object.openEvent(e, item, { fullPage: true })}
 			onContextMenu={e => onContextHandler(e, item, false)}
 		>
 			<div className="side left">

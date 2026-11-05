@@ -24,7 +24,7 @@ const WidgetHome: FC = () => {
 			return;
 		};
 
-		U.Object.openEvent(e, home);
+		U.Object.openEvent(e, home, { fullPage: true });
 	};
 
 	const onContextMenu = (e: MouseEvent) => {

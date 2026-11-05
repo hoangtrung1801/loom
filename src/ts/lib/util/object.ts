@@ -166,6 +166,11 @@ class UtilObject {
 		return true;
 	};
 
+	/**
+	 * Open an object from a click event.
+	 * @param param.fullPage - A plain click always opens the full page (closing an open object popup or side panel),
+	 * ignoring the "Open objects" setting. Used by the left sidebar.
+	 */
 	openEvent (e: any, object: any, param?: any) {
 		if (!object) {
 			return;
@@ -196,11 +201,15 @@ class UtilObject {
 		if ((e.shiftKey && (e.metaKey || e.ctrlKey))) {
 			this.openWindow(object);
 		} else
-		if (e.shiftKey || keyboard.isPopup() || this.isSidebarMode()) {
+		if (e.shiftKey || (!param.fullPage && (keyboard.isPopup() || this.isSidebarMode()))) {
 			this.openPopup(object, param);
 		} else
 		if ((e.metaKey || e.ctrlKey) || (e.button == 1)) {
 			this.openTab(object);
+		} else
+		if (param.fullPage && S.Popup.isOpen('page')) {
+			// Close an open object popup or side panel first, the full page replaces it
+			S.Popup.close('page', () => this.openRoute(object, param));
 		} else {
 			this.openRoute(object, param);
 		};
