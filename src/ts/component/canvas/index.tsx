@@ -37,6 +37,8 @@ const getTheme = (): RendererTheme => {
 		bg: theme.graph.bg,
 		grid: theme.graph.link,
 		text: theme.color.default,
+		// Fills are the same soft colors in every theme, so text on them stays the light theme's dark text
+		onFill: (J.Theme[''] as any).color.default,
 		muted: theme.graph.muted,
 		selected: theme.graph.selected,
 		highlight: theme.graph.highlight,
@@ -318,7 +320,14 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 
 		renderer.init(canvasRef.current, nodeRef.current).then(() => controller.fit());
 
-		const unsubScene = scene.subscribe(() => renderer.requestRender());
+		const unsubScene = scene.subscribe(change => {
+			renderer.requestRender();
+
+			// Remote changes should refresh the style bar and toolbar state too
+			if (change.reason != 'local') {
+				refresh();
+			};
+		});
 
 		// Changes from other clients arrive through the block store
 		const unsubStore = reaction(() => adapter.signature(), () => {
@@ -326,6 +335,9 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			setOverLimit(scene.count() > SOFT_ELEMENT_LIMIT);
 			loadObjects();
 		});
+
+		// Colors come from the theme, so rebuild the views when it changes
+		const unsubTheme = reaction(() => S.Common.getThemeClass(), () => renderer.setTheme(getTheme()));
 
 		const onWheel = (e: WheelEvent) => {
 			e.preventDefault();
@@ -339,18 +351,15 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			};
 		};
 
-		const onThemeChange = () => renderer.setTheme(getTheme());
-
 		canvasRef.current.addEventListener('wheel', onWheel, { passive: false });
 		window.addEventListener('mousedown', onMouseDown);
-		window.addEventListener('updateTheme', onThemeChange);
 
 		return () => {
 			canvasRef.current?.removeEventListener('wheel', onWheel);
 			window.removeEventListener('mousedown', onMouseDown);
-			window.removeEventListener('updateTheme', onThemeChange);
 			unsubScene();
 			unsubStore();
+			unsubTheme();
 			adapter.destroy();
 			renderer.destroy();
 			keyboard.setFocus(false);
@@ -402,7 +411,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		editStyle.height = Math.max(24, editEl.h * zoom);
 		editStyle.fontSize = (editEl.fontSize || 16) * zoom;
 		editStyle.lineHeight = 1.3;
-		editStyle.color = theme.textColor[editEl.color || 'default'];
+		editStyle.color = editEl.fill ? (J.Theme[''] as any).color.default : theme.textColor[editEl.color || 'default'];
 		editStyle.padding = isText ? 0 : 12 * zoom;
 		editStyle.textAlign = [ ElementType.Rect, ElementType.Ellipse ].includes(editEl.type) ? 'center' : 'left';
 		editStyle.transform = `rotate(${editEl.angle || 0}rad)`;

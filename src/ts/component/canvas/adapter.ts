@@ -79,7 +79,9 @@ export class CanvasAdapter {
 			const text = encodeElement(el);
 
 			if (blockId) {
+				// The middleware does not echo this change back to us, so keep the local store in step
 				C.BlockLatexSetText(this.rootId, blockId, text);
+				S.Block.updateContent(this.rootId, blockId, { text });
 				this.trackTombstone(el);
 				return;
 			};

@@ -5,6 +5,7 @@ export interface RendererTheme {
 	bg: string;
 	grid: string;
 	text: string;
+	onFill: string;
 	muted: string;
 	selected: string;
 	highlight: string;
@@ -138,7 +139,7 @@ export class CanvasRenderer {
 		return new TextStyle({
 			fontFamily: this.theme.fontFamily,
 			fontSize: el.fontSize || 16,
-			fill: color(this.theme.textColor[el.color || 'default'] || this.theme.text),
+			fill: color(el.fill ? this.theme.onFill : (this.theme.textColor[el.color || 'default'] || this.theme.text)),
 			wordWrap: true,
 			wordWrapWidth: Math.max(10, width),
 			breakWords: true,
