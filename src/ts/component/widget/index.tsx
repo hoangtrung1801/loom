@@ -661,7 +661,7 @@ const WidgetIndex = forwardRef<{}, Props>((props, ref) => {
 			const view = Dataview.getView(rootId, J.Constant.blockId.dataview, viewId);
 
 			S.Common.routeParam = { ref: 'widget', viewId: view?.id };
-			U.Object.openEvent(e, object);
+			U.Object.openEvent(e, object, { fullPage: true });
 		};
 	};
 

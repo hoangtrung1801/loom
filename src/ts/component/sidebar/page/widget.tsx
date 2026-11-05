@@ -298,7 +298,7 @@ const SidebarPageWidget = forwardRef<{}, I.SidebarPageComponent>((props, ref) =>
 		const view = Dataview.getView(rootId, J.Constant.blockId.dataview, param.viewId);
 
 		S.Common.routeParam = { ref: 'widget', viewId: view?.id };
-		U.Object.openConfig(e, object);
+		U.Object.openEvent(e, object, { fullPage: true });
 	};
 
 	const onMore = (e: any) => {
