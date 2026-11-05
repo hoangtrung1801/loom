@@ -15,6 +15,8 @@ interface Binding {
 };
 
 const MODIFIERS = [ 'cmd', 'ctrl', 'alt', 'shift' ];
+// What KeyboardEvent.key reports while a modifier alone is held
+const MODIFIER_EVENT_KEYS = [ 'control', 'meta', 'os', 'alt', 'altgraph', 'shift', 'cmd', 'ctrl' ];
 const CODE_PREFIXES = [ 'key', 'digit' ];
 const SPECIAL_KEYS = [ 'comma', 'space' ];
 
@@ -192,7 +194,7 @@ const PageMainSettingsShortcuts = forwardRef<I.PageRef, I.PageSettingsComponent>
 			const pressed = keyboard.metaKeys(e);
 			const code = String(e.code || '').toLowerCase();
 
-			if (MODIFIERS.includes(key)) {
+			if (MODIFIER_EVENT_KEYS.includes(String(key).toLowerCase())) {
 				setEditingKeys(pressed);
 				return;
 			};
