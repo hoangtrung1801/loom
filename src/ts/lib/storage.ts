@@ -829,6 +829,47 @@ class Storage {
 		keyboard.initShortcuts();
 	};
 
+	/**
+	 * Gets the user's hotkey overrides for plugin commands, keyed by the command key.
+	 * An empty list means the user disabled the hotkey.
+	 * @returns {Record<string, string[]>} The overrides.
+	 */
+	getPluginHotkeys (): Record<string, string[]> {
+		const list = this.get('pluginHotkeys', this.isLocal('pluginHotkeys')) || {};
+		const ret: Record<string, string[]> = {};
+
+		for (const id in list) {
+			if (Array.isArray(list[id])) {
+				ret[id] = list[id];
+			};
+		};
+		return ret;
+	};
+
+	/**
+	 * Sets or clears the hotkey override for a plugin command.
+	 * @param {string} key - The plugin command key.
+	 * @param {string[] | null} keys - The new keys, or null to restore the plugin's own hotkey.
+	 */
+	setPluginHotkey (key: string, keys: string[] | null) {
+		const list = this.getPluginHotkeys();
+
+		if (keys) {
+			list[key] = keys;
+		} else {
+			delete(list[key]);
+		};
+
+		this.set('pluginHotkeys', list, this.isLocal('pluginHotkeys'));
+	};
+
+	/**
+	 * Drops all plugin hotkey overrides.
+	 */
+	resetPluginHotkeys () {
+		this.delete('pluginHotkeys', this.isLocal('pluginHotkeys'));
+	};
+
 	setGraphData (data: any) {
 		const isLocal = this.isLocal('graphData');
 		const obj = this.get('graphData', isLocal) || {};

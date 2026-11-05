@@ -14,6 +14,17 @@ That's it! The script will:
 2. Start the Vite dev server
 3. Open your browser with the correct URL
 
+## Cloud / fresh Linux container
+
+`update.sh` downloads prebuilt middleware from anyproto/anytype-heart, which cloud sandboxes may block. Instead run:
+
+```bash
+bash scripts/setup-cloud.sh   # builds loom-heart from source + generates protobuf bindings (~5 min cold)
+bun run start:web
+```
+
+Notes: `bun install` must use `--ignore-scripts` (the electron `keytar` rebuild needs libsecret). A `Prism before initialization` console error in dev is harmless; the auth screen should still render.
+
 ## Using External Server
 
 If you're running `loomHelper` separately (e.g., for debugging):

@@ -633,7 +633,7 @@ class Keyboard {
 
 		// Plugin hotkeys come last, a built-in shortcut with the same keys always wins
 		if (isMain && !S.Plugin.restricted) {
-			S.Plugin.getHotkeys(cmd, this.shortcuts).forEach(item => {
+			S.Plugin.getHotkeys(cmd, this.shortcuts, Storage.getPluginHotkeys()).forEach(item => {
 				this.shortcut(item.combo, e, () => {
 					if (pin && !this.isPinChecked) {
 						return;

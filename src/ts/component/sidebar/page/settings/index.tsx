@@ -99,6 +99,7 @@ const SidebarPageSettingsIndex = forwardRef<{}, I.SidebarPageComponent>((props, 
 				id: 'basicSettings', name: translate('popupSettingsApplicationTitle'), children: [
 					{ id: 'personal' },
 					{ id: 'language' },
+					{ id: 'shortcuts', iconParam: { name: 'settings/api' } },
 					{ id: 'pinIndex', iconParam: { name: 'settings/pin' }, subPages: [ 'pinSelect', 'pinConfirm' ] },
 				],
 			},

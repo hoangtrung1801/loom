@@ -7,6 +7,7 @@ import PagePersonal from './personal';
 import PagePhrase from './phrase';
 import PageLanguage from './language';
 import PageApi from './api';
+import PageShortcuts from './shortcuts';
 import PagePlugins from './plugins';
 import PagePluginSettings from './pluginSettings';
 
@@ -52,6 +53,7 @@ const Components: any = {
 	membership:			 PageMembership,
 	language:			 PageLanguage,
 	api:				 PageApi,
+	shortcuts:			 PageShortcuts,
 	plugins:			 PagePlugins,
 	pluginSettings:		 PagePluginSettings,
 
