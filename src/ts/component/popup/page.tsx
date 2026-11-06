@@ -11,6 +11,23 @@ const PopupPage = forwardRef<{}, Props>((props, ref) => {
 	const { data } = param;
 	const { matchPopup } = data;
 	const scrollHandlerRef = useRef<(() => void) | null>(null);
+	const isSidebar = (param.className || '').split(' ').includes('popupPageSidebar');
+
+	// Side panel has no dimmer, so close it when the user clicks outside of it
+	const onOutsideMouseDown = (e: MouseEvent) => {
+		const target = e.target as HTMLElement;
+
+		if (!target || !target.closest || !target.isConnected) {
+			return;
+		};
+
+		// Ignore clicks inside the panel, menus and any other popup (e.g. confirm dialogs)
+		if (target.closest('.innerWrap, .menuWrap, .menu, .popup, .tooltip')) {
+			return;
+		};
+
+		S.Popup.close('page');
+	};
 
 	const getInnerWrap = (): HTMLElement | null => {
 		const container = U.Dom.get(getId());
@@ -43,7 +60,12 @@ const PopupPage = forwardRef<{}, Props>((props, ref) => {
 		S.Common.clearRightSidebarState(true);
 		sidebar.init(true);
 
+		if (isSidebar) {
+			U.Dom.addEvent(document, 'mousedown', onOutsideMouseDown as EventListener);
+		};
+
 		return () => {
+			U.Dom.removeEvent(document, 'mousedown', onOutsideMouseDown as EventListener);
 			unbind();
 			historyPopup.clear();
 			keyboard.setWindowTitle();
