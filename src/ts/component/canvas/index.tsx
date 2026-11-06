@@ -217,8 +217,9 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 	};
 
 	/**
-	 * Page previews draw the page's blocks, so load them once (ObjectShow does not open the object).
-	 * Later edits arrive through the block store; reloading would reset blocks that an open editor is using.
+	 * Page previews draw the page's blocks, so load them when the store has none (ObjectShow does not open the object).
+	 * Opening the object in the side panel and closing it clears its blocks from the store, so this runs again then.
+	 * Blocks that are present are never reloaded, because an open editor is using them.
 	 */
 	const showPages = (ids: string[]) => {
 		ids.forEach(id => {
@@ -229,7 +230,10 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			};
 
 			shownRef.current.set(id, '1');
-			C.ObjectShow(id, '', S.Common.space, () => rendererRef.current?.invalidateObjects());
+			C.ObjectShow(id, '', S.Common.space, () => {
+				shownRef.current.delete(id);
+				rendererRef.current?.invalidateObjects();
+			});
 		});
 	};
 
@@ -685,7 +689,16 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			},
 			{ delay: 150 },
 		);
-		const unsubOpened = reaction(() => getOpened(), id => renderer.setHighlightObject(id), { fireImmediately: true });
+		const reloadTimers: number[] = [];
+		const unsubOpened = reaction(() => getOpened(), (id, prev) => {
+			renderer.setHighlightObject(id);
+
+			// Closing or swapping the side panel clears the page's blocks from the store (after its close animation),
+			// and the block store is not observable for that, so look again a little later
+			if (prev && (id != prev)) {
+				[ 400, 1200 ].forEach(delay => reloadTimers.push(window.setTimeout(() => showPages(objectIdsRef.current.split(',').filter(it => it)), delay)));
+			};
+		}, { fireImmediately: true });
 		const unsubTheme = reaction(() => S.Common.getThemeClass(), () => renderer.setTheme(getTheme()));
 
 		const onWheel = (e: WheelEvent) => {
@@ -710,6 +723,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			unsubStore();
 			unsubTheme();
 			unsubOpened();
+			reloadTimers.forEach(t => window.clearTimeout(t));
 			unsubPreviews();
 			adapter.destroy();
 			renderer.destroy();
