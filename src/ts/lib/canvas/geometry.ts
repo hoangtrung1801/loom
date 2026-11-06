@@ -169,6 +169,21 @@ export const hitTest = (el: CanvasElement, world: Point, tolerance: number): boo
 		return false;
 	};
 
+	if (el.type == ElementType.Diamond) {
+		const c = center(el);
+		const hw = Math.max(1, el.w / 2);
+		const hh = Math.max(1, el.h / 2);
+		const norm = (Math.abs(p.x - c.x) / hw) + (Math.abs(p.y - c.y) / hh);
+
+		// One unit of the normalised distance is the half diagonal, so scale the tolerance to it
+		const t = tolerance / Math.min(hw, hh);
+
+		if (el.fill) {
+			return norm <= (1 + t);
+		};
+		return (norm <= (1 + t)) && (norm >= (1 - t));
+	};
+
 	// Unfilled rectangles and frames are only hit on the outline (and frames on their title)
 	if ((el.type == ElementType.Rect) && !el.fill) {
 		const inner = expandRect(el, -tolerance);
@@ -235,6 +250,11 @@ export const anchorPoint = (el: CanvasElement, toward: Point): Point => {
 
 	if (el.type == ElementType.Ellipse) {
 		const k = 1 / Math.sqrt(((dx * dx) / (hw * hw)) + ((dy * dy) / (hh * hh)));
+		return { x: c.x + (dx * k), y: c.y + (dy * k) };
+	};
+
+	if (el.type == ElementType.Diamond) {
+		const k = 1 / ((Math.abs(dx) / hw) + (Math.abs(dy) / hh));
 		return { x: c.x + (dx * k), y: c.y + (dy * k) };
 	};
 

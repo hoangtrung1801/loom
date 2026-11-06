@@ -1,4 +1,4 @@
-import { CanvasElement, ElementType, Guide, Point, Rect, Tool, Viewport, MIN_SIZE } from './types';
+import { CanvasElement, DEFAULT_STYLE, ElementStyle, ElementType, Guide, Point, Rect, Tool, Viewport, MIN_SIZE } from './types';
 import {
 	anchorPoint, center, elementBounds, estimateTextHeight, expandRect, hitTest, isLinear, normalizeLinear, normalizeRect,
 	rectContains, rectsIntersect, rotatePoint, simplify, unionBounds, worldPoints,
@@ -16,6 +16,8 @@ export interface ControllerCallbacks {
 	onEditText?: (el: CanvasElement) => void;
 	onOpenObject?: (objectId: string) => void;
 	onRender?: () => void;
+	/** The number key for the image slot was pressed; Loom has no uploads here, so it opens the object search. */
+	onRequestObject?: () => void;
 };
 
 export interface Modifiers {
@@ -30,7 +32,7 @@ export interface Handle {
 	point: Point;
 };
 
-type DragMode = 'none' | 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'draw';
+type DragMode = 'none' | 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'draw' | 'erase';
 
 interface Drag {
 	mode: DragMode;
@@ -63,6 +65,7 @@ const TOOL_KEYS: { [key: string]: Tool } = {
 	v: Tool.Select,
 	h: Tool.Hand,
 	r: Tool.Rect,
+	d: Tool.Diamond,
 	o: Tool.Ellipse,
 	l: Tool.Line,
 	a: Tool.Arrow,
@@ -70,7 +73,21 @@ const TOOL_KEYS: { [key: string]: Tool } = {
 	t: Tool.Text,
 	s: Tool.Sticky,
 	f: Tool.Frame,
+	e: Tool.Eraser,
+	// Same number row as other whiteboards: 1 select, 2 rectangle, 3 diamond, 4 ellipse, 5 arrow, 6 line, 7 draw, 8 text, 0 eraser
+	'1': Tool.Select,
+	'2': Tool.Rect,
+	'3': Tool.Diamond,
+	'4': Tool.Ellipse,
+	'5': Tool.Arrow,
+	'6': Tool.Line,
+	'7': Tool.Pen,
+	'8': Tool.Text,
+	'0': Tool.Eraser,
 };
+
+const SHAPES = [ ElementType.Rect, ElementType.Diamond, ElementType.Ellipse ];
+const EDITABLE = [ ElementType.Text, ElementType.Sticky, ElementType.Rect, ElementType.Diamond, ElementType.Ellipse, ElementType.Frame, ElementType.Arrow, ElementType.Line ];
 
 export class CanvasController {
 
@@ -86,8 +103,14 @@ export class CanvasController {
 	hoverId = '';
 	readonly = false;
 	spaceDown = false;
+	/** Keep the active drawing tool after drawing one element. */
+	locked = false;
+	/** Style for new elements; changed from the properties panel. */
+	defaults: ElementStyle = { ...DEFAULT_STYLE };
+	/** Elements the eraser has touched in the current stroke, removed when the pointer is released. */
+	erasing = new Set<string>();
 	/** Replaced by the renderer with real text metrics; the estimate is only a fallback (tests, headless). */
-	measureText: (text: string, width: number, fontSize: number) => number = estimateTextHeight;
+	measureText: (text: string, width: number, fontSize: number, fontFamily?: string) => number = estimateTextHeight;
 	private drag: Drag | null = null;
 	private cb: ControllerCallbacks;
 
@@ -123,6 +146,7 @@ export class CanvasController {
 
 		this.tool = tool;
 		this.draft = null;
+		this.erasing.clear();
 		this.cb.onToolChange?.(tool);
 		this.render();
 	};
@@ -144,6 +168,47 @@ export class CanvasController {
 
 	toWorld (screen: Point): Point {
 		return screenToWorld(this.viewport, screen);
+	};
+
+	// --------------------------------------------------------- //
+	// Style for new elements
+
+	toggleLock () {
+		this.locked = !this.locked;
+		this.render();
+	};
+
+	/** Style fields a new element of this type starts with, taken from the current defaults. */
+	newStyle (type: ElementType): Partial<CanvasElement> {
+		const d = this.defaults;
+		const seed = Math.floor(Math.random() * 0x7fffffff);
+		const base: Partial<CanvasElement> = { color: d.color, strokeWidth: d.strokeWidth, strokeStyle: d.strokeStyle, roughness: d.roughness, opacity: d.opacity, seed };
+
+		if (SHAPES.includes(type)) {
+			return { ...base, fill: d.fill, fillStyle: d.fillStyle, rounded: (type == ElementType.Ellipse) ? false : d.rounded };
+		};
+
+		switch (type) {
+			case ElementType.Line:
+				return { ...base, arrowType: d.arrowType };
+
+			case ElementType.Arrow:
+				return { ...base, arrowType: d.arrowType, startHead: d.startHead, endHead: d.endHead };
+
+			case ElementType.Freehand:
+				return { color: d.color, strokeWidth: d.strokeWidth, opacity: d.opacity, seed, roughness: 0 };
+
+			case ElementType.Text:
+				return { color: d.color, opacity: d.opacity, fontFamily: d.fontFamily, fontSize: d.fontSize, textAlign: d.textAlign, seed };
+
+			case ElementType.Sticky:
+				return { opacity: d.opacity, fontFamily: d.fontFamily, fontSize: d.fontSize, textAlign: d.textAlign, verticalAlign: d.verticalAlign, seed };
+
+			case ElementType.Frame:
+				return { seed };
+		};
+
+		return {};
 	};
 
 	// --------------------------------------------------------- //
@@ -369,7 +434,22 @@ export class CanvasController {
 			return;
 		};
 
+		if (this.tool == Tool.Eraser) {
+			this.drag = { mode: 'erase', startWorld: world, startScreen: screen, origin: new Map(), before: new Map(), moved: false };
+			this.eraseAt(world);
+			return;
+		};
+
 		this.startDraw(world, screen);
+	};
+
+	private eraseAt (world: Point) {
+		const hit = this.hitElement(world);
+
+		if (hit && !this.erasing.has(hit.id)) {
+			this.erasing.add(hit.id);
+			this.render();
+		};
 	};
 
 	private startMove (world: Point, screen: Point) {
@@ -407,29 +487,31 @@ export class CanvasController {
 
 		switch (this.tool) {
 			case Tool.Rect:
-				el = defaultElement(ElementType.Rect, id, z, { x: world.x, y: world.y, strokeWidth: 2 });
-				break;
+			case Tool.Diamond:
+			case Tool.Ellipse: {
+				const type = (this.tool == Tool.Rect) ? ElementType.Rect : ((this.tool == Tool.Diamond) ? ElementType.Diamond : ElementType.Ellipse);
 
-			case Tool.Ellipse:
-				el = defaultElement(ElementType.Ellipse, id, z, { x: world.x, y: world.y, strokeWidth: 2 });
+				el = defaultElement(type, id, z, { ...this.newStyle(type), x: world.x, y: world.y });
 				break;
+			};
 
 			case Tool.Frame:
-				el = defaultElement(ElementType.Frame, id, z, { x: world.x, y: world.y, strokeWidth: 1, text: '' });
+				el = defaultElement(ElementType.Frame, id, z, { ...this.newStyle(ElementType.Frame), x: world.x, y: world.y, strokeWidth: 1, text: '' });
 				break;
 
 			case Tool.Line:
 			case Tool.Arrow: {
 				const startEl = this.hitElement(world, it => !isLinear(it));
+				const type = (this.tool == Tool.Line) ? ElementType.Line : ElementType.Arrow;
 
-				el = defaultElement(this.tool == Tool.Line ? ElementType.Line : ElementType.Arrow, id, z, {
-					x: world.x, y: world.y, strokeWidth: 2, points: [ [ 0, 0 ], [ 0, 0 ] ], startId: startEl?.id || '',
+				el = defaultElement(type, id, z, {
+					...this.newStyle(type), x: world.x, y: world.y, points: [ [ 0, 0 ], [ 0, 0 ] ], startId: startEl?.id || '',
 				});
 				break;
 			};
 
 			case Tool.Pen:
-				el = defaultElement(ElementType.Freehand, id, z, { x: world.x, y: world.y, strokeWidth: 3, points: [ [ 0, 0 ] ] });
+				el = defaultElement(ElementType.Freehand, id, z, { ...this.newStyle(ElementType.Freehand), x: world.x, y: world.y, points: [ [ 0, 0 ] ] });
 				break;
 
 			case Tool.Text:
@@ -496,6 +578,10 @@ export class CanvasController {
 			case 'draw':
 				this.doDraw(world, mods);
 				break;
+
+			case 'erase':
+				this.eraseAt(world);
+				break;
 		};
 	};
 
@@ -537,6 +623,15 @@ export class CanvasController {
 			case 'draw':
 				this.finishDraw(world, drag);
 				break;
+
+			case 'erase': {
+				const ids = Array.from(this.erasing);
+
+				this.erasing.clear();
+				this.deleteIds(ids);
+				this.render();
+				break;
+			};
 		};
 	};
 
@@ -678,7 +773,7 @@ export class CanvasController {
 		};
 
 		if (el0.type == ElementType.Text) {
-			next.h = this.measureText(el0.text, w, el0.fontSize || 16);
+			next.h = this.measureText(el0.text, w, el0.fontSize || 16, el0.fontFamily);
 		};
 
 		this.scene.upsert([ next ]);
@@ -710,6 +805,7 @@ export class CanvasController {
 
 		switch (el.type) {
 			case ElementType.Rect:
+			case ElementType.Diamond:
 			case ElementType.Ellipse:
 			case ElementType.Frame: {
 				let w = world.x - start.x;
@@ -765,8 +861,11 @@ export class CanvasController {
 				const x = world.x - (isText ? 0 : size.w / 2);
 				const y = world.y - (isText ? 0 : size.h / 2);
 
-				el = defaultElement(isText ? ElementType.Text : ElementType.Sticky, newElementId(), z, {
-					x, y, w: size.w, h: size.h, text: '', fontSize: 16, fill: isText ? '' : 'yellow',
+				const type = isText ? ElementType.Text : ElementType.Sticky;
+				const style = this.newStyle(type);
+
+				el = defaultElement(type, newElementId(), z, {
+					...style, x, y, w: size.w, h: isText ? this.measureText(' ', size.w, style.fontSize, style.fontFamily) : size.h, text: '', fill: isText ? '' : 'yellow',
 				});
 				this.insertAndEdit(el);
 			};
@@ -775,6 +874,7 @@ export class CanvasController {
 
 		switch (el.type) {
 			case ElementType.Rect:
+			case ElementType.Diamond:
 			case ElementType.Ellipse:
 			case ElementType.Frame:
 				if (!drag.moved || (el.w < MIN_SIZE) || (el.h < MIN_SIZE)) {
@@ -816,7 +916,7 @@ export class CanvasController {
 		this.scene.setSelection([ el.id ]);
 		this.commit([ el.id ], before);
 
-		if (this.tool != Tool.Pen) {
+		if ((this.tool != Tool.Pen) && !this.locked) {
 			this.setTool(Tool.Select);
 		};
 	};
@@ -841,7 +941,7 @@ export class CanvasController {
 		const hit = this.hitElement(world);
 
 		if (hit) {
-			if ([ ElementType.Text, ElementType.Sticky, ElementType.Rect, ElementType.Ellipse, ElementType.Frame ].includes(hit.type)) {
+			if (EDITABLE.includes(hit.type)) {
 				this.scene.setSelection([ hit.id ]);
 				this.cb.onEditText?.(hit);
 			} else
@@ -854,7 +954,7 @@ export class CanvasController {
 		// Double click on empty space drops a text box
 		const z = this.scene.nextZ();
 		const el = defaultElement(ElementType.Text, newElementId(), z, {
-			x: world.x, y: world.y, w: DEFAULTS.text.w, h: DEFAULTS.text.h, text: '', fontSize: 16,
+			...this.newStyle(ElementType.Text), x: world.x, y: world.y, w: DEFAULTS.text.w, h: DEFAULTS.text.h, text: '',
 		});
 		this.insertAndEdit(el);
 	};
@@ -889,7 +989,7 @@ export class CanvasController {
 		const next: CanvasElement = { ...el, text: trimmed };
 
 		if (isBoxless) {
-			next.h = this.measureText(trimmed, el.w, el.fontSize || 16);
+			next.h = this.measureText(trimmed, el.w, el.fontSize || 16, el.fontFamily);
 		};
 
 		this.scene.upsert([ next ]);
@@ -917,16 +1017,34 @@ export class CanvasController {
 		this.deleteIds(Array.from(this.scene.selection));
 	};
 
+	/** Applies a style to the selection and remembers it for the next elements. */
 	setStyle (patch: Partial<CanvasElement>) {
 		const sel = this.scene.selected();
+
+		Object.keys(patch).forEach(key => {
+			if (key in this.defaults) {
+				(this.defaults as any)[key] = (patch as any)[key];
+			};
+		});
+
 		if (!sel.length) {
+			this.render();
 			return;
 		};
 
 		const ids = sel.map(el => el.id);
 		const before = this.snapshot(ids);
 
-		this.scene.upsert(sel.map(el => ({ ...el, ...patch })));
+		const textual = [ 'fontSize', 'fontFamily' ].some(key => key in patch);
+
+		this.scene.upsert(sel.map(el => {
+			const next = { ...el, ...patch };
+
+			if (textual && (el.type == ElementType.Text)) {
+				next.h = this.measureText(next.text || ' ', next.w, next.fontSize || 16, next.fontFamily);
+			};
+			return next;
+		}));
 		this.commit(ids, before);
 	};
 
@@ -1098,12 +1216,20 @@ export class CanvasController {
 
 			case 'enter': {
 				const sel = this.scene.selected();
-				if ((sel.length == 1) && [ ElementType.Text, ElementType.Sticky, ElementType.Rect, ElementType.Ellipse, ElementType.Frame ].includes(sel[0].type)) {
+				if ((sel.length == 1) && EDITABLE.includes(sel[0].type)) {
 					this.cb.onEditText?.(sel[0]);
 					return true;
 				};
 				return false;
 			};
+
+			case 'q':
+				this.toggleLock();
+				return true;
+
+			case '9':
+				this.cb.onRequestObject?.();
+				return true;
 
 			case 'arrowleft': this.nudge(-(e.shift ? 10 : NUDGE), 0); return true;
 			case 'arrowright': this.nudge(e.shift ? 10 : NUDGE, 0); return true;
