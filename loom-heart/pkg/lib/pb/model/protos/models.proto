@@ -626,6 +626,7 @@ message Block {
                 Image = 22;
                 Drawio = 23;
                 Spotify = 24;
+                CanvasElement = 28; // a single element of a canvas object, text holds its JSON
             }
         }
 
@@ -886,6 +887,7 @@ message ObjectType {
         missingObject = 25;
         devices = 26;
         discussion = 27;
+        canvas = 28;
     }
 }
 

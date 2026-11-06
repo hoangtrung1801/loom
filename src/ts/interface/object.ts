@@ -23,6 +23,7 @@ export enum ObjectLayout {
 	ChatOld		 = 21,
 	Chat		 = 22,
 	Discussion	 = 27,
+	Canvas		 = 28,
 
 	Empty		 = 100,
 	Navigation	 = 101,

@@ -6,7 +6,7 @@ package bundle
 
 import domain "github.com/hoangtrung1801/loom/loom-heart/core/domain"
 
-const SystemTypesChecksum = "b94982741d4e50513273afac0e15f8ab9090ca22658cd8e6ec95533164c1b7ac"
+const SystemTypesChecksum = "c9161b2a883226639a59584832f9356a4779eb28a33e8039c4215a05fcb7225e"
 
 // SystemTypes contains types that have some special biz logic depends on them in some objects
 // they shouldn't be removed or edited in any way
@@ -17,4 +17,5 @@ var SystemTypes = append(InternalTypes, []domain.TypeKey{
 	TypeKeyBookmark,
 	TypeKeyChatDerived,
 	TypeKeyDiscussion,
+	TypeKeyCanvas,
 }...)

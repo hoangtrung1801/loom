@@ -340,7 +340,8 @@ var suitableLayouts = map[model.ObjectTypeLayout]struct{}{
 	model.ObjectType_chatDeprecated: {},
 	model.ObjectType_spaceView:      {},
 	model.ObjectType_chatDerived:    {},
-	model.ObjectType_discussion:    {},
+	model.ObjectType_discussion:     {},
+	model.ObjectType_canvas:         {},
 }
 
 func (u *syncStatusUpdater) isLayoutSuitableForSyncRelations(details *domain.Details) bool {

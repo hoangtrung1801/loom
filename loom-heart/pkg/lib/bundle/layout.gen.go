@@ -6,7 +6,7 @@ package bundle
 
 import "github.com/hoangtrung1801/loom/loom-heart/pkg/lib/pb/model"
 
-const LayoutChecksum = "c136128edc84e9bf9431617756987159c53f014a286607b15382d84e443d16c2"
+const LayoutChecksum = "1c6f6184f16424008880f525947b72c79410f6488b9dd833ec18f311cc40a90e"
 
 var (
 	Layouts = map[model.ObjectTypeLayout]model.Layout{
@@ -19,6 +19,11 @@ var (
 
 			Id:   model.ObjectType_bookmark,
 			Name: "Bookmark",
+		},
+		model.ObjectType_canvas: {
+
+			Id:   model.ObjectType_canvas,
+			Name: "Canvas",
 		},
 		model.ObjectType_collection: {
 
