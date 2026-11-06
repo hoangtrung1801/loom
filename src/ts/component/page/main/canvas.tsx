@@ -56,7 +56,8 @@ const PageMainCanvas = forwardRef<I.PageRef, I.PageComponent>((props, ref) => {
 	const onOpenObject = (id: string) => {
 		const object = S.Detail.get(rootId, id, [ 'layout' ], true);
 
-		U.Object.openConfig(null, { id, layout: object.layout });
+		// Embedded objects always open in the side panel, whatever the global open mode is, so the board stays in view
+		U.Object.openPopup({ id, layout: object.layout }, { className: 'popupPageSidebar' });
 	};
 
 	const onNameBlur = () => {

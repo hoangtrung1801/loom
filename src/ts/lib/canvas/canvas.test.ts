@@ -452,4 +452,33 @@ describe('library and insert', () => {
 
 		expect(scene.get('b')).toMatchObject({ color: 'red', roughness: 2, fillStyle: 'cross' });
 	});
+
+	it('edits the label of an unfilled shape on double click inside it', () => {
+		const edited: string[] = [];
+		const { scene, controller } = setup();
+
+		controller.setCallbacks({ onEditText: el => edited.push(el.id) });
+		scene.load([ rect('a', 0, 0, 200, 120) ]);
+		controller.doubleClick({ x: 100, y: 60 });
+
+		expect(edited).toEqual([ 'a' ]);
+		expect(scene.count()).toBe(1);
+	});
+
+	it('keeps an elbow arrow anchored at the start point while it is drawn', () => {
+		const { scene, controller } = setup();
+
+		controller.setStyle({ arrowType: 'elbow' });
+		controller.setTool(Tool.Arrow);
+		controller.pointerDown({ x: 400, y: 100 });
+		controller.pointerMove({ x: 350, y: 140 });
+		controller.pointerMove({ x: 200, y: 260 });
+		controller.pointerUp({ x: 200, y: 260 });
+
+		const [ arrow ] = scene.list();
+		const pts = arrow.points.map(p => [ Math.round(arrow.x + p[0]), Math.round(arrow.y + p[1]) ]);
+
+		expect(pts[0]).toEqual([ 400, 100 ]);
+		expect(pts[pts.length - 1]).toEqual([ 200, 260 ]);
+	});
 });

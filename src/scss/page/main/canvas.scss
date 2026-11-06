@@ -2,8 +2,13 @@
 
 .pageMainCanvas { display: flex; flex-direction: column; height: 100%; }
 .pageMainCanvas {
-	.canvasPage { position: relative; flex-grow: 1; min-height: 0px; overflow: hidden; }
+	.canvasPage { position: relative; flex-grow: 1; min-height: 0px; overflow: hidden; container-type: inline-size; }
 	.canvasPage > #loader { position: absolute; }
-	.canvasPage > .canvasTitle { @include text-paragraph; position: absolute; left: 16px; top: 12px; z-index: 3; width: 240px; max-width: calc(50% - 32px); padding: 4px 8px; border: 0px; border-radius: 6px; background: transparent; color: var(--color-text-primary); font-weight: 600; }
+	.canvasPage > .canvasTitle { @include text-paragraph; position: absolute; left: 64px; top: 20px; z-index: 3; width: 170px; height: 32px; box-sizing: border-box; padding: 4px 8px; border: 0px; border-radius: 6px; background: transparent; color: var(--color-text-primary); font-weight: 600; }
 	.canvasPage > .canvasTitle:hover, .canvasPage > .canvasTitle:focus { background: var(--color-shape-highlight-medium); }
+
+	// The toolbar is centered and wide, so on narrow pages the title moves under the menu button
+	@container (max-width: 1040px) {
+		.canvasPage > .canvasTitle { left: 16px; top: 64px; }
+	}
 }

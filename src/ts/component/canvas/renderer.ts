@@ -659,7 +659,9 @@ export class CanvasRenderer {
 	private buildLabel (el: CanvasElement): Konva.Group | Konva.Text | null {
 		const fontSize = el.fontSize || 16;
 		const family = el.fontFamily;
-		const fillText = el.fill ? this.theme.onFill : (this.theme.textColor[el.color || 'default'] || this.theme.text);
+		// Text on a solid fill keeps the dark on-fill color, but hachure and cross-hatch leave the background visible
+		const solid = !!el.fill && ((el.fillStyle || 'solid') == 'solid');
+		const fillText = solid ? this.theme.onFill : (this.theme.textColor[el.color || 'default'] || this.theme.text);
 
 		if (el.type == ElementType.Frame) {
 			const label = this.text(el.text, FRAME_TITLE, undefined, this.theme.muted, { wrap: 'none' });

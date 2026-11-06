@@ -839,7 +839,7 @@ export class CanvasController {
 					end = { x: start.x + (Math.cos(angle) * len), y: start.y + (Math.sin(angle) * len) };
 				};
 
-				this.draft = applyRoute({ ...el, points: [ [ 0, 0 ], [ end.x - start.x, end.y - start.y ] ] });
+				this.draft = applyRoute({ ...el, x: start.x, y: start.y, points: [ [ 0, 0 ], [ end.x - start.x, end.y - start.y ] ] });
 				break;
 			};
 
@@ -952,6 +952,17 @@ export class CanvasController {
 			if ((hit.type == ElementType.Object) && hit.targetObjectId) {
 				this.cb.onOpenObject?.(hit.targetObjectId);
 			};
+			return;
+		};
+
+		// Inside an unfilled shape the label is edited, like on other whiteboards
+		const tolerance = HIT_PX / this.viewport.zoom;
+		const around = this.scene.query(expandRect({ x: world.x, y: world.y, w: 0, h: 0 }, tolerance + 2));
+		const shape = around.slice().reverse().find(el => SHAPES.includes(el.type) && hitTest({ ...el, fill: el.fill || 'any' }, world, 0));
+
+		if (shape) {
+			this.scene.setSelection([ shape.id ]);
+			this.cb.onEditText?.(shape);
 			return;
 		};
 
