@@ -1,8 +1,8 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { reaction } from 'mobx';
-import { I, S, U, J, keyboard, translate } from 'Lib';
+import { C, I, S, U, J, keyboard, translate } from 'Lib';
 import { CanvasController, CanvasElement, ElementType, Scene, SOFT_ELEMENT_LIMIT, Tool } from 'Lib/canvas';
-import { CanvasRenderer, RendererTheme, ObjectInfo, ObjectKind } from './renderer';
+import { CanvasRenderer, RendererTheme, ObjectInfo, ObjectKind, PreviewBlock } from './renderer';
 import { CanvasAdapter } from './adapter';
 import CanvasToolbar from './toolbar';
 import CanvasPanel from './panel';
@@ -54,6 +54,8 @@ const getTheme = (): RendererTheme => {
 	};
 };
 
+const PREVIEW_BLOCKS = 40;
+
 const getKind = (layout: I.ObjectLayout): ObjectKind => {
 	switch (layout) {
 		case I.ObjectLayout.Image: return 'image';
@@ -71,7 +73,7 @@ const getCardSize = (kind: ObjectKind) => {
 		case 'bookmark': return { w: 320, h: 96 };
 		case 'set': return { w: 360, h: 220 };
 	};
-	return { w: 320, h: 240 };
+	return { w: 340, h: 420 };
 };
 
 const isShapeType = (type: ElementType) => [ ElementType.Rect, ElementType.Diamond, ElementType.Ellipse ].includes(type);
@@ -103,6 +105,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 	const adapterRef = useRef<CanvasAdapter | null>(null);
 	const editorRef = useRef<HTMLTextAreaElement>(null);
 	const objectIdsRef = useRef('');
+	const shownRef = useRef(new Map<string, string>());
 	const [ tool, setTool ] = useState<Tool>(Tool.Select);
 	const [ editing, setEditing ] = useState<Editing | null>(null);
 	const [ dummy, setDummy ] = useState(0);
@@ -126,6 +129,51 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		});
 	};
 
+	/** Top level blocks of a page that was loaded with ObjectShow, reduced to what the preview draws. */
+	const getPreviewBlocks = (id: string): PreviewBlock[] => {
+		const out: PreviewBlock[] = [];
+		const walk = (parentId: string, depth: number) => {
+			let number = 0;
+
+			S.Block.getChildren(id, parentId).forEach(block => {
+				if ((out.length >= PREVIEW_BLOCKS) || (block.id == 'header')) {
+					return;
+				};
+
+				if (block.type == I.BlockType.Layout) {
+					walk(block.id, depth);
+					return;
+				};
+
+				if (block.type == I.BlockType.Div) {
+					out.push({ kind: 'div', style: 0, text: '', checked: false, depth, number: 0 });
+					return;
+				};
+
+				if (block.type != I.BlockType.Text) {
+					return;
+				};
+
+				const style = Number(block.content.style) || 0;
+
+				if ([ I.TextStyle.Title, I.TextStyle.Description ].includes(style)) {
+					return;
+				};
+
+				number = (style == I.TextStyle.Numbered) ? number + 1 : 0;
+				out.push({ kind: 'text', style, text: String(block.content.text || ''), checked: !!block.content.checked, depth, number });
+
+				// Toggles are closed in the preview, everything else shows its nested blocks
+				if ((depth < 2) && ![ I.TextStyle.Toggle, I.TextStyle.ToggleHeader1, I.TextStyle.ToggleHeader2, I.TextStyle.ToggleHeader3 ].includes(style)) {
+					walk(block.id, depth + 1);
+				};
+			});
+		};
+
+		walk(id, 0);
+		return out;
+	};
+
 	const getObject = (id: string): ObjectInfo => {
 		const object = S.Detail.get(subId, id, [ 'name', 'layout', 'type', 'isDeleted', 'description', 'snippet', 'source' ], true);
 		const type = S.Record.getTypeById(object.type);
@@ -139,6 +187,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			text: deleted ? '' : String(object.snippet || object.description || ''),
 			source: String(object.source || ''),
 			imageUrl: ((kind == 'image') && !deleted) ? S.Common.imageUrl(id, 640) : '',
+			blocks: (kind == 'page') ? getPreviewBlocks(id) : [],
 		};
 	};
 
@@ -163,6 +212,24 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 
 		U.Subscription.subscribeIds({ subId, ids, keys: J.Relation.default, noDeps: true }, () => {
 			rendererRef.current?.invalidateObjects();
+			showPages(ids);
+		});
+	};
+
+	/**
+	 * Page previews draw the page's blocks, so load them once (ObjectShow does not open the object).
+	 * Later edits arrive through the block store; reloading would reset blocks that an open editor is using.
+	 */
+	const showPages = (ids: string[]) => {
+		ids.forEach(id => {
+			const object = S.Detail.get(subId, id, [ 'layout' ], true);
+
+			if ((getKind(object.layout) != 'page') || shownRef.current.has(id) || S.Block.getChildrenIds(id, id).length) {
+				return;
+			};
+
+			shownRef.current.set(id, '1');
+			C.ObjectShow(id, '', S.Common.space, () => rendererRef.current?.invalidateObjects());
 		});
 	};
 
@@ -606,6 +673,18 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		// Colors come from the theme, so rebuild the views when it changes
 		// The object that is open in the side panel is outlined on the board
 		const getOpened = () => String(S.Popup.get('page')?.param?.data?.matchPopup?.params?.id || '');
+		// Previews follow edits made in the side panel or by others
+		const unsubPreviews = reaction(
+			() => objectIdsRef.current.split(',').filter(it => it).map(id => {
+				const info = getObject(id);
+				return `${info.name}|${info.text}|${info.blocks.map(b => `${b.style}${b.checked}${b.text}`).join('\n')}`;
+			}).join('§'),
+			() => {
+				renderer.invalidateObjects();
+				showPages(objectIdsRef.current.split(',').filter(it => it));
+			},
+			{ delay: 150 },
+		);
 		const unsubOpened = reaction(() => getOpened(), id => renderer.setHighlightObject(id), { fireImmediately: true });
 		const unsubTheme = reaction(() => S.Common.getThemeClass(), () => renderer.setTheme(getTheme()));
 
@@ -631,6 +710,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			unsubStore();
 			unsubTheme();
 			unsubOpened();
+			unsubPreviews();
 			adapter.destroy();
 			renderer.destroy();
 			keyboard.setFocus(false);

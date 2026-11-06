@@ -21,6 +21,16 @@ export interface RendererTheme {
 
 export type ObjectKind = 'page' | 'set' | 'bookmark' | 'image';
 
+/** One block of a page, reduced to what the preview draws. style is the TextStyle number (see I.TextStyle). */
+export interface PreviewBlock {
+	kind: 'text' | 'div';
+	style: number;
+	text: string;
+	checked: boolean;
+	depth: number;
+	number: number;
+};
+
 export interface ObjectInfo {
 	name: string;
 	type: string;
@@ -29,6 +39,7 @@ export interface ObjectInfo {
 	text: string;
 	source: string;
 	imageUrl: string;
+	blocks: PreviewBlock[];
 };
 
 interface View {
@@ -287,7 +298,7 @@ export class CanvasRenderer {
 	private elementKey (el: CanvasElement): string {
 		const info = (el.type == ElementType.Object) ? this.getObject(el.targetObjectId) : null;
 
-		return [ el.v, el.nonce, this.objectVersion, info ? `${info.name}|${info.type}|${info.text}|${info.imageUrl}|${this.images.get(info.imageUrl) ? 1 : 0}` : '', (el.targetObjectId && (el.targetObjectId == this.highlightObjectId)) ? 'o' : '', (el.id == this.hiddenId) ? 'h' : '', this.controller.erasing.has(el.id) ? 'x' : '' ].join(':');
+		return [ el.v, el.nonce, this.objectVersion, info ? `${info.name}|${info.type}|${info.text}|${info.imageUrl}|${this.images.get(info.imageUrl) ? 1 : 0}|${info.blocks.map(b => `${b.style}${b.checked ? 'x' : ''}${b.text}`).join('\n')}` : '', (el.targetObjectId && (el.targetObjectId == this.highlightObjectId)) ? 'o' : '', (el.id == this.hiddenId) ? 'h' : '', this.controller.erasing.has(el.id) ? 'x' : '' ].join(':');
 	};
 
 	private stroke (el: CanvasElement): string {
@@ -637,22 +648,159 @@ export class CanvasRenderer {
 			return;
 		};
 
-		// Page, set and everything else: a header with the name and type, then the beginning of the content
-		const head = 40;
+		if ((info.kind == 'page') && info.blocks.length) {
+			this.buildPagePreview(el, info, label, put);
+		} else {
+			// Set and pages whose blocks are not loaded yet: a header with the name and type, then the snippet
+			const head = 40;
 
-		put(new Konva.Rect({ ...base, x: pad, y: 12, width: 16, height: 16, cornerRadius: 4, stroke: this.theme.muted, strokeWidth: 1.2 }));
-		label(info.name, 14, w - (pad * 3) - 76, this.theme.text, { x: pad + 24, y: 12, fontStyle: '600', wrap: 'none', ellipsis: true });
-		label(info.type, 11, 64, this.theme.muted, { x: w - pad - 64, y: 14, align: 'right', wrap: 'none', ellipsis: true });
-		put(new Konva.Line({ ...base, points: [ 0, head, w, head ], stroke: this.theme.cardBorder, strokeWidth: 1 }));
+			put(new Konva.Rect({ ...base, x: pad, y: 12, width: 16, height: 16, cornerRadius: 4, stroke: this.theme.muted, strokeWidth: 1.2 }));
+			label(info.name, 14, w - (pad * 3) - 76, this.theme.text, { x: pad + 24, y: 12, fontStyle: '600', wrap: 'none', ellipsis: true });
+			label(info.type, 11, 64, this.theme.muted, { x: w - pad - 64, y: 14, align: 'right', wrap: 'none', ellipsis: true });
+			put(new Konva.Line({ ...base, points: [ 0, head, w, head ], stroke: this.theme.cardBorder, strokeWidth: 1 }));
 
-		if (info.text) {
-			label(info.text, 12, w - (pad * 2), this.theme.text, { x: pad, y: head + 10, height: Math.max(16, h - head - 20), wrap: 'word', ellipsis: true, lineHeight: 1.5 });
+			if (info.text) {
+				label(info.text, 12, w - (pad * 2), this.theme.text, { x: pad, y: head + 10, height: Math.max(16, h - head - 20), wrap: 'word', ellipsis: true, lineHeight: 1.5 });
+			};
 		};
 
 		if (opened) {
 			const tip = add(this.text(this.theme.openLabel || '', 11, undefined, this.theme.selected, { wrap: 'none' }));
 
 			tip.position({ x: w - pad - tip.width(), y: h - pad - tip.height() });
+		};
+	};
+
+	/** Draws the blocks of a page the way the editor formats them: headings, checklists, lists, quotes, callouts, code and dividers. */
+	private buildPagePreview (el: CanvasElement, info: ObjectInfo, label: (value: string, size: number, width: number, fill: string, extra?: Partial<Konva.TextConfig>) => Konva.Text, put: (shape: Konva.Shape | Konva.Group) => void) {
+		const base = { listening: false, perfectDrawEnabled: false, shadowForStrokeEnabled: false };
+		const { w, h } = el;
+		const pad = 16;
+		const inner = w - (pad * 2);
+		let y = pad;
+
+		const typeLine = label(info.type, 11, inner, this.theme.muted, { x: pad, y, wrap: 'none' });
+
+		y += typeLine.height() + 4;
+
+		const title = label(info.name, 20, inner, this.theme.text, { x: pad, y, fontStyle: '700', lineHeight: 1.2, wrap: 'word' });
+
+		y += title.height() + 12;
+
+		for (const block of info.blocks) {
+			if (y > h) {
+				break;
+			};
+
+			const x = pad + (block.depth * 18);
+			const width = inner - (block.depth * 18);
+
+			if (block.kind == 'div') {
+				put(new Konva.Line({ ...base, points: [ pad, y + 6, w - pad, y + 6 ], stroke: this.theme.cardBorder, strokeWidth: 1 }));
+				y += 14;
+				continue;
+			};
+
+			let size = 12.5;
+			let weight = '400';
+			let fill = this.theme.text;
+			let gap = 5;
+			let indent = 0;
+			let family: string | undefined;
+			let before = 0;
+
+			switch (block.style) {
+				case 1: size = 17; weight = '700'; gap = 6; before = 8; break;
+				case 2: size = 15; weight = '700'; gap = 5; before = 6; break;
+				case 3: size = 13.5; weight = '700'; before = 4; break;
+				case 4: size = 12.5; weight = '700'; before = 2; break;
+				case 5: indent = 12; break;
+				case 6: size = 11; family = 'code'; break;
+				case 8: case 9: case 10: case 11: indent = 20; break;
+				case 13: indent = 0; break;
+				case 14: size = 17; weight = '700'; indent = 20; before = 8; break;
+				case 15: size = 15; weight = '700'; indent = 20; before = 6; break;
+				case 16: size = 13.5; weight = '700'; indent = 20; before = 4; break;
+			};
+
+			if (block.style == 8 && block.checked) {
+				fill = this.theme.muted;
+			};
+
+			y += before;
+
+			const pre = (block.style == 6) || (block.style == 13) ? 8 : 0;
+			const tw = width - indent - (pre * 2);
+			const node = label(block.text || ' ', size, tw, fill, {
+				x: x + indent + pre, y: y + pre, fontStyle: weight, wrap: 'word', lineHeight: 1.45,
+				textDecoration: ((block.style == 8) && block.checked) ? 'line-through' : '',
+			});
+
+			if (family) {
+				node.fontFamily(this.family(family));
+			};
+
+			const textH = node.height();
+
+			switch (block.style) {
+				case 5:
+					put(new Konva.Rect({ ...base, x, y, width: 2.5, height: textH, fill: this.theme.muted }));
+					break;
+
+				case 6:
+					put(new Konva.Rect({ ...base, x, y, width: width, height: textH + 16, cornerRadius: 4, fill: this.theme.grid, opacity: 0.35 }));
+					node.moveToTop();
+					break;
+
+				case 13:
+					put(new Konva.Rect({ ...base, x, y, width: width, height: textH + 16, cornerRadius: 6, fill: this.theme.grid, opacity: 0.3 }));
+					node.moveToTop();
+					break;
+
+				case 8: {
+					const top = y + 1;
+
+					put(new Konva.Rect({
+						...base, x, y: top, width: 13, height: 13, cornerRadius: 3.5,
+						stroke: block.checked ? this.theme.selected : this.theme.muted, strokeWidth: 1.4, fill: block.checked ? this.theme.selected : undefined,
+					}));
+
+					if (block.checked) {
+						put(new Konva.Line({ ...base, points: [ x + 3, top + 7, x + 5.8, top + 9.8, x + 10.2, top + 3.8 ], stroke: this.theme.card, strokeWidth: 1.6, lineCap: 'round', lineJoin: 'round' }));
+					};
+					break;
+				};
+
+				case 9:
+					put(new Konva.Circle({ ...base, x: x + 6, y: y + (size * 0.72), radius: 2.4, fill: this.theme.text }));
+					break;
+
+				case 10:
+					put(this.text(`${block.number}.`, size, 18, this.theme.text, { x, y, wrap: 'none', listening: false }));
+					break;
+
+				case 11:
+				case 14:
+				case 15:
+				case 16:
+					put(new Konva.Line({ ...base, points: [ x + 4, y + (size * 0.35), x + 9, y + (size * 0.72), x + 4, y + (size * 1.1) ], stroke: this.theme.muted, strokeWidth: 1.5, lineCap: 'round', lineJoin: 'round' }));
+					break;
+			};
+
+			y += textH + gap + (pre * 2);
+		};
+
+		// Fade the bottom so cut-off content does not end on a hard edge
+		const fade = 44;
+		const to = rgba(this.theme.card, 1);
+		const from = rgba(this.theme.card, 0);
+
+		if (y > h - 8) {
+			put(new Konva.Rect({
+				...base, x: 1, y: h - fade, width: w - 2, height: fade - 1,
+				fillLinearGradientStartPoint: { x: 0, y: 0 }, fillLinearGradientEndPoint: { x: 0, y: fade },
+				fillLinearGradientColorStops: [ 0, from, 1, to ],
+			}));
 		};
 	};
 
