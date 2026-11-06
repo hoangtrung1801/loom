@@ -2,10 +2,12 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import { reaction } from 'mobx';
 import { I, S, U, J, keyboard, translate } from 'Lib';
 import { CanvasController, CanvasElement, ElementType, Scene, SOFT_ELEMENT_LIMIT, Tool } from 'Lib/canvas';
-import { CanvasRenderer, RendererTheme } from './renderer';
+import { CanvasRenderer, RendererTheme, ObjectInfo, ObjectKind } from './renderer';
 import { CanvasAdapter } from './adapter';
 import CanvasToolbar from './toolbar';
-import CanvasStylebar from './stylebar';
+import CanvasPanel from './panel';
+import CanvasLibrary from './library';
+import CanvasExport from './export';
 
 export interface CanvasRef {
 	getController: () => CanvasController;
@@ -48,7 +50,43 @@ const getTheme = (): RendererTheme => {
 		fill,
 		textColor: theme.textColor,
 		fontFamily,
+		openLabel: translate('canvasOpenInPanel'),
 	};
+};
+
+const getKind = (layout: I.ObjectLayout): ObjectKind => {
+	switch (layout) {
+		case I.ObjectLayout.Image: return 'image';
+		case I.ObjectLayout.Bookmark: return 'bookmark';
+		case I.ObjectLayout.Set:
+		case I.ObjectLayout.Collection: return 'set';
+	};
+	return 'page';
+};
+
+/** Size an object preview starts with on the board. */
+const getCardSize = (kind: ObjectKind) => {
+	switch (kind) {
+		case 'image': return { w: 280, h: 200 };
+		case 'bookmark': return { w: 320, h: 96 };
+		case 'set': return { w: 360, h: 220 };
+	};
+	return { w: 320, h: 240 };
+};
+
+const isShapeType = (type: ElementType) => [ ElementType.Rect, ElementType.Diamond, ElementType.Ellipse ].includes(type);
+
+/** Area inside the element where its text lives, in element space. Matches the renderer. */
+const getTextRegion = (el: CanvasElement) => {
+	if (el.type == ElementType.Diamond) {
+		return { x: el.w / 4, y: el.h / 4, w: el.w / 2, h: el.h / 2 };
+	};
+	if (el.type == ElementType.Text) {
+		return { x: 0, y: 0, w: el.w, h: el.h };
+	};
+
+	const pad = 12;
+	return { x: pad, y: pad, w: Math.max(10, el.w - (pad * 2)), h: Math.max(10, el.h - (pad * 2)) };
 };
 
 const MediaCanvas = forwardRef<CanvasRef, Props>(({
@@ -69,6 +107,9 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 	const [ editing, setEditing ] = useState<Editing | null>(null);
 	const [ dummy, setDummy ] = useState(0);
 	const [ overLimit, setOverLimit ] = useState(false);
+	const [ libraryOpen, setLibraryOpen ] = useState(false);
+	const [ exportOpen, setExportOpen ] = useState(false);
+	const [ zen, setZen ] = useState(false);
 	const subId = `canvasObjects-${rootId}`;
 
 	const frameRef = useRef(0);
@@ -85,11 +126,20 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		});
 	};
 
-	const getObject = (id: string) => {
-		const object = S.Detail.get(subId, id, [ 'name', 'layout', 'type', 'isDeleted' ], true);
+	const getObject = (id: string): ObjectInfo => {
+		const object = S.Detail.get(subId, id, [ 'name', 'layout', 'type', 'isDeleted', 'description', 'snippet', 'source' ], true);
 		const type = S.Record.getTypeById(object.type);
+		const kind = getKind(object.layout);
+		const deleted = !!object.isDeleted;
 
-		return { name: object.isDeleted ? translate('commonDeletedObject') : (object.name || translate('defaultNamePage')), type: type?.name || '' };
+		return {
+			name: deleted ? translate('commonDeletedObject') : (object.name || translate('defaultNamePage')),
+			type: type?.name || '',
+			kind,
+			text: deleted ? '' : String(object.snippet || object.description || ''),
+			source: String(object.source || ''),
+			imageUrl: ((kind == 'image') && !deleted) ? S.Common.imageUrl(id, 640) : '',
+		};
 	};
 
 	/** Object cards need name and type of their targets, which are not part of this object's own details. */
@@ -163,6 +213,35 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			return;
 		};
 
+		const mod = e.metaKey || e.ctrlKey;
+		const key = e.key.toLowerCase();
+		let handled = true;
+
+		if (mod && e.shiftKey && (key == 'e')) {
+			onExport();
+		} else
+		if (e.altKey && !mod && (e.code == 'KeyZ')) {
+			setZen(v => !v);
+		} else
+		if (mod && (key == '\'')) {
+			onMenuAction('grid');
+		} else
+		if (mod && e.altKey && (e.code == 'KeyC')) {
+			controller.copyStyle();
+		} else
+		if (mod && e.altKey && (e.code == 'KeyV')) {
+			controller.pasteStyle();
+		} else {
+			handled = false;
+		};
+
+		if (handled) {
+			e.preventDefault();
+			e.stopPropagation();
+			refresh();
+			return;
+		};
+
 		if (controller.keyDown({ key: e.key, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey || e.ctrlKey })) {
 			e.preventDefault();
 			e.stopPropagation();
@@ -196,7 +275,9 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 	};
 
 	const addObject = (objectId: string, world?: { x: number, y: number }) => {
-		controllerRef.current?.addObjectCard(objectId, world || getCenter());
+		const hint = getCardSize(getObject(objectId).kind);
+
+		controllerRef.current?.addObjectCard(objectId, world || getCenter(), hint);
 		loadObjects();
 		refresh();
 	};
@@ -205,8 +286,8 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		S.Menu.open('searchObject', {
 			element: '#canvasAddObject',
 			className: 'single fixed',
-			offsetY: -8,
-			vertical: I.MenuDirection.Top,
+			offsetY: 8,
+			vertical: I.MenuDirection.Bottom,
 			data: {
 				noFilter: false,
 				withPlural: true,
@@ -217,6 +298,189 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 				],
 				onSelect: (el: any) => addObject(el.id),
 			},
+		});
+	};
+
+	// Text inside shapes and stickies can sit at the top, middle or bottom of its area; a textarea can't do that on its own
+	const layoutEditor = () => {
+		const ta = editorRef.current;
+		const controller = controllerRef.current;
+		const el = (editing && controller) ? controller.scene.get(editing.id) : null;
+
+		if (!ta || !el || ![ ElementType.Sticky, ElementType.Rect, ElementType.Diamond, ElementType.Ellipse ].includes(el.type)) {
+			return;
+		};
+
+		const { zoom, y } = controller.viewport;
+		const region = getTextRegion(el);
+		const top = (el.y * zoom) + y + (region.y * zoom);
+		const full = Math.max(24, region.h * zoom);
+		const align = el.verticalAlign || (isShapeType(el.type) ? 'middle' : 'top');
+
+		ta.style.height = 'auto';
+
+		const content = Math.min(full, Math.max(24, ta.scrollHeight));
+		const free = full - content;
+
+		ta.style.height = `${content}px`;
+		ta.style.top = `${top + ((align == 'middle') ? free / 2 : ((align == 'bottom') ? free : 0))}px`;
+	};
+
+	useEffect(() => {
+		layoutEditor();
+	}, [ editing, dummy ]);
+
+	// --------------------------------------------------------- //
+	// Menus
+
+	const onExport = () => {
+		if (controllerRef.current?.scene.count()) {
+			setExportOpen(true);
+		};
+	};
+
+	const onLibrary = () => setLibraryOpen(v => !v);
+
+	const onMenu = () => {
+		const controller = controllerRef.current;
+		if (!controller) {
+			return;
+		};
+
+		const options: any[] = [
+			{ id: 'export', name: translate('canvasMenuExport'), caption: 'Ctrl Shift E' },
+			{ id: 'library', name: translate('canvasMenuLibrary') },
+			{ isDiv: true },
+			{ id: 'zen', name: translate('canvasMenuZen'), caption: 'Alt Z', checkbox: zen },
+			{ id: 'grid', name: translate('canvasMenuGrid'), caption: 'Ctrl \'', checkbox: controller.showGrid },
+			{ id: 'fit', name: translate('canvasTool_fit') },
+		];
+
+		if (!readonly) {
+			options.push({ isDiv: true }, { id: 'clear', name: translate('canvasMenuClear'), color: 'red' });
+		};
+
+		S.Menu.open('select', {
+			element: '#canvasMenuButton',
+			className: 'fixed',
+			offsetY: 8,
+			vertical: I.MenuDirection.Bottom,
+			data: {
+				options,
+				onSelect: (e: any, item: any) => onMenuAction(item.id),
+			},
+		});
+	};
+
+	const onMenuAction = (id: string) => {
+		const controller = controllerRef.current;
+		if (!controller) {
+			return;
+		};
+
+		switch (id) {
+			case 'export': onExport(); break;
+			case 'library': setLibraryOpen(true); break;
+			case 'zen': setZen(v => !v); break;
+			case 'grid':
+				controller.showGrid = !controller.showGrid;
+				controller.setViewport({ ...controller.viewport });
+				break;
+
+			case 'fit': controller.fit(); break;
+
+			case 'clear':
+				S.Popup.open('confirm', {
+					data: {
+						title: translate('canvasClearTitle'),
+						text: translate('canvasClearText'),
+						textConfirm: translate('commonDelete'),
+						colorConfirm: 'red',
+						onConfirm: () => {
+							controller.clearAll();
+							refresh();
+						},
+					},
+				});
+				break;
+		};
+
+		refresh();
+	};
+
+	const onContextMenu = (e: React.MouseEvent) => {
+		e.preventDefault();
+
+		const controller = controllerRef.current;
+		if (!controller || editing) {
+			return;
+		};
+
+		const hit = controller.contextAt(getPoint(e));
+		const hasSelection = controller.scene.selected().length > 0;
+		const options: any[] = [];
+
+		if (readonly) {
+			if (hasSelection) {
+				options.push({ id: 'copy', name: translate('commonCopy'), caption: 'Ctrl C' });
+			};
+		} else {
+			if (hasSelection) {
+				options.push(
+					{ id: 'cut', name: translate('commonCut'), caption: 'Ctrl X' },
+					{ id: 'copy', name: translate('commonCopy'), caption: 'Ctrl C' },
+				);
+			};
+			options.push({ id: 'paste', name: translate('commonPaste'), caption: 'Ctrl V', disabled: !controller.hasClipboard() });
+
+			if (hasSelection) {
+				options.push(
+					{ isDiv: true },
+					{ id: 'copyStyle', name: translate('canvasCopyStyle'), caption: 'Ctrl Alt C' },
+					{ id: 'pasteStyle', name: translate('canvasPasteStyle'), caption: 'Ctrl Alt V', disabled: !controller.hasStyle() },
+					{ isDiv: true },
+					{ id: 'library', name: translate('canvasAddToLibrary') },
+					{ id: 'front', name: translate('canvasBringToFront') },
+					{ id: 'back', name: translate('canvasSendToBack') },
+					{ id: 'duplicate', name: translate('canvasDuplicate'), caption: 'Ctrl D' },
+					{ isDiv: true },
+					{ id: 'delete', name: translate('commonDelete'), caption: 'Del', color: 'red' },
+				);
+			};
+		};
+
+		if (hit && (hit.type == ElementType.Object) && hit.targetObjectId) {
+			options.unshift({ id: 'open', name: translate('canvasOpenInPanel') }, { isDiv: true });
+		};
+
+		if (!options.length) {
+			return;
+		};
+
+		S.Menu.closeAll([], () => {
+			S.Menu.open('select', {
+				rect: { x: e.pageX, y: e.pageY, width: 0, height: 0 },
+				noFlipX: true,
+				data: {
+					options,
+					onSelect: (ev: any, item: any) => {
+						switch (item.id) {
+							case 'open': onOpenObject?.(hit.targetObjectId); break;
+							case 'cut': controller.cut(); break;
+							case 'copy': controller.copy(); break;
+							case 'paste': controller.paste(); break;
+							case 'copyStyle': controller.copyStyle(); break;
+							case 'pasteStyle': controller.pasteStyle(); break;
+							case 'library': setLibraryOpen(true); break;
+							case 'front': controller.reorder('front'); break;
+							case 'back': controller.reorder('back'); break;
+							case 'duplicate': controller.duplicate(); break;
+							case 'delete': controller.deleteSelection(); break;
+						};
+						refresh();
+					},
+				},
+			});
 		});
 	};
 
@@ -304,6 +568,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			},
 			onEditText: el => startEdit(el),
 			onOpenObject: id => onOpenObject?.(id),
+			onRequestObject: () => onAddObject(),
 		});
 
 		controllerRef.current = controller;
@@ -338,6 +603,9 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		}, { delay: 60 });
 
 		// Colors come from the theme, so rebuild the views when it changes
+		// The object that is open in the side panel is outlined on the board
+		const getOpened = () => String(S.Popup.get('page')?.param?.data?.matchPopup?.params?.id || '');
+		const unsubOpened = reaction(() => getOpened(), id => renderer.setHighlightObject(id), { fireImmediately: true });
 		const unsubTheme = reaction(() => S.Common.getThemeClass(), () => renderer.setTheme(getTheme()));
 
 		const onWheel = (e: WheelEvent) => {
@@ -361,6 +629,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			unsubScene();
 			unsubStore();
 			unsubTheme();
+			unsubOpened();
 			adapter.destroy();
 			renderer.destroy();
 			keyboard.setFocus(false);
@@ -403,25 +672,34 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 	if (editEl && controller) {
 		const { zoom } = controller.viewport;
 		const p = { x: (editEl.x * zoom) + controller.viewport.x, y: (editEl.y * zoom) + controller.viewport.y };
-		const isText = editEl.type == ElementType.Text;
 		const theme = J.Theme[S.Common.getThemeClass()] as any;
+		const region = getTextRegion(editEl);
+		const family = editEl.fontFamily || 'normal';
 
-		editStyle.left = p.x;
-		editStyle.top = p.y;
-		editStyle.width = Math.max(40, editEl.w * zoom);
-		editStyle.height = Math.max(24, editEl.h * zoom);
+		editStyle.left = p.x + (region.x * zoom);
+		editStyle.top = p.y + (region.y * zoom);
+		editStyle.width = Math.max(40, region.w * zoom);
+		editStyle.height = Math.max(24, region.h * zoom);
 		editStyle.fontSize = (editEl.fontSize || 16) * zoom;
-		editStyle.lineHeight = 1.3;
+		editStyle.lineHeight = `${Math.round((editEl.fontSize || 16) * 1.3) * zoom}px`;
+		editStyle.fontFamily = (family == 'hand') ? 'Caveat, cursive' : ((family == 'code') ? 'ui-monospace, Menlo, Consolas, monospace' : 'inherit');
 		editStyle.color = editEl.fill ? (J.Theme[''] as any).color.default : theme.textColor[editEl.color || 'default'];
-		editStyle.padding = isText ? 0 : 12 * zoom;
-		editStyle.textAlign = [ ElementType.Rect, ElementType.Ellipse ].includes(editEl.type) ? 'center' : 'left';
+		editStyle.padding = 0;
+		editStyle.textAlign = editEl.textAlign || (isShapeType(editEl.type) ? 'center' : 'left');
+		editStyle.transformOrigin = `${((editEl.w / 2) - region.x) * zoom}px ${((editEl.h / 2) - region.y) * zoom}px`;
 		editStyle.transform = `rotate(${editEl.angle || 0}rad)`;
 
 		if (editEl.type == ElementType.Frame) {
+			editStyle.left = p.x;
+			editStyle.width = Math.max(120, editEl.w * zoom);
 			editStyle.height = 24;
 			editStyle.top = p.y - 28;
 			editStyle.fontSize = 12;
-			editStyle.padding = 0;
+			editStyle.lineHeight = '16px';
+			editStyle.fontFamily = 'inherit';
+			editStyle.textAlign = 'left';
+			editStyle.transformOrigin = 'left center';
+			editStyle.transform = 'none';
 		};
 	};
 
@@ -451,6 +729,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 				onPointerUp={onPointerUp}
 				onPointerCancel={onPointerUp}
 				onDoubleClick={onDoubleClick}
+				onContextMenu={onContextMenu}
 			/>
 
 			{editing ? (
@@ -460,17 +739,41 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 					style={editStyle}
 					defaultValue={editing.text}
 					onBlur={commitEdit}
+					onInput={layoutEditor}
 					onKeyDown={onEditorKeyDown}
 					placeholder={translate('canvasTextPlaceholder')}
 				/>
 			) : ''}
 
+			{exportOpen && controller && rendererRef.current ? (
+				<CanvasExport
+					controller={controller}
+					renderer={rendererRef.current}
+					name={S.Detail.get(rootId, rootId, [ 'name' ]).name}
+					onClose={() => setExportOpen(false)}
+				/>
+			) : ''}
+
+			{zen ? <div className="canvasZenHint" onClick={() => setZen(false)}>{translate('canvasZenExit')}</div> : ''}
+
 			{overLimit ? <div className="canvasLimit">{translate('canvasLimitWarning')}</div> : ''}
 
-			{controller ? (
+			{controller && !zen ? (
 				<>
 					{!readonly ? (
-						<CanvasStylebar controller={controller} onChange={refresh} />
+						<CanvasPanel controller={controller} tool={tool} onChange={refresh} />
+					) : ''}
+
+					{libraryOpen && rendererRef.current ? (
+						<CanvasLibrary
+							rootId={rootId}
+							controller={controller}
+							renderer={rendererRef.current}
+							readonly={readonly}
+							onAddObject={id => addObject(id)}
+							onClose={() => setLibraryOpen(false)}
+							onChange={refresh}
+						/>
 					) : ''}
 
 					<CanvasToolbar
@@ -478,6 +781,8 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 						tool={tool}
 						readonly={readonly}
 						onAddObject={onAddObject}
+						onMenu={onMenu}
+						onLibrary={onLibrary}
 						onChange={refresh}
 					/>
 				</>

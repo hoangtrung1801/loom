@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	Scene, CanvasController, ElementType, Tool, CanvasElement, between, compareZ, screenToWorld, worldToScreen, zoomAt,
-	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect,
+	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect, elementBounds, routePoints, applyRoute, curveSamples, toLibraryElements,
 } from './index';
 
 const rect = (id: string, x: number, y: number, w = 100, h = 60, param: Partial<CanvasElement> = {}) => {
@@ -327,5 +327,129 @@ describe('controller', () => {
 
 		controller.keyDown({ key: 'z', meta: true });
 		expect(scene.count()).toBe(1);
+	});
+});
+
+describe('hand-drawn style and tools', () => {
+	it('gives new elements the style of the last pick and a seed', () => {
+		const { scene, controller } = setup();
+
+		controller.setStyle({ color: 'red', roughness: 2, fillStyle: 'cross', strokeStyle: 'dashed' });
+		controller.setTool(Tool.Diamond);
+		controller.pointerDown({ x: 0, y: 0 });
+		controller.pointerMove({ x: 80, y: 60 });
+		controller.pointerUp({ x: 80, y: 60 });
+
+		const [ el ] = scene.list();
+		expect(el).toMatchObject({ type: 'diamond', color: 'red', roughness: 2, fillStyle: 'cross', strokeStyle: 'dashed' });
+		expect(typeof el.seed).toBe('number');
+	});
+
+	it('keeps the tool when locked and drops it when not', () => {
+		const { controller } = setup();
+
+		controller.keyDown({ key: 'q' });
+		expect(controller.locked).toBe(true);
+		controller.setTool(Tool.Rect);
+		controller.pointerDown({ x: 0, y: 0 });
+		controller.pointerMove({ x: 50, y: 50 });
+		controller.pointerUp({ x: 50, y: 50 });
+		expect(controller.tool).toBe(Tool.Rect);
+
+		controller.keyDown({ key: 'q' });
+		controller.pointerDown({ x: 100, y: 100 });
+		controller.pointerMove({ x: 150, y: 150 });
+		controller.pointerUp({ x: 150, y: 150 });
+		expect(controller.tool).toBe(Tool.Select);
+	});
+
+	it('erases everything the eraser passes over on release', () => {
+		const { scene, controller } = setup();
+		scene.load([ rect('a', 0, 0, 100, 100, { fill: 'blue' }), rect('b', 300, 0, 100, 100, { fill: 'blue' }) ]);
+
+		controller.keyDown({ key: 'e' });
+		controller.pointerDown({ x: 50, y: 50 });
+		controller.pointerMove({ x: 350, y: 50 });
+		expect(controller.erasing.size).toBe(2);
+		expect(scene.count()).toBe(2);
+
+		controller.pointerUp({ x: 350, y: 50 });
+		expect(scene.count()).toBe(0);
+		controller.undo();
+		expect(scene.count()).toBe(2);
+	});
+
+	it('builds elbow and curved routes between two points', () => {
+		expect(routePoints([ 0, 0 ], [ 100, 40 ], 'sharp')).toEqual([ [ 0, 0 ], [ 100, 40 ] ]);
+		expect(routePoints([ 0, 0 ], [ 100, 40 ], 'elbow')).toEqual([ [ 0, 0 ], [ 50, 0 ], [ 50, 40 ], [ 100, 40 ] ]);
+		expect(routePoints([ 0, 0 ], [ 40, 100 ], 'elbow')).toEqual([ [ 0, 0 ], [ 0, 50 ], [ 40, 50 ], [ 40, 100 ] ]);
+		expect(routePoints([ 0, 0 ], [ 100, 0 ], 'elbow')).toEqual([ [ 0, 0 ], [ 100, 0 ] ]);
+		expect(routePoints([ 0, 0 ], [ 100, 0 ], 'curve').length).toBe(3);
+	});
+
+	it('hit tests a curved arrow on the curve, not the chord', () => {
+		const arrow = applyRoute(defaultElement(ElementType.Arrow, 'c', 'i', { x: 0, y: 0, points: [ [ 0, 0 ], [ 200, 0 ] ], arrowType: 'curve', v: 1 }));
+		const samples = curveSamples(arrow.points.map(p => ({ x: arrow.x + p[0], y: arrow.y + p[1] })));
+		const mid = samples[Math.floor(samples.length / 2)];
+
+		expect(hitTest(arrow, mid, 4)).toBe(true);
+		expect(hitTest(arrow, { x: 100, y: mid.y + 40 }, 4)).toBe(false);
+	});
+
+	it('re-routes the arrow when the routing style changes', () => {
+		const { scene, controller } = setup();
+		scene.load([ defaultElement(ElementType.Arrow, 'r', 'i', { x: 0, y: 0, points: [ [ 0, 0 ], [ 100, 40 ] ], w: 100, h: 40, v: 1 }) ]);
+		scene.setSelection([ 'r' ]);
+
+		controller.setStyle({ arrowType: 'elbow' });
+		expect(scene.get('r').points.length).toBe(4);
+
+		controller.setStyle({ arrowType: 'sharp' });
+		expect(scene.get('r').points).toEqual([ [ 0, 0 ], [ 100, 40 ] ]);
+	});
+});
+
+describe('library and insert', () => {
+	it('stores a group relative to its corner and cuts links to outside elements', () => {
+		const a = rect('a', 500, 300);
+		const b = rect('b', 700, 300);
+		const arrow = defaultElement(ElementType.Arrow, 'r', 'i', { x: 600, y: 330, w: 100, h: 0, points: [ [ 0, 0 ], [ 100, 0 ] ], startId: 'a', endId: 'outside', v: 1 });
+		const items = toLibraryElements([ a, b, arrow ]);
+
+		expect(items.find(el => el.id == 'a')).toMatchObject({ x: 0, y: 0 });
+		expect(items.find(el => el.id == 'b')).toMatchObject({ x: 200, y: 0 });
+		expect(items.find(el => el.id == 'r')).toMatchObject({ startId: 'a', endId: '' });
+	});
+
+	it('inserts copies with new ids around a point and keeps arrow bindings between them', () => {
+		const { scene, controller } = setup();
+		const items = toLibraryElements([ rect('a', 0, 0, 100, 60), rect('b', 200, 0, 100, 60), defaultElement(ElementType.Arrow, 'r', 'i', { x: 100, y: 30, w: 100, h: 0, points: [ [ 0, 0 ], [ 100, 0 ] ], startId: 'a', endId: 'b', v: 1 }) ]);
+
+		controller.insertElements(items, { x: 1000, y: 500 });
+
+		const list = scene.list();
+		expect(list.length).toBe(3);
+		expect(list.some(el => el.id == 'a')).toBe(false);
+
+		const arrow = list.find(el => el.type == 'arrow');
+		const ids = list.filter(el => el.type == 'rect').map(el => el.id);
+		expect([ arrow.startId, arrow.endId ].every(id => ids.includes(id))).toBe(true);
+
+		const bounds = elementBounds(list.find(el => el.type == 'rect'));
+		expect(bounds.x).toBeGreaterThan(800);
+		controller.undo();
+		expect(scene.count()).toBe(0);
+	});
+
+	it('copies the style of one element onto another', () => {
+		const { scene, controller } = setup();
+		scene.load([ rect('a', 0, 0, 100, 60, { color: 'red', roughness: 2, fillStyle: 'cross' }), rect('b', 300, 0) ]);
+
+		scene.setSelection([ 'a' ]);
+		controller.copyStyle();
+		scene.setSelection([ 'b' ]);
+		controller.pasteStyle();
+
+		expect(scene.get('b')).toMatchObject({ color: 'red', roughness: 2, fillStyle: 'cross' });
 	});
 });

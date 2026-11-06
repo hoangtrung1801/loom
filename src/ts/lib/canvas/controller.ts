@@ -1,6 +1,6 @@
 import { CanvasElement, DEFAULT_STYLE, ElementStyle, ElementType, Guide, Point, Rect, Tool, Viewport, MIN_SIZE } from './types';
 import {
-	anchorPoint, center, elementBounds, estimateTextHeight, expandRect, hitTest, isLinear, normalizeLinear, normalizeRect,
+	anchorPoint, applyRoute, center, elementBounds, estimateTextHeight, expandRect, hitTest, isLinear, normalizeLinear, normalizeRect,
 	rectContains, rectsIntersect, rotatePoint, simplify, unionBounds, worldPoints,
 } from './geometry';
 import { Scene } from './scene';
@@ -55,11 +55,14 @@ const DEFAULTS = {
 	sticky: { w: 200, h: 160 },
 	text: { w: 200, h: 28 },
 	frame: { w: 480, h: 320 },
-	object: { w: 240, h: 88 },
+	object: { w: 320, h: 220 },
 };
 
 // Shared between canvases so elements can be copied from one canvas into another
 let clipboard: CanvasElement[] = [];
+let styleClipboard: Partial<CanvasElement> | null = null;
+
+const STYLE_KEYS = [ 'color', 'fill', 'fillStyle', 'strokeWidth', 'strokeStyle', 'roughness', 'rounded', 'opacity', 'fontFamily', 'fontSize', 'textAlign', 'verticalAlign', 'arrowType', 'startHead', 'endHead' ];
 
 const TOOL_KEYS: { [key: string]: Tool } = {
 	v: Tool.Select,
@@ -105,6 +108,7 @@ export class CanvasController {
 	spaceDown = false;
 	/** Keep the active drawing tool after drawing one element. */
 	locked = false;
+	showGrid = true;
 	/** Style for new elements; changed from the properties panel. */
 	defaults: ElementStyle = { ...DEFAULT_STYLE };
 	/** Elements the eraser has touched in the current stroke, removed when the pointer is released. */
@@ -363,7 +367,7 @@ export class CanvasController {
 			return null;
 		};
 
-		return normalizeLinear({ ...el, x: a.x, y: a.y, points: [ [ 0, 0 ], [ b.x - a.x, b.y - a.y ] ] });
+		return applyRoute({ ...el, x: a.x, y: a.y, points: [ [ 0, 0 ], [ b.x - a.x, b.y - a.y ] ] });
 	};
 
 	private unbind (ids: string[]): CanvasElement[] {
@@ -835,7 +839,7 @@ export class CanvasController {
 					end = { x: start.x + (Math.cos(angle) * len), y: start.y + (Math.sin(angle) * len) };
 				};
 
-				this.draft = { ...el, points: [ [ 0, 0 ], [ end.x - start.x, end.y - start.y ] ] };
+				this.draft = applyRoute({ ...el, points: [ [ 0, 0 ], [ end.x - start.x, end.y - start.y ] ] });
 				break;
 			};
 
@@ -887,7 +891,7 @@ export class CanvasController {
 			case ElementType.Arrow: {
 				const pts = el.points;
 
-				if (!drag.moved || (Math.hypot(pts[1][0], pts[1][1]) < MIN_SIZE)) {
+				if (!drag.moved || (Math.hypot(pts[pts.length - 1][0], pts[pts.length - 1][1]) < MIN_SIZE)) {
 					this.render();
 					return;
 				};
@@ -895,7 +899,7 @@ export class CanvasController {
 				const endEl = this.hitElement(world, it => !isLinear(it) && (it.id != el.startId));
 				el = { ...el, endId: endEl?.id || '' };
 				el = this.route(el) || el;
-				el = normalizeLinear(el);
+				el = applyRoute(el);
 				break;
 			};
 
@@ -1040,6 +1044,10 @@ export class CanvasController {
 		this.scene.upsert(sel.map(el => {
 			const next = { ...el, ...patch };
 
+			if (('arrowType' in patch) && [ ElementType.Line, ElementType.Arrow ].includes(el.type)) {
+				return applyRoute(next);
+			};
+
 			if (textual && (el.type == ElementType.Text)) {
 				next.h = this.measureText(next.text || ' ', next.w, next.fontSize || 16, next.fontFamily);
 			};
@@ -1136,15 +1144,122 @@ export class CanvasController {
 		this.paste();
 	};
 
+	/** Right click: selects the element under the pointer (unless it is already part of the selection) and returns it. */
+	contextAt (screen: Point): CanvasElement | null {
+		const hit = this.hitElement(this.toWorld(screen));
+
+		if (hit && !this.scene.selection.has(hit.id)) {
+			this.scene.setSelection([ hit.id ]);
+			this.render();
+		} else
+		if (!hit) {
+			this.scene.setSelection([]);
+			this.render();
+		};
+		return hit;
+	};
+
+	hasClipboard (): boolean {
+		return !!clipboard.length;
+	};
+
+	/** Style of the first selected element, applied to other elements with pasteStyle. */
+	copyStyle () {
+		const [ el ] = this.scene.selected();
+		if (!el) {
+			return;
+		};
+
+		const picked: Partial<CanvasElement> = {};
+
+		STYLE_KEYS.forEach(key => {
+			if ((el as any)[key] !== undefined) {
+				(picked as any)[key] = (el as any)[key];
+			};
+		});
+		styleClipboard = picked;
+	};
+
+	hasStyle (): boolean {
+		return !!styleClipboard;
+	};
+
+	pasteStyle () {
+		const sel = this.scene.selected();
+		if (!styleClipboard || !sel.length || this.readonly) {
+			return;
+		};
+
+		const ids = sel.map(el => el.id);
+		const before = this.snapshot(ids);
+		const style = styleClipboard;
+
+		this.scene.upsert(sel.map(el => {
+			const next: any = { ...el };
+
+			// Only properties the target element type understands are taken over
+			Object.keys(style).forEach(key => {
+				if ((key in this.newStyle(el.type)) || (key == 'color') || (key == 'opacity')) {
+					next[key] = (style as any)[key];
+				};
+			});
+			return applyRoute(next);
+		}));
+		this.commit(ids, before);
+	};
+
+	/** Inserts copies of the elements (library items, other canvases) so that their middle lands on `at`. */
+	insertElements (items: CanvasElement[], at: Point) {
+		if (!items.length || this.readonly) {
+			return;
+		};
+
+		const b = unionBounds(items);
+		const dx = at.x - (b.x + (b.w / 2));
+		const dy = at.y - (b.y + (b.h / 2));
+		const map = new Map<string, string>();
+
+		items.forEach(el => map.set(el.id, newElementId()));
+
+		let top = this.scene.topZ();
+		const list = items.map(el => {
+			top = between(top, null);
+
+			return {
+				...el,
+				id: map.get(el.id),
+				x: el.x + dx,
+				y: el.y + dy,
+				z: top,
+				v: 1,
+				deleted: false,
+				startId: map.get(el.startId) || '',
+				endId: map.get(el.endId) || '',
+			};
+		});
+
+		const ids = list.map(el => el.id);
+		const before: Snapshot = new Map(ids.map(id => [ id, null ]));
+
+		this.scene.upsert(list);
+		this.scene.setSelection(ids);
+		this.commit(ids, before);
+	};
+
+	/** Deletes everything. Can be undone. */
+	clearAll () {
+		this.deleteIds(this.scene.list().map(el => el.id));
+	};
+
 	selectAll () {
 		this.scene.setSelection(this.scene.list().map(el => el.id));
 		this.render();
 	};
 
 	/** Adds a card that points at a Loom object. world is the drop point (centre of the card). */
-	addObjectCard (objectId: string, world: Point) {
+	addObjectCard (objectId: string, world: Point, hint?: { w: number, h: number }) {
 		const existing = this.scene.list().find(el => (el.type == ElementType.Object) && (el.targetObjectId == objectId));
-		const size = DEFAULTS.object;
+		const size = hint || DEFAULTS.object;
 		const el = defaultElement(ElementType.Object, newElementId(), this.scene.nextZ(), {
 			x: world.x - (size.w / 2),
 			y: world.y - (size.h / 2) + (existing ? 16 : 0),

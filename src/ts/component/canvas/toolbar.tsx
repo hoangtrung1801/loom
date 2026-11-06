@@ -8,28 +8,41 @@ interface Props {
 	tool: Tool;
 	readonly?: boolean;
 	onAddObject: () => void;
+	onMenu: () => void;
+	onLibrary: () => void;
 	onChange: () => void;
 };
 
-const TOOLS: { id: Tool, key: string, shortcut: string }[] = [
-	{ id: Tool.Select, key: 'select', shortcut: 'V' },
-	{ id: Tool.Hand, key: 'hand', shortcut: 'H' },
-	{ id: Tool.Rect, key: 'rect', shortcut: 'R' },
-	{ id: Tool.Ellipse, key: 'ellipse', shortcut: 'O' },
-	{ id: Tool.Line, key: 'line', shortcut: 'L' },
-	{ id: Tool.Arrow, key: 'arrow', shortcut: 'A' },
-	{ id: Tool.Pen, key: 'pen', shortcut: 'P' },
-	{ id: Tool.Text, key: 'text', shortcut: 'T' },
-	{ id: Tool.Sticky, key: 'sticky', shortcut: 'S' },
-	{ id: Tool.Frame, key: 'frame', shortcut: 'F' },
+interface Item {
+	key: string;
+	id?: Tool;
+	hint?: string;
+};
+
+const TOOLS: Item[] = [
+	{ key: 'hand', id: Tool.Hand },
+	{ key: 'select', id: Tool.Select, hint: '1' },
+	{ key: 'rect', id: Tool.Rect, hint: '2' },
+	{ key: 'diamond', id: Tool.Diamond, hint: '3' },
+	{ key: 'ellipse', id: Tool.Ellipse, hint: '4' },
+	{ key: 'arrow', id: Tool.Arrow, hint: '5' },
+	{ key: 'line', id: Tool.Line, hint: '6' },
+	{ key: 'pen', id: Tool.Pen, hint: '7' },
+	{ key: 'text', id: Tool.Text, hint: '8' },
+	{ key: 'object', hint: '9' },
+	{ key: 'eraser', id: Tool.Eraser, hint: '0' },
 ];
 
-const CanvasToolbar = ({ controller, tool, readonly, onAddObject, onChange }: Props) => {
+const EXTRA: Item[] = [
+	{ key: 'sticky', id: Tool.Sticky },
+	{ key: 'frame', id: Tool.Frame },
+];
+
+const CanvasToolbar = ({ controller, tool, readonly, onAddObject, onMenu, onLibrary, onChange }: Props) => {
 
 	const zoom = Math.round(controller.viewport.zoom * 100);
-	const tools = readonly ? TOOLS.slice(0, 2) : TOOLS;
 
-	const button = (key: string, onClick: () => void, active = false, disabled = false, id = '') => {
+	const button = (key: string, onClick: () => void, active = false, disabled = false, hint = '', id = '') => {
 		const Icon = CanvasIcon[key];
 		const cn = [ 'canvasButton' ];
 
@@ -50,34 +63,55 @@ const CanvasToolbar = ({ controller, tool, readonly, onAddObject, onChange }: Pr
 				onClick={() => !disabled && onClick()}
 			>
 				<Icon />
+				{hint ? <span className="hint">{hint}</span> : ''}
 			</div>
 		);
 	};
 
+	const tools = (list: Item[]) => list.map(item => {
+		if (item.id) {
+			return button(item.key, () => controller.setTool(item.id), tool == item.id, false, item.hint);
+		};
+		return button(item.key, onAddObject, false, false, item.hint, 'canvasAddObject');
+	});
+
 	return (
 		<>
-			<div className="canvasToolbar">
-				{tools.map(item => button(item.key, () => controller.setTool(item.id), tool == item.id))}
-				{!readonly ? (
-					<>
-						<div className="canvasDivider" />
-						{button('object', onAddObject, false, false, 'canvasAddObject')}
-					</>
-				) : ''}
+			<div className="canvasTop">
+				<div className="canvasPill">
+					{button('menu', onMenu, false, false, '', 'canvasMenuButton')}
+				</div>
+
+				<div className="canvasPill">
+					{readonly ? tools(TOOLS.slice(0, 2)) : (
+						<>
+							{button(controller.locked ? 'lock' : 'unlock', () => { controller.toggleLock(); onChange(); }, controller.locked)}
+							<div className="canvasDivider" />
+							{tools(TOOLS)}
+							<div className="canvasDivider" />
+							{tools(EXTRA)}
+						</>
+					)}
+				</div>
+
+				<div className="canvasPill">
+					{button('library', onLibrary)}
+				</div>
 			</div>
 
 			<div className="canvasZoom">
-				{!readonly ? (
-					<>
-						{button('undo', () => { controller.undo(); onChange(); }, false, !controller.history.canUndo())}
-						{button('redo', () => { controller.redo(); onChange(); }, false, !controller.history.canRedo())}
-						<div className="canvasDivider" />
-					</>
-				) : ''}
 				{button('minus', () => controller.zoomBy(1 / 1.2))}
 				<div className="canvasZoomValue" onClick={() => controller.setViewport({ ...controller.viewport, zoom: 1 })}>{zoom}%</div>
 				{button('plus', () => controller.zoomBy(1.2))}
 				{button('fit', () => controller.fit())}
+
+				{!readonly ? (
+					<>
+						<div className="canvasDivider" />
+						{button('undo', () => { controller.undo(); onChange(); }, false, !controller.history.canUndo())}
+						{button('redo', () => { controller.redo(); onChange(); }, false, !controller.history.canRedo())}
+					</>
+				) : ''}
 			</div>
 		</>
 	);

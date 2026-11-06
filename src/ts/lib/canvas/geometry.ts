@@ -124,7 +124,8 @@ export const hitTest = (el: CanvasElement, world: Point, tolerance: number): boo
 	};
 
 	if (isLinear(el)) {
-		const pts = worldPoints(el);
+		const raw = worldPoints(el);
+		const pts = (el.arrowType == 'curve') ? curveSamples(raw) : raw;
 		const t = tolerance + ((el.strokeWidth || 2) / 2);
 
 		for (let i = 0; i < (pts.length - 1); i++) {
@@ -274,6 +275,73 @@ export const estimateTextHeight = (text: string, width: number, fontSize: number
 	});
 
 	return Math.ceil(lines * fontSize * 1.3);
+};
+
+const CURVE_BEND = 0.2;
+const CURVE_STEPS = 16;
+
+/**
+ * Points of a line or arrow for its routing style, built from the two end points.
+ * Sharp is a straight segment, curved adds one control point on the curve, elbow adds two bends.
+ */
+export const routePoints = (a: number[], b: number[], type: string = 'sharp'): number[][] => {
+	const dx = b[0] - a[0];
+	const dy = b[1] - a[1];
+	const len = Math.hypot(dx, dy);
+
+	if (!len || (type == 'sharp') || !type) {
+		return [ a, b ];
+	};
+
+	if (type == 'curve') {
+		// Bend to the left of the direction of travel, proportional to the length
+		const mid = [ (a[0] + b[0]) / 2, (a[1] + b[1]) / 2 ];
+		const bend = len * CURVE_BEND;
+
+		return [ a, [ mid[0] + ((-dy / len) * bend), mid[1] + ((dx / len) * bend) ], b ];
+	};
+
+	if (!dx || !dy) {
+		return [ a, b ];
+	};
+
+	if (Math.abs(dx) >= Math.abs(dy)) {
+		const mx = a[0] + (dx / 2);
+		return [ a, [ mx, a[1] ], [ mx, b[1] ], b ];
+	};
+
+	const my = a[1] + (dy / 2);
+	return [ a, [ a[0], my ], [ b[0], my ], b ];
+};
+
+/** Rebuilds the points of a line or arrow for its routing style, keeping the two end points. */
+export const applyRoute = (el: CanvasElement): CanvasElement => {
+	const pts = el.points || [];
+
+	if ((pts.length < 2) || ![ ElementType.Line, ElementType.Arrow ].includes(el.type)) {
+		return el;
+	};
+
+	return normalizeLinear({ ...el, points: routePoints(pts[0], pts[pts.length - 1], el.arrowType) });
+};
+
+/** Samples a three point curve (through its middle point) so that it can be hit tested like a polyline. */
+export const curveSamples = (pts: Point[]): Point[] => {
+	if (pts.length != 3) {
+		return pts;
+	};
+
+	const [ a, c, b ] = pts;
+	const q = { x: (2 * c.x) - ((a.x + b.x) / 2), y: (2 * c.y) - ((a.y + b.y) / 2) };
+	const out: Point[] = [];
+
+	for (let i = 0; i <= CURVE_STEPS; i++) {
+		const t = i / CURVE_STEPS;
+		const u = 1 - t;
+
+		out.push({ x: (u * u * a.x) + (2 * u * t * q.x) + (t * t * b.x), y: (u * u * a.y) + (2 * u * t * q.y) + (t * t * b.y) });
+	};
+	return out;
 };
 
 /** Shift points so the bounding box starts at x, y and keep w, h in sync. */

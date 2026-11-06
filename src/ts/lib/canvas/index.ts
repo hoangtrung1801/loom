@@ -6,4 +6,5 @@ export * from './viewport';
 export * from './scene';
 export * from './history';
 export * from './codec';
+export * from './library';
 export * from './controller';

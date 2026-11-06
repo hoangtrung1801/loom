@@ -16,11 +16,19 @@ export interface RendererTheme {
 	fill: { [key: string]: string };
 	textColor: { [key: string]: string };
 	fontFamily: string;
+	openLabel?: string;
 };
+
+export type ObjectKind = 'page' | 'set' | 'bookmark' | 'image';
 
 export interface ObjectInfo {
 	name: string;
 	type: string;
+	kind: ObjectKind;
+	/** First lines of the page, or its description. */
+	text: string;
+	source: string;
+	imageUrl: string;
 };
 
 interface View {
@@ -82,6 +90,8 @@ export class CanvasRenderer {
 	private frame = 0;
 	private destroyed = false;
 	private hiddenId = '';
+	private highlightObjectId = '';
+	private images = new Map<string, HTMLImageElement | null>();
 	private objectVersion = 0;
 	private ready = false;
 
@@ -138,6 +148,75 @@ export class CanvasRenderer {
 	setHidden (id: string) {
 		this.hiddenId = id;
 		this.requestRender();
+	};
+
+	/** Draws elements into a standalone canvas for PNG export and library thumbnails. */
+	exportImage (elements: CanvasElement[], opts: { scale: number, background: boolean, padding?: number, maxSize?: number }): HTMLCanvasElement | null {
+		const list = elements.filter(el => !el.deleted);
+		if (!list.length || !this.ready) {
+			return null;
+		};
+
+		const pad = opts.padding ?? 16;
+		const boxes = list.map(el => elementBounds(el));
+		const minX = Math.min(...boxes.map(b => b.x));
+		const minY = Math.min(...boxes.map(b => b.y));
+		const maxX = Math.max(...boxes.map(b => b.x + b.w));
+		const maxY = Math.max(...boxes.map(b => b.y + b.h));
+		const w = Math.max(1, maxX - minX + (pad * 2));
+		const h = Math.max(1, maxY - minY + (pad * 2));
+		let scale = opts.scale;
+
+		if (opts.maxSize) {
+			scale = Math.min(scale, opts.maxSize / Math.max(w, h));
+		};
+
+		const host = document.createElement('div');
+		const stage = new Konva.Stage({ container: host, width: w, height: h, listening: false });
+		const layer = new Konva.Layer({ listening: false });
+		const group = new Konva.Group({ x: pad - minX, y: pad - minY, listening: false });
+		const sorted = list.slice().sort((a, b) => (a.z < b.z ? -1 : (a.z > b.z ? 1 : 0)));
+
+		if (opts.background) {
+			layer.add(new Konva.Rect({ width: w, height: h, fill: this.theme.bg, listening: false }));
+		};
+
+		sorted.forEach(el => group.add(this.build(el).node));
+		layer.add(group);
+		stage.add(layer);
+
+		const canvas = stage.toCanvas({ pixelRatio: scale }) as HTMLCanvasElement;
+
+		stage.destroy();
+		return canvas;
+	};
+
+	/** The object that is open in the side panel gets an outline on the board. */
+	setHighlightObject (id: string) {
+		if (id == this.highlightObjectId) {
+			return;
+		};
+		this.highlightObjectId = id;
+		this.requestRender();
+	};
+
+	private getImage (url: string): HTMLImageElement | null {
+		if (!url) {
+			return null;
+		};
+		if (this.images.has(url)) {
+			return this.images.get(url);
+		};
+
+		const img = new Image();
+
+		this.images.set(url, null);
+		img.onload = () => {
+			this.images.set(url, img);
+			this.invalidateObjects();
+		};
+		img.src = url;
+		return null;
 	};
 
 	/** Object cards show name and type from the store; call when those details change. */
@@ -208,7 +287,7 @@ export class CanvasRenderer {
 	private elementKey (el: CanvasElement): string {
 		const info = (el.type == ElementType.Object) ? this.getObject(el.targetObjectId) : null;
 
-		return [ el.v, el.nonce, this.objectVersion, info ? `${info.name}|${info.type}` : '', (el.id == this.hiddenId) ? 'h' : '', this.controller.erasing.has(el.id) ? 'x' : '' ].join(':');
+		return [ el.v, el.nonce, this.objectVersion, info ? `${info.name}|${info.type}|${info.text}|${info.imageUrl}|${this.images.get(info.imageUrl) ? 1 : 0}` : '', (el.targetObjectId && (el.targetObjectId == this.highlightObjectId)) ? 'o' : '', (el.id == this.hiddenId) ? 'h' : '', this.controller.erasing.has(el.id) ? 'x' : '' ].join(':');
 	};
 
 	private stroke (el: CanvasElement): string {
@@ -481,24 +560,99 @@ export class CanvasRenderer {
 			};
 
 			case ElementType.Object: {
-				const info = this.getObject(el.targetObjectId);
-
-				node.add(new Konva.Rect({ ...base, width: el.w, height: el.h, cornerRadius: 8, fill: this.theme.card, stroke: this.theme.cardBorder, strokeWidth: 1 }));
-
-				const name = this.text((info?.name || '').slice(0, 120), 15, el.w - 24, this.theme.text, { x: 12, y: 12, fontStyle: '600', wrap: 'char' });
-
-				node.add(name);
-				texts.push(name);
-
-				if (info?.type) {
-					const type = this.text(info.type, 12, undefined, this.theme.muted, { wrap: 'none' });
-
-					type.position({ x: 12, y: el.h - 12 - type.height() });
-					node.add(type);
-					texts.push(type);
-				};
+				this.buildObject(el, node, texts);
 				break;
 			};
+		};
+	};
+
+	/** Read-only preview of a Loom object. Everything comes from details already in the store. */
+	private buildObject (el: CanvasElement, node: Konva.Group, texts: Konva.Node[]) {
+		const info = this.getObject(el.targetObjectId);
+		const base = { listening: false, perfectDrawEnabled: false, shadowForStrokeEnabled: false };
+		const opened = !!el.targetObjectId && (el.targetObjectId == this.highlightObjectId);
+		const { w, h } = el;
+		const pad = 12;
+		const add = (t: Konva.Text) => {
+			node.add(t);
+			texts.push(t);
+			return t;
+		};
+
+		node.add(new Konva.Rect({
+			...base, width: w, height: h, cornerRadius: 8, fill: this.theme.card,
+			stroke: opened ? this.theme.selected : this.theme.cardBorder, strokeWidth: opened ? 2 : 1,
+		}));
+
+		// Clip the content to the rounded card
+		const body = new Konva.Group({ listening: false, clipFunc: (ctx: any) => {
+			ctx.beginPath();
+			(ctx as any).roundRect ? (ctx as any).roundRect(0, 0, w, h, 8) : ctx.rect(0, 0, w, h);
+			ctx.closePath();
+		} });
+
+		node.add(body);
+
+		const put = (shape: Konva.Shape | Konva.Group) => body.add(shape as any);
+		const label = (value: string, size: number, width: number, fill: string, extra: Partial<Konva.TextConfig> = {}): Konva.Text => {
+			const t = this.text(value, size, width, fill, extra);
+
+			put(t);
+			texts.push(t);
+			return t;
+		};
+
+		if (info.kind == 'image') {
+			const img = this.getImage(info.imageUrl);
+			const imgH = h - 36;
+
+			put(new Konva.Rect({ ...base, width: w, height: imgH, fill: this.theme.grid, opacity: 0.35 }));
+
+			if (img) {
+				const ratio = Math.max(w / img.width, imgH / img.height);
+				const cw = w / ratio;
+				const ch = imgH / ratio;
+
+				put(new Konva.Image({ ...base, image: img, width: w, height: imgH, crop: { x: (img.width - cw) / 2, y: (img.height - ch) / 2, width: cw, height: ch } }));
+			};
+
+			label(info.name, 13, w - (pad * 2) - 40, this.theme.text, { x: pad, y: imgH + 10, fontStyle: '600', wrap: 'none', ellipsis: true });
+			label(info.type, 11, 40, this.theme.muted, { x: w - pad - 40, y: imgH + 12, align: 'right', wrap: 'none' });
+			return;
+		};
+
+		if (info.kind == 'bookmark') {
+			const side = Math.min(88, h);
+
+			put(new Konva.Rect({ ...base, width: side, height: h, fill: this.theme.grid, opacity: 0.35 }));
+			put(new Konva.Circle({ ...base, x: side / 2, y: h / 2, radius: 14, stroke: this.theme.muted, strokeWidth: 1.5 }));
+			put(new Konva.Ellipse({ ...base, x: side / 2, y: h / 2, radiusX: 6, radiusY: 14, stroke: this.theme.muted, strokeWidth: 1.5 }));
+			put(new Konva.Line({ ...base, points: [ (side / 2) - 14, h / 2, (side / 2) + 14, h / 2 ], stroke: this.theme.muted, strokeWidth: 1.5 }));
+
+			const tw = w - side - (pad * 2);
+
+			label(info.name, 13, tw, this.theme.text, { x: side + pad, y: pad, fontStyle: '600', wrap: 'none', ellipsis: true });
+			label(info.text, 11, tw, this.theme.muted, { x: side + pad, y: pad + 20, height: Math.max(14, h - 68), wrap: 'word', ellipsis: true });
+			label(info.source, 11, tw, this.theme.muted, { x: side + pad, y: h - pad - 13, wrap: 'none', ellipsis: true });
+			return;
+		};
+
+		// Page, set and everything else: a header with the name and type, then the beginning of the content
+		const head = 40;
+
+		put(new Konva.Rect({ ...base, x: pad, y: 12, width: 16, height: 16, cornerRadius: 4, stroke: this.theme.muted, strokeWidth: 1.2 }));
+		label(info.name, 14, w - (pad * 3) - 76, this.theme.text, { x: pad + 24, y: 12, fontStyle: '600', wrap: 'none', ellipsis: true });
+		label(info.type, 11, 64, this.theme.muted, { x: w - pad - 64, y: 14, align: 'right', wrap: 'none', ellipsis: true });
+		put(new Konva.Line({ ...base, points: [ 0, head, w, head ], stroke: this.theme.cardBorder, strokeWidth: 1 }));
+
+		if (info.text) {
+			label(info.text, 12, w - (pad * 2), this.theme.text, { x: pad, y: head + 10, height: Math.max(16, h - head - 20), wrap: 'word', ellipsis: true, lineHeight: 1.5 });
+		};
+
+		if (opened) {
+			const tip = add(this.text(this.theme.openLabel || '', 11, undefined, this.theme.selected, { wrap: 'none' }));
+
+			tip.position({ x: w - pad - tip.width(), y: h - pad - tip.height() });
 		};
 	};
 
@@ -608,7 +762,7 @@ export class CanvasRenderer {
 		this.syncNodes(nodes);
 		this.syncDraft();
 
-		const bgKey = [ width, height, viewport.x, viewport.y, viewport.zoom, this.theme.bg, this.theme.grid ].join(':');
+		const bgKey = [ width, height, viewport.x, viewport.y, viewport.zoom, this.theme.bg, this.theme.grid, this.controller.showGrid ].join(':');
 
 		if (bgKey != this.bgKey) {
 			this.bgKey = bgKey;
@@ -656,6 +810,10 @@ export class CanvasRenderer {
 
 		c.fillStyle = this.theme.bg;
 		c.fillRect(0, 0, width, height);
+
+		if (!this.controller.showGrid) {
+			return;
+		};
 
 		while (step < 12) {
 			step *= 2;
