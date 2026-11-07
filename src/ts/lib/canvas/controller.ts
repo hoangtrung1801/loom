@@ -908,7 +908,7 @@ export class CanvasController {
 					// A dot
 					el = { ...el, points: [ [ 0, 0 ], [ 0.1, 0.1 ] ] };
 				} else {
-					el = { ...el, points: simplify(el.points, 1.2 / this.viewport.zoom) };
+					el = { ...el, points: simplify(el.points, 0.4 / this.viewport.zoom) };
 				};
 				el = normalizeLinear(el);
 				break;
@@ -917,7 +917,8 @@ export class CanvasController {
 
 		const before: Snapshot = new Map([ [ el.id, null ] ]);
 		this.scene.upsert([ el ]);
-		this.scene.setSelection([ el.id ]);
+		// Freehand strokes are not selected so the pen stays ready for the next stroke
+		this.scene.setSelection((el.type == ElementType.Freehand) ? [] : [ el.id ]);
 		this.commit([ el.id ], before);
 
 		if ((this.tool != Tool.Pen) && !this.locked) {
