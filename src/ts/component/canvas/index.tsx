@@ -379,6 +379,13 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		const controller = controllerRef.current;
 		const el = (editing && controller) ? controller.scene.get(editing.id) : null;
 
+		if (ta && el && (el.type == ElementType.Text)) {
+			// Free text grows with its content so nothing gets clipped while typing
+			ta.style.height = 'auto';
+			ta.style.height = `${Math.max(24, ta.scrollHeight)}px`;
+			return;
+		};
+
 		if (!ta || !el || ![ ElementType.Sticky, ElementType.Rect, ElementType.Diamond, ElementType.Ellipse ].includes(el.type)) {
 			return;
 		};

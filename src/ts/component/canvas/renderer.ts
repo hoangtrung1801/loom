@@ -550,7 +550,7 @@ export class CanvasRenderer {
 				const pts = el.points || [];
 
 				if (pts.length > 1) {
-					node.add(new Konva.Line({ ...base, points: pts.reduce((acc, p) => acc.concat(p), [] as number[]), stroke, strokeWidth: sw, lineCap: 'round', lineJoin: 'round' }));
+					node.add(new Konva.Line({ ...base, points: pts.reduce((acc, p) => acc.concat(p), [] as number[]), stroke, strokeWidth: sw, lineCap: 'round', lineJoin: 'round', tension: (el.type == ElementType.Freehand) ? 0.4 : 0 }));
 				};
 
 				if (el.type == ElementType.Arrow) {
