@@ -784,7 +784,7 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		editStyle.height = Math.max(24, region.h * zoom);
 		editStyle.fontSize = (editEl.fontSize || 16) * zoom;
 		editStyle.lineHeight = `${Math.round((editEl.fontSize || 16) * 1.3) * zoom}px`;
-		editStyle.fontFamily = (family == 'hand') ? 'Caveat, cursive' : ((family == 'code') ? 'ui-monospace, Menlo, Consolas, monospace' : 'inherit');
+		editStyle.fontFamily = (family == 'hand') ? 'Caveat, "Patrick Hand", cursive' : ((family == 'code') ? 'ui-monospace, Menlo, Consolas, monospace' : 'inherit');
 		editStyle.color = (editEl.fill && ((editEl.fillStyle || 'solid') == 'solid')) ? (J.Theme[''] as any).color.default : theme.textColor[editEl.color || 'default'];
 		editStyle.padding = 0;
 		editStyle.textAlign = editEl.textAlign || (isShapeType(editEl.type) ? 'center' : 'left');
