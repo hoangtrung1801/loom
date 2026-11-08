@@ -4,6 +4,7 @@ import Attachment from 'Component/block/chat/attachment';
 import CodeBlock from 'Component/util/codeBlock';
 import EmbedPreview from './embedPreview';
 import * as I from 'Interface';
+import * as LoLib from 'Lib/lo';
 
 const renderPart = (part: I.CommentContentPart, index: number, subId?: string): JSX.Element => {
 	const key = `part-${index}`;
@@ -109,7 +110,9 @@ const renderPart = (part: I.CommentContentPart, index: number, subId?: string): 
 	};
 };
 
-const renderParts = (parts: I.CommentContentPart[], subId?: string): JSX.Element[] => {
+const renderParts = (list: I.CommentContentPart[], subId?: string): JSX.Element[] => {
+	// Lo's comments end with an invisible marker, which is not part of what is shown
+	const parts = LoLib.isLoParts(list) ? list.map(it => (it.text ? { ...it, text: LoLib.stripLoMarker(it.text) } : it)) : list;
 	const elements: JSX.Element[] = [];
 	let i = 0;
 

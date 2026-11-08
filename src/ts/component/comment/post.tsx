@@ -8,6 +8,7 @@ import Attachment from 'Component/block/chat/attachment';
 import Reaction from 'Component/block/chat/message/reaction';
 import { renderParts } from './render';
 import * as I from 'Interface';
+import * as LoLib from 'Lib/lo';
 
 interface Props {
 	rootId: string;
@@ -35,9 +36,10 @@ const CommentPost = (props: Props) => {
 	// elsewhere still calls onEdit with the closure of that render
 	const isEditing = editState && !isDeleted;
 	const author = U.Space.getParticipant(U.Space.getParticipantId(space, creator));
-	const isSelf = creator == account.id;
 	const parts = message.content?.parts || [];
-	const editedLabel = modifiedAt ? ` (${translate('commentEdited')})` : '';
+	const isLo = LoLib.isLoParts(parts);
+	const isSelf = (creator == account.id) && !isLo;
+	const editedLabel = (modifiedAt && !isLo) ? ` (${translate('commentEdited')})` : '';
 	const replies = S.Comment.getReplies(id);
 	const subId = U.Comment.getSubId(I.CommentTargetType.Object, targetId);
 
@@ -742,14 +744,23 @@ const CommentPost = (props: Props) => {
 				{!isEditing ? (
 					<div className="head">
 						<div className="side left">
-							<IconObject
-								object={{ ...author, layout: I.ObjectLayout.Participant }}
-								size={20}
-								onClick={e => U.Object.openConfig(e, author)}
-							/>
-							<div className="author" onClick={e => U.Object.openConfig(e, author)}>
-								<ObjectName object={author} withBadge={true} />
-							</div>
+							{isLo ? (
+								<>
+									<div className="iconObject isParticipant c20 loAvatar" />
+									<div className="author">{LoLib.AGENT_NAME}</div>
+								</>
+							) : (
+								<>
+									<IconObject
+										object={{ ...author, layout: I.ObjectLayout.Participant }}
+										size={20}
+										onClick={e => U.Object.openConfig(e, author)}
+									/>
+									<div className="author" onClick={e => U.Object.openConfig(e, author)}>
+										<ObjectName object={author} withBadge={true} />
+									</div>
+								</>
+							)}
 							<div className="date">
 								{U.Date.isToday(createdAt) ? U.Date.timeWithFormat(S.Common.timeFormat, createdAt) : U.Date.date('M j', createdAt)}{editedLabel}
 							</div>

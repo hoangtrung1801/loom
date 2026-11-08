@@ -117,6 +117,108 @@ export const buildChatHistory = (
 	return items.slice(-limit);
 };
 
+/** A discussion comment is a list of text parts, the form comments are kept in. */
+export type LoPartLike = Pick<I.CommentContentPart, 'text' | 'type' | 'marks'>;
+
+const textParts = (parts: LoPartLike[]): LoPartLike[] => (parts || []).filter(it => (it.type === undefined) || (it.type == I.BlockType.Text));
+
+/** Whether the last text of a comment carries the Lo marker. */
+export const isLoParts = (parts: LoPartLike[]): boolean => {
+	const list = textParts(parts);
+	return list.length ? isLoText(list[list.length - 1].text || '') : false;
+};
+
+/** True when any text of the comment mentions the Lo object. */
+export const partsMentionLo = (parts: LoPartLike[], loId: string): boolean => {
+	if (!loId) {
+		return false;
+	};
+	return textParts(parts).some(it => (it.marks || []).some(m => (m.type == I.MarkType.Mention) && (m.param == loId)));
+};
+
+/** Plain text of a comment, marker removed. With loId, Lo's own mention is cut out first. */
+export const partsToText = (parts: LoPartLike[], loId = ''): string => {
+	const lines = textParts(parts).map(it => {
+		let text = stripLoMarker(it.text || '');
+
+		if (loId) {
+			const mark = (it.marks || []).find(m => (m.type == I.MarkType.Mention) && (m.param == loId));
+			if (mark?.range) {
+				text = (text.slice(0, mark.range.from) + text.slice(mark.range.to)).replace(/[ \t]{2,}/g, ' ');
+			};
+		};
+		return text.trim();
+	});
+
+	return lines.filter(it => it).join('\n').trim();
+};
+
+/**
+ * Turns a model answer into the blocks of a discussion comment: a block per line, code fences as
+ * code blocks, list items as list blocks, the inline markdown as marks. The marker ends the last text.
+ */
+export const markdownToBlocks = (value: string): { text: { text: string; style: number; marks: I.Mark[]; lang?: string } }[] => {
+	const blocks: { text: { text: string; style: number; marks: I.Mark[]; lang?: string } }[] = [];
+	const push = (raw: string, style: number) => {
+		const inline = formatLoInline(raw);
+		blocks.push({ text: { text: inline.text, style, marks: inline.marks } });
+	};
+
+	let code: string[] | null = null;
+	let lang = '';
+
+	const flush = () => {
+		if (code) {
+			blocks.push({ text: { text: code.join('\n'), style: I.TextStyle.Code, marks: [], lang } });
+		};
+		code = null;
+	};
+
+	for (const line of String(value || '').split('\n')) {
+		const fence = line.match(/^\s*```\s*([^`\s]*)\s*$/);
+
+		if (fence) {
+			if (code) {
+				flush();
+			} else {
+				code = [];
+				lang = fence[1] || '';
+			};
+			continue;
+		};
+
+		if (code) {
+			code.push(line);
+			continue;
+		};
+
+		if (!line.trim()) {
+			continue;
+		};
+
+		const bullet = line.match(/^\s*[-*] +(.+)$/);
+		const numbered = line.match(/^\s*\d+[.)] +(.+)$/);
+
+		if (bullet) {
+			push(bullet[1], I.TextStyle.Bulleted);
+		} else
+		if (numbered) {
+			push(numbered[1], I.TextStyle.Numbered);
+		} else {
+			push(line.trim(), I.TextStyle.Paragraph);
+		};
+	};
+	flush();
+
+	if (!blocks.length) {
+		blocks.push({ text: { text: '', style: I.TextStyle.Paragraph, marks: [] } });
+	};
+
+	const last = blocks[blocks.length - 1].text;
+	last.text = withLoMarker(last.text);
+	return blocks;
+};
+
 const request = <T>(fn: (cb: (message: any) => void) => void): Promise<T> => new Promise((resolve, reject) => {
 	fn((message: any) => {
 		if (message.error?.code) {

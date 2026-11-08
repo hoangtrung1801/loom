@@ -70,6 +70,7 @@ export const historySection = (history: { role: string; text: string }[] = []): 
 export const contextSection = (ctx: {
 	spaceId?: string; spaceName?: string; objectId?: string; objectName?: string; objectType?: string;
 	mentions?: { id: string; name: string; type?: string }[];
+	objectText?: string; discussion?: boolean;
 }): string => {
 	const lines: string[] = [];
 
@@ -78,6 +79,13 @@ export const contextSection = (ctx: {
 	};
 	if (ctx.objectId) {
 		lines.push(`Open object: ${ctx.objectName || 'Untitled'}${ctx.objectType ? ` [${ctx.objectType}]` : ''} (id: ${ctx.objectId})`);
+	};
+
+	if (ctx.discussion && ctx.objectId) {
+		lines.push('The message comes from the discussion (comments) of the open object: "this page", "this object" and "here" mean that object.');
+	};
+	if (ctx.objectId && ctx.objectText) {
+		lines.push(`Text of the open object (may be cut):\n${ctx.objectText}`);
 	};
 
 	const mentions = (ctx.mentions || []).filter(it => it && it.id).slice(0, 20);

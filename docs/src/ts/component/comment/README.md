@@ -35,6 +35,10 @@ While the section is open, it subscribes `typing/<discussionId>` (`Lib/presence`
 - `discussionActivity()` (`Lib/chatStatus/timeline`) places everything: a finished run on its comment, the rest at the end of the thread its reply target resolves to (`S.Comment.getThreadRoot`), else at the discussion level
 - Rendering reuses the chat's `StatusGroup` (`isCompact`: one typing-row line until expanded) and `TypingIndicator` from `block/chat/status.tsx`
 
+### Asking Lo
+
+Mentioning Lo (offered first in the `@` menu once a model is set up) or replying to a Lo comment makes `S.Lo.onDiscussionAdd` (called by the dispatcher for discussion `ChatAdd`) answer in the same thread. The run is read-only and gets the discussed object's name, type and text (`objectText`) as context, plus the thread as history. Lo's comments are posted by the user's account and end with the invisible Lo marker (`Lib/lo`); `post.tsx`/`reply.tsx` show them as Lo, hide edit/delete, and `renderParts` strips the marker. The answer streams in through edits (`markdownToBlocks` turns markdown into comment blocks).
+
 ### Editor (`src/ts/component/form/commentEditor.tsx`)
 
 Lexical-based rich text editor with custom nodes and plugins:
