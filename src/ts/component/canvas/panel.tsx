@@ -188,7 +188,7 @@ const CanvasPanel = ({ controller, tool, onChange }: Props) => {
 
 			{f.font ? section('canvasPanelFont', FAMILIES.map(id => option(
 				id, val('fontFamily') == id, `canvasFont_${id}`, () => apply({ fontFamily: id as any }), 'Aa',
-				{ fontFamily: (id == 'hand') ? 'Caveat, cursive' : ((id == 'code') ? 'monospace' : 'inherit'), fontSize: (id == 'hand') ? 16 : 12 },
+				{ fontFamily: (id == 'hand') ? 'Caveat, "Patrick Hand", cursive' : ((id == 'code') ? 'monospace' : 'inherit'), fontSize: (id == 'hand') ? 16 : 12 },
 			))) : ''}
 
 			{f.font ? section('canvasPanelSize', SIZES.map(s => option(s.id, val('fontSize') == s.value, `canvasSize_${s.id}`, () => apply({ fontSize: s.value }), s.id))) : ''}

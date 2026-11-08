@@ -264,7 +264,7 @@ export class CanvasRenderer {
 
 	private family (name?: string): string {
 		switch (name) {
-			case 'hand': return `Caveat, ${this.theme.fontFamily}`;
+			case 'hand': return `Caveat, "Patrick Hand", ${this.theme.fontFamily}`;
 			case 'code': return MONO;
 		};
 		return this.theme.fontFamily;
