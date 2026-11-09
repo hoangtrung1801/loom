@@ -56,9 +56,33 @@ func TestBackupFolderName(t *testing.T) {
 		"my-notes-abcd1234": {id: "bafyreiXabcd1234", name: "My Notes!"},
 		"space-abcd1234":    {id: "bafyreiXabcd1234", name: "???"},
 		"short-id":          {id: "id", name: "Short"},
+		"notes-cidtail1":    {id: "bafyreiXcidtail1.28y6mgnwgodt7", name: "Notes"},
 	} {
 		assert.Equal(t, want, backupFolderName(s))
 	}
+
+	// spaces of one account share the replication key and must still differ
+	a := backupSpace{id: "bafyreiAAAAaaaa1111.28y6mgnwgodt7", name: "Work"}
+	b := backupSpace{id: "bafyreiBBBBbbbb2222.28y6mgnwgodt7", name: "Home"}
+	assert.NotEqual(t, backupFolderName(a), backupFolderName(b))
+}
+
+func TestExportSpacesSharingReplicationKey(t *testing.T) {
+	root := t.TempDir()
+	fx := &fakeExporter{files: map[string]map[string]string{
+		"bafyreiAAAAaaaa1111.28y6mgnwgodt7": {"A.md": "a"},
+		"bafyreiBBBBbbbb2222.28y6mgnwgodt7": {"B.md": "b"},
+	}}
+	for _, s := range []backupSpace{
+		{id: "bafyreiAAAAaaaa1111.28y6mgnwgodt7", name: "Work"},
+		{id: "bafyreiBBBBbbbb2222.28y6mgnwgodt7", name: "Home"},
+	} {
+		_, err := exportSpace(context.Background(), fx, s, filepath.Join(root, backupFolderName(s)))
+		require.NoError(t, err)
+	}
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	assert.Len(t, entries, 2)
 }
 
 func TestExportSpace(t *testing.T) {

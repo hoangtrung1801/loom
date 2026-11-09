@@ -87,13 +87,19 @@ var backupSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 // backupFolderName is the stable folder for a space: its name plus the tail
 // of its id, so renaming a space moves the folder but two spaces with the
-// same name never collide.
+// same name never collide. The tail comes from the CID half of the id only: a
+// full space id is "<cid>.<replication key>" and every space on an account
+// shares the replication key, so a tail taken from the end of the whole id
+// would be the same for all spaces.
 func backupFolderName(s backupSpace) string {
 	name := strings.Trim(backupSlugRe.ReplaceAllString(strings.ToLower(s.name), "-"), "-")
 	if len(name) > 40 {
 		name = strings.TrimRight(name[:40], "-")
 	}
 	tail := s.id
+	if dot := strings.IndexByte(tail, '.'); dot > 0 {
+		tail = tail[:dot]
+	}
 	if len(tail) > 8 {
 		tail = tail[len(tail)-8:]
 	}
