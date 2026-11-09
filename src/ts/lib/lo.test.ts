@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import * as I from 'Interface';
 import {
-	LO_MARKER, isLoMessage, isLoText, stripLoMarker, withLoMarker, mentionsLo, shouldLoReply, textForLo, buildChatHistory, formatLoInline, type ReplyContext,
+	LO_MARKER, isLoMessage, isLoText, stripLoMarker, withLoMarker, mentionsLo, shouldLoReply, textForLo, buildChatHistory, formatLoInline, isLoParts, partsMentionLo, partsToText, markdownToBlocks, type ReplyContext,
 } from './lo';
 
 const LO = 'lo-object';
@@ -139,5 +139,48 @@ describe('formatLoInline', () => {
 
 	test('keeps unfinished markdown while streaming', () => {
 		expect(formatLoInline('a **half').text).toBe('a **half');
+	});
+});
+
+describe('discussion comments', () => {
+	const part = (text: string, marks: any[] = [], extra: any = {}) => ({ text, marks, type: I.BlockType.Text, ...extra });
+
+	test('a comment is Lo\'s when its last text ends with the marker', () => {
+		expect(isLoParts([ part('a'), part(`b${LO_MARKER}`) ])).toBe(true);
+		expect(isLoParts([ part(`a${LO_MARKER}`), part('b') ])).toBe(false);
+		expect(isLoParts([])).toBe(false);
+	});
+
+	test('finds the Lo mention in any part', () => {
+		expect(partsMentionLo([ part('hi'), part('@Lo help', [ mention(0, 3) ]) ], LO)).toBe(true);
+		expect(partsMentionLo([ part('@Lo', [ mention(0, 3, 'other') ]) ], LO)).toBe(false);
+		expect(partsMentionLo([ part('@Lo', [ mention(0, 3) ]) ], '')).toBe(false);
+	});
+
+	test('partsToText cuts Lo\'s mention and the marker', () => {
+		const parts = [ part('@Lo summarize this', [ mention(0, 3) ]), part('thanks') ];
+		expect(partsToText(parts, LO)).toBe('summarize this\nthanks');
+		expect(partsToText([ part(`done${LO_MARKER}`) ])).toBe('done');
+	});
+
+	test('markdownToBlocks makes a block per line, with lists, code and the marker last', () => {
+		const blocks = markdownToBlocks('Intro **bold**\n\n- one\n- two\n1. first\n```ts\nconst a = 1;\n\nlet b;\n```\nEnd');
+		const styles = blocks.map(it => it.text.style);
+
+		expect(styles).toEqual([
+			I.TextStyle.Paragraph, I.TextStyle.Bulleted, I.TextStyle.Bulleted, I.TextStyle.Numbered, I.TextStyle.Code, I.TextStyle.Paragraph,
+		]);
+		expect(blocks[0].text.text).toBe('Intro bold');
+		expect(blocks[0].text.marks[0].type).toBe(I.MarkType.Bold);
+		expect(blocks[4].text.text).toBe('const a = 1;\n\nlet b;');
+		expect(blocks[4].text.lang).toBe('ts');
+		expect(isLoText(blocks[5].text.text)).toBe(true);
+		expect(stripLoMarker(blocks[5].text.text)).toBe('End');
+	});
+
+	test('markdownToBlocks keeps an unclosed fence as code while streaming and never returns nothing', () => {
+		expect(markdownToBlocks('```\nabc')[0].text.style).toBe(I.TextStyle.Code);
+		expect(markdownToBlocks('').length).toBe(1);
+		expect(isLoText(markdownToBlocks('')[0].text.text)).toBe(true);
 	});
 });

@@ -631,6 +631,9 @@ const CommentSection = (props: I.CommentSectionProps) => {
 				};
 			};
 
+			// The first comment's event can arrive before the object details carry the discussion
+			S.Chat.discussionParentMapSet(S.Common.space, rootId, id);
+
 			setLocalDiscussionId(id);
 			subscribe(id);
 			callBack(id);

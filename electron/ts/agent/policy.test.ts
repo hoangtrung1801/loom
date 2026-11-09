@@ -66,6 +66,13 @@ describe('prompt sections', () => {
 		expect(out).not.toContain('skipped');
 	});
 
+	test('contextSection adds the object text for a discussion question', () => {
+		const out = contextSection({ objectId: 'o1', objectName: 'Plan', objectText: 'Ship on Friday', discussion: true });
+		expect(out).toContain('discussion (comments) of the open object');
+		expect(out).toContain('Ship on Friday');
+		expect(contextSection({ objectText: 'orphan text' })).toBe('');
+	});
+
 	test('contextSection is empty with nothing open', () => {
 		expect(contextSection({})).toBe('');
 	});

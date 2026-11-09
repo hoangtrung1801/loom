@@ -54,6 +54,7 @@ import { IconObject } from 'Component';
 import Attachment from 'Component/block/chat/attachment';
 import EmbedPreview from 'Component/comment/embedPreview';
 import * as I from 'Interface';
+import * as LoLib from 'Lib/lo';
 import * as M from 'Model';
 import Storage from 'Lib/storage';
 
@@ -3270,11 +3271,37 @@ const MentionPlugin = ({ editorId }: { editorId: string }) => {
 	return null;
 };
 
-const openMentionMenu = (editor: LexicalEditor, editorId: string, mentionOffset: React.MutableRefObject<number>) => {
+/** Lo is offered in the mention menu once a model is set up. Its object is created on first use. */
+const getLoMentionItems = async (): Promise<any[]> => {
+	try {
+		if (!S.Agent.status) {
+			await S.Agent.loadStatus();
+		};
+		if (!S.Agent.isConfigured) {
+			return [];
+		};
+
+		const id = await LoLib.ensureLoObject(S.Common.space);
+
+		return id ? [ {
+			id,
+			name: LoLib.AGENT_NAME,
+			layout: I.ObjectLayout.Page,
+			caption: translate('loCaption'),
+			iconParam: { className: 'loIcon' },
+		} ] : [];
+	} catch (e) {
+		return [];
+	};
+};
+
+const openMentionMenu = async (editor: LexicalEditor, editorId: string, mentionOffset: React.MutableRefObject<number>) => {
 	const rect = U.Dom.getSelectionRect();
 	if (!rect) {
 		return;
 	};
+
+	const extraItems = await getLoMentionItems();
 
 	const space = S.Common.space;
 	const participantId = U.Space.getParticipantId(space, S.Auth.account?.id);
@@ -3293,6 +3320,7 @@ const openMentionMenu = (editor: LexicalEditor, editorId: string, mentionOffset:
 			pronounId: participantId,
 			marks: [],
 			skipIds: [ S.Auth.account?.id ],
+			extraItems,
 			filters: [
 				{ relationKey: 'resolvedLayout', condition: I.FilterCondition.Equal, value: I.ObjectLayout.Participant },
 			],

@@ -25,6 +25,10 @@ export interface AgentContext {
 	accountId: string;
 	/** Objects the user referenced with @ in this message. */
 	mentions?: AgentMention[];
+	/** Text of the open object, when the question comes from its discussion. */
+	objectText?: string;
+	/** The question was asked in the open object's discussion. */
+	discussion?: boolean;
 };
 
 export interface AgentMention {

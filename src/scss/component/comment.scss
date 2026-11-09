@@ -56,6 +56,7 @@
 		.side.left { display: flex; align-items: center; gap: 0px 8px; min-width: 0; }
 		.side.left {
 			.iconObject { flex-shrink: 0; }
+			.iconObject.loAvatar { width: 20px; height: 20px; border-radius: 50%; background: url('~img/icon/lo.svg') center / contain no-repeat; }
 			.author { @include text-small; font-weight: 500; line-height: 18px; }
 			.date { @include text-small; color: var(--color-text-secondary); line-height: 18px; flex-shrink: 0; }
 			.icon.badge { width: 14px; height: 14px; }

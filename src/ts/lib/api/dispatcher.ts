@@ -1294,7 +1294,11 @@ class Dispatcher {
 						};
 					};
 
-					S.Lo.onChatAdd(spaceId, rootId, message, chatSubIds);
+					if (isDiscussion) {
+						S.Lo.onDiscussionAdd(spaceId, rootId, discussionParentId, mapped.message);
+					} else {
+						S.Lo.onChatAdd(spaceId, rootId, message, chatSubIds);
+					};
 
 					U.Dom.eventDispatch(window, 'messageAdd', { message, subIds: mapped.subIds });
 					break;
