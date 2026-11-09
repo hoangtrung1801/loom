@@ -198,7 +198,7 @@ citation is one nothing in the tree pins yet.
   interface — must store the full id, which is what `?ids=full` is for
   (`core/api/v2/service/spaceref.go:154`).
 - **Cross-space object links in caller text are expanded.** The platform's
-  two-parameter deep link `anytype://object?objectId=<id>&spaceId=<space id>`
+  two-parameter deep link `loom://object?objectId=<id>&spaceId=<space id>`
   has its `spaceId` expanded from a short reference to the full id on every
   path that turns caller text into marks: documents, block ops,
   `replace_text` and chat messages. Stored destinations and every read of them

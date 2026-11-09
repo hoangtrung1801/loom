@@ -606,7 +606,7 @@ const PopupSearch = forwardRef<{}, I.Popup>((props, ref) => {
 
 			// Only try to parse the filter as a URL when it actually looks like one -
 			// getRouteFromUrl logs a warning on arbitrary text otherwise
-			const isUrl = U.String.matchUrl(filter) || filter.startsWith(`${J.Constant.protocol}://`);
+			const isUrl = U.String.matchUrl(filter) || filter.startsWith(`${J.Constant.protocol}://`) || filter.startsWith(`${J.Constant.legacyProtocol}://`);
 			const route = isUrl ? U.Common.getRouteFromUrl(filter) : '';
 
 			if (route) {
