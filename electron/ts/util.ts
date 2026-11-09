@@ -11,6 +11,7 @@ import { isTrustedUrl } from './lib/trustedUrl';
 import { USER_DATA_NAME } from './userData';
 
 const protocol = 'loom';
+const legacyProtocol = 'anytype';
 
 logger.initialize();
 logger.transports.console.level = 'error';
@@ -66,7 +67,7 @@ class Util {
 	};
 
 	getRouteFromUrl (url: string): string {
-		return String(url || '').replace(`${protocol}://`, '/');
+		return String(url || '').replace(new RegExp(`^(${protocol}|${legacyProtocol})://`), '/');
 	};
 
 	getTheme (): string {

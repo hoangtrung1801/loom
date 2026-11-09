@@ -44,7 +44,7 @@ export const isTrustedUrl = (url: string, param: TrustedUrlParam): boolean => {
 	};
 };
 
-const EXTERNAL_PROTOCOLS = [ 'http:', 'https:', 'mailto:', 'loom:' ];
+const EXTERNAL_PROTOCOLS = [ 'http:', 'https:', 'mailto:', 'loom:', 'anytype:' ];
 
 /**
  * Whether a URL requested by a page (window.open) may be handed to the OS.

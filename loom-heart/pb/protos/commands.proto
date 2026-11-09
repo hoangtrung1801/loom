@@ -861,7 +861,7 @@ message Rpc {
                 string networkCustomConfigFilePath = 7; // config path for the custom network mode            }
                 bool preferYamuxTransport = 8; // optional, default is false, recommended in case of problems with QUIC transport
                 string jsonApiListenAddr = 9; // optional, if empty json api will not be started; 127.0.0.1:31009 should be the default one
-                string joinStreamUrl = 10; // anytype:// schema URL to join an embed stream
+                string joinStreamUrl = 10; // loom:// schema URL to join an embed stream
                 // if true - will run membership v2 polling loop, v2 methods will be available
                 // if false - will run membership v1 polling loop, v2 methods will return error
                 bool enableMembershipV2 = 11; // optional, default is false
@@ -1086,7 +1086,7 @@ message Rpc {
                 bool preferYamuxTransport = 6; // optional, default is false, recommended in case of problems with QUIC transport
                 string jsonApiListenAddr = 7; // optional, if empty json api will not be started; 127.0.0.1:31009 should be the default one
                 string fulltextPrimaryLanguage = 8; // optional, default fts language
-                string joinStreamURL = 9; // anytype:// schema URL to join an embed stream
+                string joinStreamURL = 9; // loom:// schema URL to join an embed stream
                 // if true - will run membership v2 polling loop, v2 methods will be available
                 // if false - will run membership v1 polling loop, v2 methods will return error
                 bool enableMembershipV2 = 10; // optional, default is false

@@ -5,6 +5,7 @@ export default {
 	amplitude:			 '1ba981d1a9afb8af8c81847ef3383a20',
 	googleMaps:			 'AIzaSyAgXu3wCb6mPJv4wNWKe2E3YycaYuqFm9o',
 	protocol:			 'loom',
+	legacyProtocol:		 'anytype',
 	appName:			 'Loom',
 	anytypeProfileId:	 '_anytype_profile',
 	missingObjectId:	 '_missing_object',

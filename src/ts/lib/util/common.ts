@@ -1093,8 +1093,8 @@ class UtilCommon {
 			const u = new URL(url);
 			const { hostname, pathname, hash, searchParams, protocol } = u;
 
-			if (protocol == `${J.Constant.protocol}:`) {
-				return url.replace(new RegExp(`^${J.Constant.protocol}://`), '/');
+			if ([ J.Constant.protocol, J.Constant.legacyProtocol ].includes(protocol.replace(/:$/, ''))) {
+				return url.replace(new RegExp(`^(${J.Constant.protocol}|${J.Constant.legacyProtocol})://`), '/');
 			};
 
 			switch (hostname) {
@@ -1136,7 +1136,7 @@ class UtilCommon {
 			target: '',
 			spaceId: '',
 			messageId: '',
-			isInside: U.String.urlScheme(url) == J.Constant.protocol,
+			isInside: [ J.Constant.protocol, J.Constant.legacyProtocol ].includes(U.String.urlScheme(url)),
 		};
 
 		if (ret.isInside) {

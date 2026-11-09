@@ -32,7 +32,7 @@ func TestV2CrossSpaceObjectLinksExpandShortSpaceRefs(t *testing.T) {
 		return fx
 	}
 	link := func(space string) string {
-		return "anytype://object?objectId=bafyreiobj&spaceId=" + space
+		return "loom://object?objectId=bafyreiobj&spaceId=" + space
 	}
 
 	t.Run("the spaceId parameter is rewritten, everything else kept", func(t *testing.T) {
@@ -43,15 +43,25 @@ func TestV2CrossSpaceObjectLinksExpandShortSpaceRefs(t *testing.T) {
 		assert.Empty(t, e.Warnings("/blocks"))
 	})
 
+	t.Run("a legacy anytype:// link is rewritten and keeps its scheme", func(t *testing.T) {
+		fx := census(t)
+		e := fx.newSpaceLinkExpander(context.Background())
+
+		legacy := func(space string) string {
+			return "anytype://object?objectId=bafyreiobj&spaceId=" + space
+		}
+		assert.Equal(t, legacy(realSpaceEval), e.destination(legacy("hxwz2i")))
+	})
+
 	t.Run("a full id, a same-space link and an ordinary URL pass untouched", func(t *testing.T) {
 		fx := census(t)
 		e := fx.newSpaceLinkExpander(context.Background())
 
 		for _, dest := range []string{
 			link(realSpaceEval),
-			"anytype://object?objectId=bafyreiobj",
+			"loom://object?objectId=bafyreiobj",
 			"https://example.com/?spaceId=hxwz2i",
-			"anytype://object?objectId=bafyreiobj&spaceId=hxwz2i&spaceId=hxwz2i",
+			"loom://object?objectId=bafyreiobj&spaceId=hxwz2i&spaceId=hxwz2i",
 			"https://example.com/anytype://object?objectId=x&spaceId=hxwz2i",
 		} {
 			assert.Equal(t, dest, e.destination(dest), dest)
@@ -135,7 +145,7 @@ func TestV2CrossSpaceObjectLinksExpandShortSpaceRefs(t *testing.T) {
 		fx := census(t)
 		e := fx.newSpaceLinkExpander(context.Background())
 		grows := len(realSpaceEval) - len("hxwz2i")
-		base := "anytype://object?objectId=bafyreiobj&spaceId=hxwz2i&pad="
+		base := "loom://object?objectId=bafyreiobj&spaceId=hxwz2i&pad="
 		pad := maxCrossSpaceLinkDest - 8 - spelledDestLen(base)
 		long := base + strings.Repeat("a", pad)
 		require.Less(t, spelledDestLen(long), maxCrossSpaceLinkDest, "parses as sent")

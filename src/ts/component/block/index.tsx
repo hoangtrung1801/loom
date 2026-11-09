@@ -800,13 +800,13 @@ const Block = forwardRef<Ref, Props>((props, ref) => {
 		items.forEach((item: HTMLElement) => {
 			const dataParam = item.getAttribute('data-param');
 			const scheme = U.String.urlScheme(dataParam);
-			const isRoute = scheme && (scheme == J.Constant.protocol);
+			const isRoute = scheme && [ J.Constant.protocol, J.Constant.legacyProtocol ].includes(scheme);
 
 			let id = dataParam;
 			let routeParam = null;
 
 			if (isRoute) {
-				routeParam = U.Router.getParam(dataParam.replace(`${J.Constant.protocol}://`, ''));
+				routeParam = U.Router.getParam(dataParam.replace(new RegExp(`^(${J.Constant.protocol}|${J.Constant.legacyProtocol})://`), ''));
 				id = routeParam.id;
 			};
 

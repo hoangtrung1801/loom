@@ -94,7 +94,7 @@ keep the legend in the export/backup shape only (§6).**
 ### 1.3 `format=md` mention links cost ~60 tokens each
 
 The markdown exporter renders every mention as
-`[Name](anytype://object?objectId=<59 chars>&spaceId=<66 chars>)`.
+`[Name](loom://object?objectId=<59 chars>&spaceId=<66 chars>)`.
 Measured: md is 27–33 % of the default read on link-light docs but **83–84 %
 on mention-heavy ones** (M-24blk: 2 036 of 2 417; R-20refs: 3 165 of
 3 814) — the "cheap text mode" is nearly as expensive as the full document

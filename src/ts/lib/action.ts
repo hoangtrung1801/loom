@@ -213,7 +213,7 @@ class Action {
 
 		const scheme = U.String.urlScheme(url);
 		const cb = () => Renderer.send('openUrl', url);
-		const allowedSchemes = J.Constant.allowedSchemes.concat(J.Constant.protocol);
+		const allowedSchemes = J.Constant.allowedSchemes.concat([ J.Constant.protocol, J.Constant.legacyProtocol ]);
 		const isAllowed = allowedSchemes.includes(scheme);
 		const isDangerous = [ 
 			'javascript', 
