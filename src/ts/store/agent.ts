@@ -8,6 +8,8 @@ const LEGACY_STORAGE_KEY = 'agentChats';
 /** The session each space showed last, so reopening the panel continues it. */
 const LAST_SESSION_KEY = 'agentLastSession';
 const LOCAL_KEY_NAME = 'Loom Agent';
+const PDF_MAX_PAGES = 50;
+const PDF_MAX_CHARS = 30000;
 
 export type AgentToolStatus = 'running' | 'approval' | 'done' | 'error';
 
@@ -593,6 +595,9 @@ class AgentStore {
 			} else
 			if (call.name == 'open_object') {
 				result = await this.openObject(String(call.args?.object || ''));
+			} else
+			if (call.name == 'extract_pdf_text') {
+				result = await this.extractPdfText(String(call.args?.data || ''));
 			};
 		} catch (e: any) {
 			result = { error: String(e?.message || e) };
@@ -615,6 +620,37 @@ class AgentStore {
 			object: ctx.objectId ? { id: ctx.objectId, name: ctx.objectName, type: ctx.objectType } : null,
 			selectedBlocks: blocks,
 		};
+	};
+
+	/** The main process has no PDF reader, so the window turns the bytes of a PDF (base64) into text. */
+	private async extractPdfText (data: string): Promise<any> {
+		const { pdfjs } = await import('react-pdf');
+
+		if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+			pdfjs.GlobalWorkerOptions.workerSrc = './workers/pdf.worker.mjs';
+		};
+
+		const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+		const doc = await pdfjs.getDocument({ data: bytes }).promise;
+		const total = doc.numPages;
+		const pages = Math.min(total, PDF_MAX_PAGES);
+		const out: string[] = [];
+		let length = 0;
+
+		for (let i = 1; i <= pages; i++) {
+			const page = await doc.getPage(i);
+			const content = await page.getTextContent();
+			const line = content.items.map((it: any) => it.str || '').join(' ').trim();
+
+			out.push(`[page ${i}]\n${line}`);
+			length += line.length;
+			if (length > PDF_MAX_CHARS) {
+				break;
+			};
+		};
+
+		await doc.destroy();
+		return { pages: total, text: out.join('\n\n').slice(0, PDF_MAX_CHARS) };
 	};
 
 	openObject (id: string): Promise<any> {
