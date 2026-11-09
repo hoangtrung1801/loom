@@ -28,6 +28,8 @@ export const toLibraryElements = (elements: CanvasElement[]): CanvasElement[] =>
 		y: el.y - b.y,
 		startId: ids.has(el.startId) ? el.startId : '',
 		endId: ids.has(el.endId) ? el.endId : '',
+		startFocus: ids.has(el.startId) ? el.startFocus : undefined,
+		endFocus: ids.has(el.endId) ? el.endFocus : undefined,
 	}));
 };
 

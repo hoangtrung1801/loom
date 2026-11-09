@@ -264,6 +264,55 @@ export const anchorPoint = (el: CanvasElement, toward: Point): Point => {
 	return { x: c.x + (dx * k), y: c.y + (dy * k) };
 };
 
+/** Nearest point on the element's border (in its own unrotated frame) to a point that may lie inside or outside. */
+const borderNearest = (el: CanvasElement, p: Point): Point => {
+	if ([ ElementType.Ellipse, ElementType.Diamond ].includes(el.type)) {
+		const c = center(el);
+
+		if ((p.x == c.x) && (p.y == c.y)) {
+			return { x: el.x + el.w, y: c.y };
+		};
+		return anchorPoint(el, p);
+	};
+
+	const x = Math.min(Math.max(p.x, el.x), el.x + el.w);
+	const y = Math.min(Math.max(p.y, el.y), el.y + el.h);
+	const inside = (p.x > el.x) && (p.x < el.x + el.w) && (p.y > el.y) && (p.y < el.y + el.h);
+
+	if (!inside) {
+		return { x, y };
+	};
+
+	const d = [ p.x - el.x, el.x + el.w - p.x, p.y - el.y, el.y + el.h - p.y ];
+	const m = Math.min(...d);
+
+	if (m == d[0]) {
+		return { x: el.x, y };
+	};
+	if (m == d[1]) {
+		return { x: el.x + el.w, y };
+	};
+	if (m == d[2]) {
+		return { x, y: el.y };
+	};
+	return { x, y: el.y + el.h };
+};
+
+/** Attachment point for a world point: snaps it to the element border and returns it as fractions of width and height. */
+export const borderFocus = (el: CanvasElement, world: Point): number[] => {
+	const p = el.angle ? rotatePoint(world, center(el), -el.angle) : world;
+	const b = borderNearest(el, p);
+
+	return [ el.w ? (b.x - el.x) / el.w : 0.5, el.h ? (b.y - el.y) / el.h : 0.5 ];
+};
+
+/** World position of an attachment point created by borderFocus. */
+export const focusPoint = (el: CanvasElement, focus: number[]): Point => {
+	const p = { x: el.x + (focus[0] * el.w), y: el.y + (focus[1] * el.h) };
+
+	return el.angle ? rotatePoint(p, center(el), el.angle) : p;
+};
+
 /** Rough text height used before the renderer measures the real text. */
 export const estimateTextHeight = (text: string, width: number, fontSize: number): number => {
 	const charWidth = fontSize * 0.55;
