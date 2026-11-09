@@ -92,6 +92,9 @@ export interface CanvasElement {
 	points?: number[][];
 	startId?: string;
 	endId?: string;
+	/** Where on the bound element each end is attached, as a 0-1 fraction of its width and height. Missing means the nearest border point toward the other end. */
+	startFocus?: number[];
+	endFocus?: number[];
 	targetObjectId?: string;
 };
 

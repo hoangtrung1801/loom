@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	Scene, CanvasController, ElementType, Tool, CanvasElement, between, compareZ, screenToWorld, worldToScreen, zoomAt,
-	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect, elementBounds, routePoints, applyRoute, curveSamples, toLibraryElements,
+	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect, elementBounds, routePoints, applyRoute, curveSamples, toLibraryElements, borderFocus, focusPoint,
 } from './index';
 
 const rect = (id: string, x: number, y: number, w = 100, h = 60, param: Partial<CanvasElement> = {}) => {
@@ -269,6 +269,34 @@ describe('controller', () => {
 		const next = scene.get('ar');
 		const last = next.points[next.points.length - 1];
 		expect(next.y + last[1]).toBeGreaterThan(60);
+	});
+
+	it('keeps an arrow attached at the same relative border point when the element moves and resizes', () => {
+		const { scene, controller } = setup();
+		const arrow = defaultElement(ElementType.Arrow, 'ar', 'j', { x: 0, y: 0, w: 0, h: 0, points: [ [ 0, 0 ], [ 10, 10 ] ], endId: 'b', endFocus: [ 0.25, 0 ], v: 1 });
+		scene.load([ rect('b', 200, 100, 100, 60), arrow ]);
+
+		scene.setSelection([ 'b' ]);
+		controller.nudge(0, 50);
+
+		let next = scene.get('ar');
+		let last = next.points[next.points.length - 1];
+		expect(next.x + last[0]).toBeCloseTo(225);
+		expect(next.y + last[1]).toBeCloseTo(150);
+
+		scene.upsert([ { ...scene.get('b'), w: 200 } ]);
+		controller.updateBindings([ 'b' ]);
+		next = scene.get('ar');
+		last = next.points[next.points.length - 1];
+		expect(next.x + last[0]).toBeCloseTo(250);
+	});
+
+	it('snaps attachment points to the border', () => {
+		const el = rect('a', 0, 0, 100, 60);
+
+		expect(borderFocus(el, { x: 30, y: -20 })).toEqual([ 0.3, 0 ]);
+		expect(borderFocus(el, { x: 90, y: 30 })).toEqual([ 1, 0.5 ]);
+		expect(focusPoint(el, [ 1, 0.5 ])).toEqual({ x: 100, y: 30 });
 	});
 
 	it('pastes copies with fresh ids', () => {

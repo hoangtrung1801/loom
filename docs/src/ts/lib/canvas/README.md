@@ -6,7 +6,7 @@ Renderer-independent core of the Canvas object type (a whiteboard). Pure TypeScr
 |------|------|
 | `types.ts` | `CanvasElement`, `ElementType`, `Tool`, geometry types, style types and `DEFAULT_STYLE`, limits (`SOFT_ELEMENT_LIMIT` = 2500) |
 | `scene.ts` | `Scene`: element map, spatial index, selection, local `upsert` (bumps version), tombstone `remove`, `applyRemote` with `shouldApplyRemote` conflict rule |
-| `controller.ts` | `CanvasController`: tools (number-row shortcuts, tool lock, eraser), pointer and keyboard input, move/resize/rotate, snapping, marquee, bindings, clipboard and style copy, `insertElements`, z-order, undo and redo, commit callbacks. `defaults` is the style new elements start with and follows the last style the user picked |
+| `controller.ts` | `CanvasController`: tools (number-row shortcuts, tool lock, eraser), pointer and keyboard input, move/resize/rotate, snapping, marquee, bindings (an arrow end stores `startId`/`endId` plus `startFocus`/`endFocus`, a 0-1 fraction of the element size on its border, so it stays at that point on move or resize; selected lines get end handles to re-attach), clipboard and style copy, `insertElements`, z-order, undo and redo, commit callbacks. `defaults` is the style new elements start with and follows the last style the user picked |
 | `geometry.ts` | Bounds, hit testing (rotation aware, diamond, curved arrows), simplification (Ramer-Douglas-Peucker), arrow anchors, `routePoints` and `applyRoute` (sharp, curved, elbow arrows) |
 | `spatial.ts` | Uniform grid index used for culling, marquee and hit candidates |
 | `order.ts` | Fractional indexing for z-order (`between`) |

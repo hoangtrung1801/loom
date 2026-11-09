@@ -1,6 +1,6 @@
 import { CanvasElement, DEFAULT_STYLE, ElementStyle, ElementType, Guide, Point, Rect, Tool, Viewport, MIN_SIZE } from './types';
 import {
-	anchorPoint, applyRoute, center, elementBounds, estimateTextHeight, expandRect, hitTest, isLinear, normalizeLinear, normalizeRect,
+	anchorPoint, applyRoute, borderFocus, center, elementBounds, estimateTextHeight, expandRect, focusPoint, hitTest, isLinear, normalizeLinear, normalizeRect,
 	rectContains, rectsIntersect, rotatePoint, simplify, unionBounds, worldPoints,
 } from './geometry';
 import { Scene } from './scene';
@@ -32,7 +32,7 @@ export interface Handle {
 	point: Point;
 };
 
-type DragMode = 'none' | 'pan' | 'move' | 'resize' | 'rotate' | 'marquee' | 'draw' | 'erase';
+type DragMode = 'none' | 'pan' | 'move' | 'resize' | 'rotate' | 'endpoint' | 'marquee' | 'draw' | 'erase';
 
 interface Drag {
 	mode: DragMode;
@@ -239,6 +239,14 @@ export class CanvasController {
 		};
 
 		const el = sel[0];
+
+		// Lines and arrows get a handle on each end so the ends can be dragged and attached to other elements
+		if (isLinear(el) && (el.type != ElementType.Freehand) && (el.points?.length >= 2)) {
+			const pts = worldPoints(el);
+
+			return [ { id: 'start', point: pts[0] }, { id: 'end', point: pts[pts.length - 1] } ];
+		};
+
 		const c = center(el);
 		const rot = (p: Point) => el.angle ? rotatePoint(p, c, el.angle) : p;
 		const x0 = el.x;
@@ -360,8 +368,17 @@ export class CanvasController {
 		const endEl = el.endId ? this.scene.get(el.endId) : null;
 		const first = pts[0];
 		const last = pts[pts.length - 1];
-		const a = (startEl && !startEl.deleted) ? anchorPoint(startEl, (endEl && !endEl.deleted) ? center(endEl) : last) : first;
-		const b = (endEl && !endEl.deleted) ? anchorPoint(endEl, (startEl && !startEl.deleted) ? center(startEl) : first) : last;
+		const startLive = startEl && !startEl.deleted;
+		const endLive = endEl && !endEl.deleted;
+		let a = first;
+		let b = last;
+
+		if (startLive) {
+			a = el.startFocus ? focusPoint(startEl, el.startFocus) : anchorPoint(startEl, endLive ? center(endEl) : last);
+		};
+		if (endLive) {
+			b = el.endFocus ? focusPoint(endEl, el.endFocus) : anchorPoint(endEl, startLive ? center(startEl) : first);
+		};
 
 		if ((a.x == first.x) && (a.y == first.y) && (b.x == last.x) && (b.y == last.y)) {
 			return null;
@@ -376,6 +393,8 @@ export class CanvasController {
 			...el,
 			startId: gone.has(el.startId) ? '' : el.startId,
 			endId: gone.has(el.endId) ? '' : el.endId,
+			startFocus: gone.has(el.startId) ? undefined : el.startFocus,
+			endFocus: gone.has(el.endId) ? undefined : el.endFocus,
 		}));
 
 		return this.scene.upsert(list);
@@ -401,7 +420,7 @@ export class CanvasController {
 			if (handle) {
 				const el = this.scene.selected()[0];
 				this.drag = {
-					mode: (handle == 'rotate') ? 'rotate' : 'resize',
+					mode: [ 'start', 'end' ].includes(handle) ? 'endpoint' : ((handle == 'rotate') ? 'rotate' : 'resize'),
 					handle,
 					startWorld: world,
 					startScreen: screen,
@@ -507,11 +526,16 @@ export class CanvasController {
 			case Tool.Arrow: {
 				const startEl = this.hitElement(world, it => !isLinear(it));
 				const type = (this.tool == Tool.Line) ? ElementType.Line : ElementType.Arrow;
+				const startFocus = startEl ? borderFocus(startEl, world) : undefined;
+				const origin = startEl ? focusPoint(startEl, startFocus) : world;
 
 				el = defaultElement(type, id, z, {
-					...this.newStyle(type), x: world.x, y: world.y, points: [ [ 0, 0 ], [ 0, 0 ] ], startId: startEl?.id || '',
+					...this.newStyle(type), x: origin.x, y: origin.y, points: [ [ 0, 0 ], [ 0, 0 ] ], startId: startEl?.id || '', startFocus,
 				});
-				break;
+				this.draft = el;
+				this.drag = { mode: 'draw', startWorld: origin, startScreen: screen, origin: new Map(), before: new Map(), moved: false };
+				this.render();
+				return;
 			};
 
 			case Tool.Pen:
@@ -573,6 +597,10 @@ export class CanvasController {
 				this.doRotate(world, mods);
 				break;
 
+			case 'endpoint':
+				this.doEndpoint(world);
+				break;
+
 			case 'marquee':
 				this.marquee = normalizeRect({ x: drag.startWorld.x, y: drag.startWorld.y, w: world.x - drag.startWorld.x, h: world.y - drag.startWorld.y });
 				this.scene.setSelection(this.scene.query(this.marquee).filter(el => rectsIntersect(this.marquee, elementBounds(el))).map(el => el.id));
@@ -621,6 +649,8 @@ export class CanvasController {
 
 			case 'resize':
 			case 'rotate':
+			case 'endpoint':
+				this.hoverId = '';
 				this.finishChange(Array.from(drag.origin.keys()), drag.before);
 				break;
 
@@ -785,6 +815,41 @@ export class CanvasController {
 		this.render();
 	};
 
+	private setHover (id: string) {
+		this.hoverId = id;
+	};
+
+	/** Element under the pointer that a line end can attach to. */
+	private bindTarget (world: Point, exceptId = ''): CanvasElement | null {
+		return this.hitElement(world, it => !isLinear(it) && (it.id != exceptId));
+	};
+
+	/** Drags one end of the selected line or arrow, attaching it to whatever shape it is dropped on. */
+	private doEndpoint (world: Point) {
+		const el0 = Array.from(this.drag.origin.values())[0];
+		const isStart = this.drag.handle == 'start';
+		const otherId = isStart ? el0.endId : el0.startId;
+		const target = this.bindTarget(world, otherId);
+		const pts = worldPoints(el0);
+		const fixed = isStart ? pts[pts.length - 1] : pts[0];
+		let p = world;
+
+		this.setHover(target ? target.id : '');
+
+		const focus = target ? borderFocus(target, world) : undefined;
+		if (target) {
+			p = focusPoint(target, focus);
+		};
+
+		const a = isStart ? p : fixed;
+		const b = isStart ? fixed : p;
+		const patch: Partial<CanvasElement> = isStart ? { startId: target?.id || '', startFocus: focus } : { endId: target?.id || '', endFocus: focus };
+		const next = applyRoute({ ...el0, ...patch, x: a.x, y: a.y, points: [ [ 0, 0 ], [ b.x - a.x, b.y - a.y ] ] });
+
+		this.scene.upsert([ next ]);
+		this.render();
+	};
+
 	private doRotate (world: Point, mods: Modifiers) {
 		const el0 = Array.from(this.drag.origin.values())[0];
 		const c = center(el0);
@@ -828,7 +893,13 @@ export class CanvasController {
 			case ElementType.Line:
 			case ElementType.Arrow: {
 				let end = world;
+				const target = this.bindTarget(world, el.startId);
 
+				this.setHover(target ? target.id : '');
+
+				if (target) {
+					end = focusPoint(target, borderFocus(target, world));
+				} else
 				if (mods.shift) {
 					const dx = world.x - start.x;
 					const dy = world.y - start.y;
@@ -896,8 +967,10 @@ export class CanvasController {
 					return;
 				};
 
-				const endEl = this.hitElement(world, it => !isLinear(it) && (it.id != el.startId));
-				el = { ...el, endId: endEl?.id || '' };
+				const endEl = this.bindTarget(world, el.startId);
+
+				this.hoverId = '';
+				el = { ...el, endId: endEl?.id || '', endFocus: endEl ? borderFocus(endEl, world) : undefined };
 				el = this.route(el) || el;
 				el = applyRoute(el);
 				break;
@@ -1137,6 +1210,8 @@ export class CanvasController {
 				z: top,
 				startId: map.get(el.startId) || '',
 				endId: map.get(el.endId) || '',
+				startFocus: map.get(el.startId) ? el.startFocus : undefined,
+				endFocus: map.get(el.endId) ? el.endFocus : undefined,
 			};
 		});
 
@@ -1247,6 +1322,8 @@ export class CanvasController {
 				deleted: false,
 				startId: map.get(el.startId) || '',
 				endId: map.get(el.endId) || '',
+				startFocus: map.get(el.startId) ? el.startFocus : undefined,
+				endFocus: map.get(el.endId) ? el.endFocus : undefined,
 			};
 		});
 
