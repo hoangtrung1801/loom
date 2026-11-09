@@ -261,10 +261,22 @@ class LoStore {
 			.join('\n')
 			.slice(0, OBJECT_TEXT_LIMIT);
 
+		const attachments: any[] = [];
+
+		S.Block.getBlocks(objectId, it => it.isFile()).forEach(it => {
+			const targetId = it.getTargetObjectId();
+			const file = targetId ? S.Detail.get(objectId, targetId, [ 'name', 'fileMimeType' ]) : null;
+
+			if (file && !file._empty_ && !attachments.find(a => a.id == targetId)) {
+				attachments.push({ id: targetId, name: file.name || '', type: file.fileMimeType || '' });
+			};
+		});
+
 		return {
 			...base,
 			spaceId,
 			objectId: object && !object._empty_ ? objectId : '',
+			attachments,
 			objectName: object?.name || '',
 			objectType: type?.name || '',
 			objectText,

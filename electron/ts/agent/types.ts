@@ -27,6 +27,8 @@ export interface AgentContext {
 	mentions?: AgentMention[];
 	/** Text of the open object, when the question comes from its discussion. */
 	objectText?: string;
+	/** Files and images placed in the open object. */
+	attachments?: { id: string; name: string; type?: string }[];
 	/** The question was asked in the open object's discussion. */
 	discussion?: boolean;
 };

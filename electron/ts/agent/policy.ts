@@ -71,6 +71,7 @@ export const contextSection = (ctx: {
 	spaceId?: string; spaceName?: string; objectId?: string; objectName?: string; objectType?: string;
 	mentions?: { id: string; name: string; type?: string }[];
 	objectText?: string; discussion?: boolean;
+	attachments?: { id: string; name: string; type?: string }[];
 }): string => {
 	const lines: string[] = [];
 
@@ -86,6 +87,12 @@ export const contextSection = (ctx: {
 	};
 	if (ctx.objectId && ctx.objectText) {
 		lines.push(`Text of the open object (may be cut):\n${ctx.objectText}`);
+	};
+
+	const attachments = (ctx.attachments || []).filter(it => it && it.id).slice(0, 20);
+	if (ctx.objectId && attachments.length) {
+		lines.push('Files and images in the open object (read their content with loom_read_file):');
+		attachments.forEach(it => lines.push(`- ${it.name || 'Untitled'}${it.type ? ` [${it.type}]` : ''} (file id: ${it.id})`));
 	};
 
 	const mentions = (ctx.mentions || []).filter(it => it && it.id).slice(0, 20);
@@ -104,6 +111,7 @@ export const SYSTEM_PROMPT = [
 	'Use the provided tools to look things up before answering; never invent object contents. Prefer the current space and open object from <app_context> when the user says "this page" or "here".',
 	'When the user writes @Name, they mean the referenced object of that name listed in <app_context>; read it by its id.',
 	'When you pass an object id from <app_context> to a tool, also pass the current space id as `space`, since no find has set the working space yet.',
+	'Objects can contain file and image blocks, which read returns only as metadata with a file id. When their content matters for the answer, fetch it with loom_read_file (images are shown to you, PDFs and text files come back as text) instead of guessing from the file name.',
 	'Make the smallest change that does what was asked and say what you changed. If a request is ambiguous or would affect many objects, ask first.',
 	'Answer concisely in markdown.',
 ].join('\n');

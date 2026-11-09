@@ -1,4 +1,5 @@
 import { AppToolBridge, createAppTools } from './appTools';
+import { createFileTools } from './fileTools';
 import { PROVIDER_KEY, configError, loadConfig, localKeyName, saveConfig, type ConfigStore, type SecretStore } from './config';
 import { McpToolbox } from './mcp';
 import { resolveModel } from './models';
@@ -103,11 +104,22 @@ export class AgentService {
 			};
 
 			const created: Entry = { toolbox, signature, tabId, session: null as any };
+			const resolved = resolveModel(config);
+
 			created.session = new AgentSession({
 				config,
-				resolved: resolveModel(config),
+				resolved,
 				toolbox,
-				appTools: createAppTools(this.bridge, () => created.tabId),
+				appTools: [
+					...createAppTools(this.bridge, () => created.tabId),
+					...createFileTools({
+						addr: context.apiAddr,
+						key: localKey,
+						bridge: this.bridge,
+						getTabId: () => created.tabId,
+						canSeeImages: !!resolved.model.input?.includes('image'),
+					}),
+				],
 				// A keyless local server still needs a non-empty bearer for OpenAI-style clients
 				getApiKey: () => providerKey || ((config.provider == 'custom') ? 'none' : undefined),
 				emit,

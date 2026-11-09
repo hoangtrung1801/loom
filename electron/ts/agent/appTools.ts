@@ -83,4 +83,4 @@ export const createAppTools = (bridge: AppToolBridge, getTabId: () => string): A
 	},
 ];
 
-export const APP_TOOL_READ_ONLY = new Set([ `${APP_TOOL_PREFIX}get_context`, `${APP_TOOL_PREFIX}open_object` ]);
+export const APP_TOOL_READ_ONLY = new Set([ `${APP_TOOL_PREFIX}get_context`, `${APP_TOOL_PREFIX}open_object`, `${APP_TOOL_PREFIX}read_file` ]);
