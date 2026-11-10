@@ -72,7 +72,7 @@ const MediaHtml = forwardRef<HTMLDivElement, Props>(({
 		content = (
 			<iframe
 				title={title}
-				className="frame"
+				className="htmlFrame"
 				sandbox={SANDBOX}
 				srcDoc={html}
 				referrerPolicy="no-referrer"
