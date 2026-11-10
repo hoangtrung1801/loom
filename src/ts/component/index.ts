@@ -106,6 +106,7 @@ import ObjectCreatedIn from './util/object/createdIn';
 
 import MediaAudio from './util/media/audio';
 import MediaVideo from './util/media/video';
+import MediaHtml from './util/media/html';
 
 import ProgressBar from './util/progressBar';
 import ProgressText from './util/progressText';
@@ -226,6 +227,7 @@ export {
 
 	MediaAudio,
 	MediaVideo,
+	MediaHtml,
 
 	ProgressBar,
 	ProgressText,

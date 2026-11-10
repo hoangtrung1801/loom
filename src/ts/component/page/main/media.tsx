@@ -1,5 +1,5 @@
 import React, { forwardRef, useState, useRef, useEffect } from 'react';
-import { Header, Footer, Loader, Block, Button, IconObject, Deleted, HeadSimple, ObjectCreatedIn } from 'Component';
+import { Header, Footer, Loader, Block, Button, IconObject, Deleted, HeadSimple, ObjectCreatedIn, MediaHtml } from 'Component';
 import * as I from 'Interface';
 import * as M from 'Model';
 
@@ -12,7 +12,7 @@ const PageMainMedia = forwardRef<I.PageRef, I.PageComponent>((props, ref) => {
 	const [ isDeleted, setIsDeleted ] = useState(false);
 	const [ dummy, setDummy ] = useState(0);
 	const rootId = keyboard.getRootId(isPopup);
-	const object = S.Detail.get(rootId, rootId, [ 'widthInPixels', 'heightInPixels' ]);
+	const object = S.Detail.get(rootId, rootId, [ 'widthInPixels', 'heightInPixels', 'sizeInBytes' ]);
 	const allowedDetails = S.Block.checkFlags(rootId, rootId, [ I.RestrictionObject.Details ]);
 	const type = S.Record.getTypeById(object.type);
 	const nodeRef = useRef(null);
@@ -170,6 +170,7 @@ const PageMainMedia = forwardRef<I.PageRef, I.PageComponent>((props, ref) => {
 	const isImage = file?.isFileImage();
 	const isAudio = file?.isFileAudio();
 	const isPdf = file?.isFilePdf();
+	const isHtml = !isVideo && !isImage && !isAudio && !isPdf && U.File.isHtml(object);
 	const cn = [ 'blocks' ];
 	const data = sidebar.getData(I.SidebarPanel.Right, isPopup);
 
@@ -215,6 +216,17 @@ const PageMainMedia = forwardRef<I.PageRef, I.PageComponent>((props, ref) => {
 					block={file} 
 					readonly={true} 
 					isSelectionDisabled={true} 
+				/>
+			);
+			cn.push('withContent');
+		} else
+		if (isHtml) {
+			content = (
+				<MediaHtml
+					key={file.getTargetObjectId()}
+					src={S.Common.fileUrl(file.getTargetObjectId())}
+					title={U.File.name(object)}
+					sizeInBytes={object.sizeInBytes}
 				/>
 			);
 			cn.push('withContent');

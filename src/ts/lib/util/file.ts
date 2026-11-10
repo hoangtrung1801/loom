@@ -2,6 +2,7 @@ import loadImage from 'blueimp-load-image';
 import { DragEvent } from 'react';
 import * as I from 'Interface';
 
+const HTML_EXTENSIONS = [ 'html', 'htm' ];
 const SIZE_UNIT = 1024;
 const UNITS = {
 	1: 'B',
@@ -130,6 +131,25 @@ class UtilFile {
 		};
 
 		return icon;
+	};
+
+	/**
+	 * Checks whether a file object is an HTML document that can be previewed.
+	 * @param {any} object - The file object.
+	 * @returns {boolean} True if the file is an HTML document.
+	 */
+	isHtml (object: any): boolean {
+		object = object || {};
+
+		const mime = String(object.mime || object.mimeType || object.fileMimeType || '').toLowerCase().split(';')[0].trim();
+		if (mime == 'text/html') {
+			return true;
+		};
+
+		const name = Relation.getStringValue(object.name).split('.');
+		const e = String(object.fileExt || (name.length > 1 ? name[name.length - 1] : '')).toLowerCase();
+
+		return HTML_EXTENSIONS.includes(e);
 	};
 
 	/**

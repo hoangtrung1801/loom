@@ -85,6 +85,13 @@
 			border-radius: 6px; border: 1px solid var(--color-shape-secondary); overflow: hidden;
 		}
 
+		.mediaHtml { height: 70vh; min-height: 400px; border-radius: 6px; border: 1px solid var(--color-shape-secondary); overflow: hidden; position: relative; text-align: left; }
+		.mediaHtml {
+			// An HTML document assumes a white canvas, whatever the app theme is
+			.frame { width: 100%; height: 100%; border: 0px; display: block; background: #fff; }
+			.error { padding: 24px 16px; color: var(--color-text-secondary); text-align: center; }
+		}
+
 		.block.blockFeatured { padding: 0px; margin: 0px; line-height: 28px; }
 
 		.block.blockRelation {
