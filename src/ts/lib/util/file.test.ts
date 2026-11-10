@@ -49,6 +49,25 @@ describe('UtilFile', () => {
 		});
 	});
 
+	describe('isHtml', () => {
+		it('should detect html by mime type', () => {
+			expect(UtilFile.isHtml({ fileMimeType: 'text/html' })).toBe(true);
+			expect(UtilFile.isHtml({ mime: 'text/html; charset=utf-8' })).toBe(true);
+		});
+
+		it('should detect html by extension', () => {
+			expect(UtilFile.isHtml({ fileExt: 'html' })).toBe(true);
+			expect(UtilFile.isHtml({ fileExt: 'HTM' })).toBe(true);
+			expect(UtilFile.isHtml({ name: 'page.html' })).toBe(true);
+		});
+
+		it('should not treat other files as html', () => {
+			expect(UtilFile.isHtml({ fileExt: 'pdf', fileMimeType: 'application/pdf' })).toBe(false);
+			expect(UtilFile.isHtml({ name: 'html' })).toBe(false);
+			expect(UtilFile.isHtml(null)).toBe(false);
+		});
+	});
+
 	describe('date', () => {
 		it('should return an ISO date string', () => {
 			const result = UtilFile.date();

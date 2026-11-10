@@ -54,6 +54,7 @@
 ### `media/`
 - `media/video.tsx` - Video player
 - `media/audio.tsx` - Audio player
+- `media/html.tsx` - Sandboxed HTML file viewer (`srcdoc` iframe, `sandbox="allow-scripts"` only, no same-origin; used on the media page for uploaded `.html` files)
 - `media/pdf.tsx` - PDF viewer
 - `media/mermaid.tsx` - Mermaid diagram renderer
 - `media/excalidraw.tsx` - Excalidraw whiteboard

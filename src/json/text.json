@@ -802,6 +802,8 @@
 	"pageMainRelationPropertyType": "Property format",
 
 	"pageMainMediaNotFound": "File not found",
+	"pageMainMediaHtmlTooLarge": "This HTML file is too large to preview. Download it to open in your browser.",
+	"pageMainMediaHtmlError": "Failed to load the HTML file",
 
 	"objectCreatedInLabel": "Created in",
 
