@@ -235,6 +235,21 @@ const PageMainMedia = forwardRef<I.PageRef, I.PageComponent>((props, ref) => {
 		};
 	};
 
+	// HTML opens like a browser tab: the document fills the page, file details stay in the info sidebar
+	if (isHtml) {
+		return (
+			<div ref={nodeRef} className="htmlFull">
+				<Header 
+					{...props} 
+					component="mainObject" 
+					ref={headerRef} 
+					rootId={rootId} 
+				/>
+				{content}
+			</div>
+		);
+	};
+
 	return (
 		<div ref={nodeRef}>
 			<Header 
