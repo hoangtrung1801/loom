@@ -4,6 +4,9 @@ import { newNonce } from './scene';
 /** Value of the CanvasElement embed processor in loom-heart (BlockContentLatexProcessor). */
 export const ELEMENT_PROCESSOR = 28;
 
+/** A custom color stored instead of a palette name. Rendered as is, so it does not follow the theme. */
+export const isCustomColor = (value?: string): boolean => /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(String(value || ''));
+
 const TYPES = Object.values(ElementType) as string[];
 
 export const encodeElement = (el: CanvasElement): string => {

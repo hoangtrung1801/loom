@@ -21,6 +21,10 @@ Style fields (`fillStyle`, `strokeStyle`, `roughness`, `seed`, `rounded`, `opaci
 
 ## Data model
 
+Element types: rect, diamond, ellipse, line, arrow, freehand, text, sticky, frame, object (card of a Loom object) and image (`src` holds a data URL, so a picture does not depend on the files of one space).
+
+`color` and `fill` are palette names that follow the theme, or a custom hex color (`#rrggbb`, `#rrggbbaa`, see `isCustomColor`) drawn as is. `radius` sets the corner radius of rects, stickies and images, `fontWeight` the weight of text. A freehand with a `fill` is a closed, filled shape.
+
 Each element is a JSON string in the `text` of one embed block (`BlockContentLatex`, processor `CanvasElement` = 28). A canvas object (layout `canvas`, type key `canvas`) is a regular page whose child blocks are these element blocks. One block per element gives per-element sync and conflict resolution through the existing change tree.
 
 Conflicts: higher `v` wins, equal `v` is decided by the lower `nonce`. Deletes are tombstones (`deleted: true`) and are removed from the object after a minute.
@@ -29,4 +33,4 @@ Limits: about 2-3k elements per canvas (middleware loads and normalizes the whol
 
 ## Pasting canvas data
 
-Ctrl/Cmd+V on the canvas lets the native paste event through. `onPaste` (`component/canvas/index.tsx`) inserts pasted canvas JSON with `insertElements` at the view center and fits to it, drops an object card for a Loom object link, and otherwise falls back to the internal clipboard. `scripts/generate-canvas-ui-screens.js` uses this format to draw every app screen (see `docs/canvas/README.md`).
+Ctrl/Cmd+V on the canvas lets the native paste event through. `onPaste` (`component/canvas/index.tsx`) inserts pasted canvas JSON with `insertElements` at the view center and fits to it, drops an object card for a Loom object link, and otherwise falls back to the internal clipboard. `scripts/canvas-ui/` uses this format to redraw every app screen from the running app (see `docs/canvas/README.md`).

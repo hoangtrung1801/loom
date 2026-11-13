@@ -9,6 +9,7 @@ export enum ElementType {
 	Sticky		 = 'sticky',
 	Frame		 = 'frame',
 	Object		 = 'object',
+	Image		 = 'image',
 };
 
 export enum Tool {
@@ -56,6 +57,7 @@ export type VerticalAlign = 'top' | 'middle' | 'bottom';
 export type ArrowType = 'sharp' | 'curve' | 'elbow';
 export type ArrowHead = 'none' | 'arrow' | 'bar' | 'dot' | 'triangle';
 
+/** `color` and `fill` are palette names (`default`, `grey`, `red`, ...) or a custom hex color (`#rrggbb`, `#rrggbbaa`). */
 export interface CanvasElement {
 	id: string;
 	type: ElementType;
@@ -82,6 +84,10 @@ export interface CanvasElement {
 	rounded?: boolean;
 	/** 10-100, missing means 100. */
 	opacity?: number;
+	/** Corner radius in pixels for rectangles and stickies. Wins over `rounded`. */
+	radius?: number;
+	/** CSS font weight of the text (400 normal, 500 medium, 600 semibold, 700 bold). Missing means normal. */
+	fontWeight?: number;
 	fontFamily?: FontFamily;
 	textAlign?: TextAlign;
 	verticalAlign?: VerticalAlign;
@@ -96,6 +102,8 @@ export interface CanvasElement {
 	startFocus?: number[];
 	endFocus?: number[];
 	targetObjectId?: string;
+	/** Picture of an image element: a data URL, so the element does not depend on files of one space. */
+	src?: string;
 };
 
 /** Style applied to new elements; follows the last style the user picked, like in other whiteboards. */

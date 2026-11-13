@@ -57,3 +57,4 @@ trace_*.out
 coldsync*.log
 
 dist/*
+.canvas-ui-profile/

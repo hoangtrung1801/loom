@@ -1,6 +1,6 @@
 import Konva from 'konva';
 import { RoughGenerator } from 'roughjs/bin/generator';
-import { CanvasController, CanvasElement, ElementType, elementBounds, isLinear, visibleRect, expandRect, worldPoints, center } from 'Lib/canvas';
+import { CanvasController, CanvasElement, ElementType, elementBounds, isLinear, visibleRect, expandRect, worldPoints, center, isCustomColor } from 'Lib/canvas';
 
 export interface RendererTheme {
 	bg: string;
@@ -222,9 +222,10 @@ export class CanvasRenderer {
 		const img = new Image();
 
 		this.images.set(url, null);
+		// Element keys include whether their picture is loaded, so a render is enough to rebuild just those
 		img.onload = () => {
 			this.images.set(url, img);
-			this.invalidateObjects();
+			this.requestRender();
 		};
 		img.src = url;
 		return null;
@@ -298,10 +299,15 @@ export class CanvasRenderer {
 	private elementKey (el: CanvasElement): string {
 		const info = (el.type == ElementType.Object) ? this.getObject(el.targetObjectId) : null;
 
-		return [ el.v, el.nonce, this.objectVersion, info ? `${info.name}|${info.type}|${info.text}|${info.imageUrl}|${this.images.get(info.imageUrl) ? 1 : 0}|${info.blocks.map(b => `${b.style}${b.checked ? 'x' : ''}${b.text}`).join('\n')}` : '', (el.targetObjectId && (el.targetObjectId == this.highlightObjectId)) ? 'o' : '', (el.id == this.hiddenId) ? 'h' : '', this.controller.erasing.has(el.id) ? 'x' : '' ].join(':');
+		const picture = (el.type == ElementType.Image) ? (this.images.get(el.src) ? 'i1' : 'i0') : '';
+
+		return [ el.v, el.nonce, this.objectVersion, picture, info ? `${info.name}|${info.type}|${info.text}|${info.imageUrl}|${this.images.get(info.imageUrl) ? 1 : 0}|${info.blocks.map(b => `${b.style}${b.checked ? 'x' : ''}${b.text}`).join('\n')}` : '', (el.targetObjectId && (el.targetObjectId == this.highlightObjectId)) ? 'o' : '', (el.id == this.hiddenId) ? 'h' : '', this.controller.erasing.has(el.id) ? 'x' : '' ].join(':');
 	};
 
 	private stroke (el: CanvasElement): string {
+		if (isCustomColor(el.color)) {
+			return el.color;
+		};
 		return this.theme.stroke[el.color || 'default'] || this.theme.text;
 	};
 
@@ -309,7 +315,21 @@ export class CanvasRenderer {
 		if (!el.fill) {
 			return undefined;
 		};
+		if (isCustomColor(el.fill)) {
+			return el.fill;
+		};
 		return this.theme.fill[el.fill] || this.theme.fill.yellow;
+	};
+
+	private textColor (el: CanvasElement): string {
+		if (isCustomColor(el.color)) {
+			return el.color;
+		};
+		return this.theme.textColor[el.color || 'default'] || this.theme.text;
+	};
+
+	private fontStyle (el: CanvasElement): string {
+		return el.fontWeight ? String(el.fontWeight) : 'normal';
 	};
 
 	private build (el: CanvasElement): View {
@@ -377,8 +397,9 @@ export class CanvasRenderer {
 
 		if (fillName && SHAPE_TYPES.includes(el.type)) {
 			const style = el.fillStyle || 'solid';
-			const soft = this.theme.fill[fillName] || this.theme.fill.yellow;
-			const vivid = this.theme.stroke[fillName] || soft;
+			const custom = isCustomColor(fillName);
+			const soft = custom ? fillName : (this.theme.fill[fillName] || this.theme.fill.yellow);
+			const vivid = custom ? fillName : (this.theme.stroke[fillName] || soft);
 
 			opts.fill = (style == 'solid') ? soft : vivid;
 			opts.fillStyle = (style == 'cross') ? 'cross-hatch' : style;
@@ -413,8 +434,8 @@ export class CanvasRenderer {
 		});
 	};
 
-	private roundedPath (w: number, h: number): string {
-		const r = Math.min(Math.min(w, h) * 0.25, 32);
+	private roundedPath (w: number, h: number, radius?: number): string {
+		const r = radius ? Math.min(radius, w / 2, h / 2) : Math.min(Math.min(w, h) * 0.25, 32);
 
 		return `M${r} 0H${w - r}Q${w} 0 ${w} ${r}V${h - r}Q${w} ${h} ${w - r} ${h}H${r}Q0 ${h} 0 ${h - r}V${r}Q0 0 ${r} 0Z`;
 	};
@@ -425,7 +446,7 @@ export class CanvasRenderer {
 
 		switch (el.type) {
 			case ElementType.Rect:
-				this.addDrawable(node, el.rounded ? generator.path(this.roundedPath(w, h), opts) : generator.rectangle(0, 0, w, h, opts), el, opts);
+				this.addDrawable(node, (el.radius || el.rounded) ? generator.path(this.roundedPath(w, h, el.radius), opts) : generator.rectangle(0, 0, w, h, opts), el, opts);
 				break;
 
 			case ElementType.Diamond:
@@ -525,7 +546,7 @@ export class CanvasRenderer {
 		switch (el.type) {
 			case ElementType.Rect:
 			case ElementType.Sticky: {
-				node.add(new Konva.Rect({ ...base, width: el.w, height: el.h, fill, stroke: (el.type == ElementType.Rect) ? stroke : undefined, strokeWidth: sw }));
+				node.add(new Konva.Rect({ ...base, width: el.w, height: el.h, fill, stroke: (el.type == ElementType.Rect) ? stroke : undefined, strokeWidth: sw, cornerRadius: Math.min(el.radius || 0, el.w / 2, el.h / 2) }));
 				break;
 			};
 
@@ -550,7 +571,10 @@ export class CanvasRenderer {
 				const pts = el.points || [];
 
 				if (pts.length > 1) {
-					node.add(new Konva.Line({ ...base, points: pts.reduce((acc, p) => acc.concat(p), [] as number[]), stroke, strokeWidth: sw, lineCap: 'round', lineJoin: 'round', tension: (el.type == ElementType.Freehand) ? 0.4 : 0 }));
+					// A freehand with a fill is a closed shape (used for icons drawn from SVG paths)
+					const closed = (el.type == ElementType.Freehand) && !!fill;
+
+					node.add(new Konva.Line({ ...base, points: pts.reduce((acc, p) => acc.concat(p), [] as number[]), stroke, strokeWidth: sw, lineCap: 'round', lineJoin: 'round', tension: ((el.type == ElementType.Freehand) && !closed) ? 0.4 : 0, closed, fill: closed ? fill : undefined }));
 				};
 
 				if (el.type == ElementType.Arrow) {
@@ -572,6 +596,18 @@ export class CanvasRenderer {
 
 			case ElementType.Object: {
 				this.buildObject(el, node, texts);
+				break;
+			};
+
+			case ElementType.Image: {
+				const img = this.getImage(el.src);
+				const cornerRadius = Math.min(el.radius || 0, el.w / 2, el.h / 2);
+
+				if (img) {
+					node.add(new Konva.Image({ ...base, image: img, width: el.w, height: el.h, cornerRadius }));
+				} else {
+					node.add(new Konva.Rect({ ...base, width: el.w, height: el.h, cornerRadius, fill: rgba(this.theme.grid, 0.35) }));
+				};
 				break;
 			};
 		};
@@ -809,7 +845,7 @@ export class CanvasRenderer {
 		const family = el.fontFamily;
 		// Text on a solid fill keeps the dark on-fill color, but hachure and cross-hatch leave the background visible
 		const solid = !!el.fill && ((el.fillStyle || 'solid') == 'solid');
-		const fillText = solid ? this.theme.onFill : (this.theme.textColor[el.color || 'default'] || this.theme.text);
+		const fillText = (solid && !isCustomColor(el.fill) && !isCustomColor(el.color)) ? this.theme.onFill : this.textColor(el);
 
 		if (el.type == ElementType.Frame) {
 			const label = this.text(el.text, FRAME_TITLE, undefined, this.theme.muted, { wrap: 'none' });
@@ -849,7 +885,7 @@ export class CanvasRenderer {
 		const height = Math.max(10, diamond ? el.h / 2 : el.h - (pad * 2));
 		const align = el.textAlign || (isShape ? 'center' : 'left');
 		const vertical = el.verticalAlign || (isShape ? 'middle' : 'top');
-		const extra: Partial<Konva.TextConfig> = { x, y, align, wrap: 'word' };
+		const extra: Partial<Konva.TextConfig> = { x, y, align, wrap: 'word', fontStyle: this.fontStyle(el) };
 
 		if (el.type != ElementType.Text) {
 			extra.height = height;

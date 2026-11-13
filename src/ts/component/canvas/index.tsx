@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { reaction } from 'mobx';
 import { C, I, S, U, J, keyboard, translate } from 'Lib';
-import { CanvasController, CanvasElement, ElementType, Scene, SOFT_ELEMENT_LIMIT, Tool, decodeClipboardElements } from 'Lib/canvas';
+import { CanvasController, CanvasElement, ElementType, Scene, SOFT_ELEMENT_LIMIT, Tool, decodeClipboardElements, isCustomColor } from 'Lib/canvas';
 import { CanvasRenderer, RendererTheme, ObjectInfo, ObjectKind, PreviewBlock } from './renderer';
 import { CanvasAdapter } from './adapter';
 import CanvasToolbar from './toolbar';
@@ -805,7 +805,12 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 		editStyle.fontSize = (editEl.fontSize || 16) * zoom;
 		editStyle.lineHeight = `${Math.round((editEl.fontSize || 16) * 1.3) * zoom}px`;
 		editStyle.fontFamily = (family == 'hand') ? 'Caveat, "Patrick Hand", cursive' : ((family == 'code') ? 'ui-monospace, Menlo, Consolas, monospace' : 'inherit');
-		editStyle.color = (editEl.fill && ((editEl.fillStyle || 'solid') == 'solid')) ? (J.Theme[''] as any).color.default : theme.textColor[editEl.color || 'default'];
+		if (isCustomColor(editEl.color)) {
+			editStyle.color = editEl.color;
+		} else {
+			editStyle.color = (editEl.fill && ((editEl.fillStyle || 'solid') == 'solid')) ? (J.Theme[''] as any).color.default : theme.textColor[editEl.color || 'default'];
+		};
+		editStyle.fontWeight = editEl.fontWeight || 'normal';
 		editStyle.padding = 0;
 		editStyle.textAlign = editEl.textAlign || (isShapeType(editEl.type) ? 'center' : 'left');
 		editStyle.transformOrigin = `${((editEl.w / 2) - region.x) * zoom}px ${((editEl.h / 2) - region.y) * zoom}px`;

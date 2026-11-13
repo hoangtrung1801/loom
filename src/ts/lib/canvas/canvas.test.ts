@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	Scene, CanvasController, ElementType, Tool, CanvasElement, between, compareZ, screenToWorld, worldToScreen, zoomAt,
-	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect, elementBounds, routePoints, applyRoute, curveSamples, toLibraryElements, borderFocus, focusPoint, decodeClipboardElements,
+	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect, elementBounds, routePoints, applyRoute, curveSamples, toLibraryElements, borderFocus, focusPoint, decodeClipboardElements, isCustomColor,
 } from './index';
 
 const rect = (id: string, x: number, y: number, w = 100, h = 60, param: Partial<CanvasElement> = {}) => {
@@ -128,6 +128,15 @@ describe('codec', () => {
 		expect(decodeElement('{"id":"a","type":"bogus"}')).toBeNull();
 	});
 
+	it('tells custom hex colors from palette names', () => {
+		expect(isCustomColor('#fff')).toBe(true);
+		expect(isCustomColor('#f8f8f8')).toBe(true);
+		expect(isCustomColor('#00000000')).toBe(true);
+		expect(isCustomColor('red')).toBe(false);
+		expect(isCustomColor('#ggg')).toBe(false);
+		expect(isCustomColor(undefined)).toBe(false);
+	});
+
 	it('reads pasted canvas data', () => {
 		const a = rect('a', 0, 0);
 		const b = rect('b', 10, 10, 100, 60, { deleted: true });
@@ -137,6 +146,7 @@ describe('codec', () => {
 		expect(decodeClipboardElements(JSON.stringify({ elements: [ a ] }))).toEqual([]);
 		expect(decodeClipboardElements('https://example.com')).toEqual([]);
 		expect(decodeClipboardElements('{broken')).toEqual([]);
+		expect(decodeClipboardElements(JSON.stringify([ { id: 'p', type: 'image', x: 0, y: 0, w: 10, h: 10, src: 'data:image/webp;base64,AA', radius: 4 } ]))[0]).toMatchObject({ type: 'image', src: 'data:image/webp;base64,AA', radius: 4 });
 	});
 });
 
