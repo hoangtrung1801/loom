@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { reaction } from 'mobx';
 import { C, I, S, U, J, keyboard, translate } from 'Lib';
-import { CanvasController, CanvasElement, ElementType, Scene, SOFT_ELEMENT_LIMIT, Tool } from 'Lib/canvas';
+import { CanvasController, CanvasElement, ElementType, Scene, SOFT_ELEMENT_LIMIT, Tool, decodeClipboardElements } from 'Lib/canvas';
 import { CanvasRenderer, RendererTheme, ObjectInfo, ObjectKind, PreviewBlock } from './renderer';
 import { CanvasAdapter } from './adapter';
 import CanvasToolbar from './toolbar';
@@ -314,6 +314,12 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			return;
 		};
 
+		// Let the native paste event through, onPaste decides between system clipboard data and the internal clipboard
+		if (mod && !e.altKey && !e.shiftKey && (key == 'v') && !readonly) {
+			e.stopPropagation();
+			return;
+		};
+
 		if (controller.keyDown({ key: e.key, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey || e.ctrlKey })) {
 			e.preventDefault();
 			e.stopPropagation();
@@ -333,12 +339,26 @@ const MediaCanvas = forwardRef<CanvasRef, Props>(({
 			return;
 		};
 
+		e.preventDefault();
+
+		// Canvas elements as JSON (from another canvas or a generator) are inserted at the center of the view
+		const elements = decodeClipboardElements(text);
+		if (elements.length) {
+			controller.insertElements(elements, getCenter());
+			controller.fit(Array.from(controller.scene.selection));
+			refresh();
+			return;
+		};
+
 		// Loom object link: openObject/<id> style deep links drop an object card
 		const match = String(text || '').match(/[?&]objectId=([a-zA-Z0-9]+)/) || String(text || '').match(/\/object\/([a-zA-Z0-9]+)/);
 		if (match) {
-			e.preventDefault();
 			addObject(match[1]);
+			return;
 		};
+
+		controller.paste();
+		refresh();
 	};
 
 	const getCenter = () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
 	Scene, CanvasController, ElementType, Tool, CanvasElement, between, compareZ, screenToWorld, worldToScreen, zoomAt,
-	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect, elementBounds, routePoints, applyRoute, curveSamples, toLibraryElements, borderFocus, focusPoint,
+	hitTest, simplify, SpatialIndex, decodeElement, encodeElement, defaultElement, shouldApplyRemote, anchorPoint, fitRect, elementBounds, routePoints, applyRoute, curveSamples, toLibraryElements, borderFocus, focusPoint, decodeClipboardElements,
 } from './index';
 
 const rect = (id: string, x: number, y: number, w = 100, h = 60, param: Partial<CanvasElement> = {}) => {
@@ -126,6 +126,17 @@ describe('codec', () => {
 		expect(decodeElement('')).toBeNull();
 		expect(decodeElement('{nope')).toBeNull();
 		expect(decodeElement('{"id":"a","type":"bogus"}')).toBeNull();
+	});
+
+	it('reads pasted canvas data', () => {
+		const a = rect('a', 0, 0);
+		const b = rect('b', 10, 10, 100, 60, { deleted: true });
+
+		expect(decodeClipboardElements(JSON.stringify({ type: 'loom/canvas', elements: [ a, b, { id: 'x', type: 'bogus' } ] })).map(el => el.id)).toEqual([ 'a' ]);
+		expect(decodeClipboardElements(JSON.stringify([ a ])).length).toBe(1);
+		expect(decodeClipboardElements(JSON.stringify({ elements: [ a ] }))).toEqual([]);
+		expect(decodeClipboardElements('https://example.com')).toEqual([]);
+		expect(decodeClipboardElements('{broken')).toEqual([]);
 	});
 });
 
