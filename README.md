@@ -25,6 +25,7 @@ Loom is a fork of [Anytype](https://github.com/anyproto/anytype-ts). It keeps An
 - [Repository Layout](#-repository-layout)
 - [Building from Source](#-building-from-source)
 - [Development Workflow](#-development-workflow)
+  - [Checks](#checks)
   - [Updating Protobuf Bindings](#updating-protobuf-bindings)
 - [The `loom` CLI](#-the-loom-cli)
 - [CI](#-ci)
@@ -118,6 +119,15 @@ bun run build:dev     # Development build (Vite)
 bun run typecheck     # TypeScript type checking
 bun run lint          # Run linters (Biome + ESLint)
 bun run test          # Unit tests (Vitest)
+```
+
+### Checks
+
+Before opening a pull request, run both checks and make sure they pass:
+
+```bash
+bun run typecheck
+bun run lint
 ```
 
 ### Environment variables
