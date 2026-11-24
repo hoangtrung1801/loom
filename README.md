@@ -26,6 +26,8 @@ Loom is a fork of [Anytype](https://github.com/anyproto/anytype-ts). It keeps An
 - [Building from Source](#-building-from-source)
 - [Development Workflow](#-development-workflow)
   - [Updating Protobuf Bindings](#updating-protobuf-bindings)
+- [Troubleshooting](#-troubleshooting)
+  - [`bun run typecheck` fails in a new checkout or worktree](#bun-run-typecheck-fails-in-a-new-checkout-or-worktree)
 - [The `loom` CLI](#-the-loom-cli)
 - [CI](#-ci)
 - [Contributing](#-contributing)
@@ -155,6 +157,27 @@ This builds the bundled `loom-heart/` middleware, installs the helper into `dist
 - **macOS:** `brew install protobuf`
 
 > The `-devel` / `-dev` package is required on Linux — without it `protoc` reports `google/protobuf/struct.proto: File not found`. See [`scripts/README.md`](scripts/README.md#protobuf-generation) for the full Linux first-time setup and troubleshooting.
+
+
+## 🩺 Troubleshooting
+
+### `bun run typecheck` fails in a new checkout or worktree
+
+**Symptom:** `bun run typecheck` reports `TS2307: Cannot find module` for `Proto/...` (e.g. `Proto/pb/protos/events`), `./service` or `dist/lib/json/generated/systemRelations.json`.
+
+**Cause:** the protobuf bindings (`middleware/`), the service registry (`src/ts/lib/api/service.ts`) and the bundled relation/type JSON (`dist/lib/json/generated/`) are generated and git-ignored, so a new clone or `git worktree` does not have them. A new worktree also has no `node_modules/`, which shows up as `Cannot find type definition file for 'node'`.
+
+**Fix** — run from the repository root (needs `bun` and `protoc` with the well-known `.proto` files, see [Updating Protobuf Bindings](#updating-protobuf-bindings)):
+
+```bash
+bun install
+SKIP_HEART_BUILD=1 bash scripts/generate-protos.sh   # bindings only; use `bun run generate:protos` to also build the middleware
+mkdir -p dist/lib/json/generated
+cp loom-heart/pkg/lib/bundle/system*.json loom-heart/pkg/lib/bundle/internal*.json dist/lib/json/generated/
+bun run typecheck && bun run lint
+```
+
+These are the same steps [CI](.github/workflows/test.yml) runs. The generated files stay local and are never committed.
 
 
 ## 🧵 The `loom` CLI
